@@ -828,15 +828,6 @@
     </div>
   </div>
 
-  <!-- 手動JSON取り込み(予備) -->
-  <details style="margin-top:16px;">
-    <summary style="font-size:11px;color:var(--text-dim);cursor:pointer;">JSONを直接貼る（予備機能）</summary>
-    <div class="parse-area" style="margin-top:8px;">
-      <textarea id="jsonInput" placeholder='[{"name":"ゆうき","arrive":"24:30","tanto":"ゆうき","budget":"","help":"ゆかり","note":""}]' style="min-height:100px; font-size:11px; font-family:monospace;"></textarea>
-    </div>
-    <button class="btn btn-ghost btn-sm" onclick="importJSON()" style="margin-top:6px;">取り込む</button>
-  </details>
-
   <div id="previewArea"></div>
 </div>
 
@@ -989,7 +980,7 @@ ${text}`;
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'anthropic-dangerous-allow-cors': 'true' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 2000,
@@ -1047,29 +1038,6 @@ function importTextParsed(parsed) {
   switchTab('tables');
 }
 
-// ===== JSON IMPORT =====
-function importJSON() {
-  const raw = document.getElementById('jsonInput').value.trim();
-  if (!raw) { showToast('JSONを貼り付けてください'); return; }
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) throw new Error('配列ではありません');
-    const usedRows2 = new Set(guests.map(g => Number(g.rowNum)).filter(Boolean));
-    let rc = 1;
-    parsed.forEach(g => {
-      while (usedRows2.has(rc)) rc++;
-      usedRows2.add(rc);
-      guests.push({ id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false });
-    });
-    document.getElementById('jsonInput').value = '';
-    saveToStorage();
-    updateStats();
-    showToast(`${parsed.length}件を取り込みました！`);
-    switchTab('tables');
-  } catch(e) {
-    showToast('JSONの形式が正しくありません: ' + e.message);
-  }
-}
 
 // ===== RENDER TABLES =====
 function renderTables() {
