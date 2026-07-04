@@ -942,71 +942,46 @@ function switchTab(name) {
 }
 
 // ===== AI TEXT PARSE =====
-async function parseLineText() {
+function parseLineText() {
   const text = document.getElementById('lineTextInput').value.trim();
   if (!text) { showToast('内容を入力してください'); return; }
-  // 担当名・お客様名のバリデーション（複数ブロック対応）
-  const hasTanto = /担当名：\S/.test(text);
-  const hasName = /お客様名：\S/.test(text);
-  if (!hasTanto) { showToast('担当名を入力してください'); return; }
-  if (!hasName) { showToast('お客様名を入力してください'); return; }
 
-  document.getElementById('parseBtn').disabled = true;
-  document.getElementById('loading').classList.add('show');
-  document.getElementById('previewArea').innerHTML = '';
+  // ブロックを空行で分割
+  const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
+  const parsed = [];
 
-  const prompt = `キャバクラの来店予定報告フォームの入力内容です。
-1件または複数件の報告が含まれる場合があります。全ての報告を抽出してください。
-以下の形式のJSON配列のみを返してください。
+  blocks.forEach(block => {
+    const get = (key) => {
+      const match = block.match(new RegExp(key + '：(.*)'));
+      return match ? match[1].trim() : '';
+    };
 
-返答は必ず [ から始まり ] で終わるJSON配列のみにしてください。
-説明文、マークダウン、コードブロックは一切含めないでください。
+    const tanto = get('担当名');
+    const name = get('お客様名');
 
-[{"name":"お客様名","arrive":"来店時間","leave":"退店時間","tanto":"担当名","budget":"予算","help":"ヘルプ","note":"備考"}]
+    // 予定未定はスキップ
+    if (!tanto && !name) return;
+    if (name.includes('予定未定') || tanto.includes('予定未定')) return;
+    if (!tanto) { showToast('担当名を入力してください'); return; }
+    if (!name) { showToast('お客様名を入力してください'); return; }
 
-ルール：
-- 各フィールドは「担当名：」「お客様名：」「来店時間：」「退店時間：」「予算：」「ヘルプ：」「備考：」から読み取る
-- 空行で区切られた複数の報告ブロックがある場合は、それぞれ別のオブジェクトとして抽出する
-- 同じ担当名で複数のお客様が報告されている場合も全て個別に抽出する
-- 「予定未定」と記載されている報告は抽出しない
-- お客様名はそのまま入れる（「○○＋枝」もそのまま）
-- 値が空・未定・なし・−の場合は "" にする
-- 来店が同伴の場合は "同伴" とする
-- 報告が0件の場合は [] を返す
-
----
-${text}`;
-
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'anthropic-dangerous-allow-cors': 'true' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }]
-      })
+    parsed.push({
+      tanto,
+      name,
+      arrive: get('来店時間'),
+      leave:  get('退店時間'),
+      budget: get('予算'),
+      help:   get('ヘルプ'),
+      note:   get('備考'),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data.content) throw new Error('Invalid response format');
+  });
 
-    const raw = data.content.map(c => c.text || '').join('').trim();
-    let clean = raw.replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim();
-    const start = clean.indexOf('[');
-    const end = clean.lastIndexOf(']');
-    if (start === -1 || end === -1) throw new Error('JSONが見つかりませんでした: ' + clean.slice(0,80));
-    let jsonStr = clean.slice(start, end + 1).replace(/'/g, '"');
-    const parsed = JSON.parse(jsonStr);
-
-    importTextParsed(parsed);
-  } catch(e) {
-    showToast('読み取りに失敗しました: ' + e.message);
-    console.error(e);
-  } finally {
-    document.getElementById('parseBtn').disabled = false;
-    document.getElementById('loading').classList.remove('show');
+  if (!parsed.length) {
+    showToast('有効な報告が見つかりませんでした');
+    return;
   }
+
+  importTextParsed(parsed);
 }
 
 function importTextParsed(parsed) {
