@@ -1432,10 +1432,19 @@ function loadStaff() {
     const raw = localStorage.getItem('tableManager_staff');
     if (raw) staffList = JSON.parse(raw);
   } catch(e) {}
+  // Firebaseスタッフ受信時に更新
+  window._fbStaffReady = function() {
+    if (window._fbStaff) {
+      staffList = window._fbStaff;
+      try { localStorage.setItem('tableManager_staff', JSON.stringify(staffList)); } catch(e) {}
+      renderStaffStatus();
+    }
+  };
 }
 
 function saveStaff() {
   try { localStorage.setItem('tableManager_staff', JSON.stringify(staffList)); } catch(e) {}
+  if (window.fbSaveStaff) window.fbSaveStaff(staffList);
 }
 
 function renderStaffStatus() {
