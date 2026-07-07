@@ -779,10 +779,10 @@
       // 初回以降もリアルタイム反映
       guests = window._fbGuests;
       nextId = guests.reduce((m,g) => Math.max(m, (g.id||0)+1), 1);
-      renderTables();
-      renderStaffStatus();
-      if (typeof renderView === 'function' && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
-      updateStats();
+      if (window.renderTables) window.renderTables();
+      if (window.renderStaffStatus) window.renderStaffStatus();
+      if (window.renderView && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) window.renderView();
+      if (window.updateStats) window.updateStats();
     } else if (window._fbReady) {
       window._fbReady();
     }
@@ -798,7 +798,7 @@
       if (typeof staffList !== 'undefined') {
         staffList = list;
         try { localStorage.setItem('tableManager_staff', JSON.stringify(staffList)); } catch(e) {}
-        if (typeof renderStaffStatus === 'function') renderStaffStatus();
+        if (window.renderStaffStatus) window.renderStaffStatus();
       } else if (window._fbStaffReady) {
         window._fbStaffReady();
       }
@@ -935,6 +935,11 @@ let nextId = 1;
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
+  // Firebase module scriptからアクセスできるようにwindowに登録
+  window.renderStaffStatus = renderStaffStatus;
+  window.renderTables = renderTables;
+  window.renderView = renderView;
+  window.updateStats = updateStats;
   updateDate();
   // Firebase準備完了時に実行
   window._fbReady = function() {
@@ -1597,7 +1602,7 @@ function openStaffSettings() {
       </div>
       <div class="modal-body">
         <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">1行に1名ずつ入力してください</p>
-        <textarea id="staffInput" style="width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:10px;outline:none;">${staffList.join('\\n')}</textarea>
+        <textarea id="staffInput" style="width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:10px;outline:none;">${staffList.join('\n')}</textarea>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('staffModal').classList.remove('show')">キャンセル</button>
