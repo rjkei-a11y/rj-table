@@ -757,23 +757,34 @@
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
   const guestsRef = ref(db, 'guests');
+  const staffRef = ref(db, 'staff');
 
-  // Firebaseにデータを保存
+  // Firebaseにゲストデータを保存
   window.fbSave = function(guestsData) {
     const obj = {};
     guestsData.forEach(g => { obj['g' + g.id] = g; });
     set(guestsRef, obj).catch(e => console.error('FB save error:', e));
   };
 
-  // Firebaseからリアルタイム受信
+  // Firebaseにスタッフリストを保存
+  window.fbSaveStaff = function(list) {
+    set(staffRef, list).catch(e => console.error('FB staff save error:', e));
+  };
+
+  // Firebaseからゲストをリアルタイム受信
   onValue(guestsRef, (snapshot) => {
     const data = snapshot.val();
-    if (data === null) {
-      window._fbGuests = [];
-    } else {
-      window._fbGuests = Object.values(data);
-    }
+    window._fbGuests = data === null ? [] : Object.values(data);
     if (window._fbReady) window._fbReady();
+  });
+
+  // Firebaseからスタッフリストをリアルタイム受信
+  onValue(staffRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data && Array.isArray(data)) {
+      window._fbStaff = data;
+      if (window._fbStaffReady) window._fbStaffReady();
+    }
   });
 </script>
 </head>
