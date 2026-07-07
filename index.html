@@ -775,17 +775,33 @@
   onValue(guestsRef, (snapshot) => {
     const data = snapshot.val();
     window._fbGuests = data === null ? [] : Object.values(data);
-    if (window._fbReady) window._fbReady();
+    if (typeof guests !== 'undefined' && typeof renderTables === 'function') {
+      // 初回以降もリアルタイム反映
+      guests = window._fbGuests;
+      nextId = guests.reduce((m,g) => Math.max(m, (g.id||0)+1), 1);
+      renderTables();
+      renderStaffStatus();
+      if (typeof renderView === 'function' && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
+      updateStats();
+    } else if (window._fbReady) {
+      window._fbReady();
+    }
   });
 
   // Firebaseからスタッフリストをリアルタイム受信
   onValue(staffRef, (snapshot) => {
     const data = snapshot.val();
     if (data) {
-      // 配列または文字列どちらでも対応
       const list = Array.isArray(data) ? data : String(data).split('\n').map(s => s.trim()).filter(Boolean);
       window._fbStaff = list;
-      if (window._fbStaffReady) window._fbStaffReady();
+      // 常にリアルタイムで反映
+      if (typeof staffList !== 'undefined') {
+        staffList = list;
+        try { localStorage.setItem('tableManager_staff', JSON.stringify(staffList)); } catch(e) {}
+        if (typeof renderStaffStatus === 'function') renderStaffStatus();
+      } else if (window._fbStaffReady) {
+        window._fbStaffReady();
+      }
     }
   });
 </script>
