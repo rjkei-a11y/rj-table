@@ -734,13 +734,75 @@
     display: flex; align-items: center; justify-content: center;
   }
 
+  /* ===== LOGIN ===== */
+  #loginScreen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--accent-dim);
+    border-radius: 12px;
+    padding: 32px 24px;
+    width: 100%;
+    max-width: 320px;
+    text-align: center;
+  }
+  .login-title {
+    font-size: 20px;
+    font-weight: 900;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+    margin-bottom: 8px;
+  }
+  .login-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+  }
+  .login-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 16px;
+    padding: 12px;
+    outline: none;
+    text-align: center;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+  }
+  .login-input:focus { border-color: var(--accent); }
+  .login-error {
+    font-size: 12px;
+    color: var(--danger);
+    margin-bottom: 8px;
+    min-height: 16px;
+  }
+
   @media (max-width: 480px) {
     .table-grid { grid-template-columns: 1fr; }
     .header-title { font-size: 14px; }
   }
 </style>
 <!-- Firebase SDK -->
-<script type="module">
+<script>
+  // Firebase無効（プレビュー用）
+  window.fbSave = function() {};
+  window.fbSaveStaff = function() {};
+  window.fbSaveFirst = function() {};
+  window._fbReady = null;
+  window._fbStaffReady = null;
+</script>
+<script type="text/disabled">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
@@ -808,6 +870,19 @@
 </head>
 <body>
 
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-title">卓 管 理</div>
+    <div class="login-sub">ROMEO &amp; JULIET</div>
+    <input class="login-input" id="loginInput" type="password" placeholder="パスワードを入力" maxlength="20"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-error" id="loginError"></div>
+    <button class="btn btn-primary" onclick="doLogin()" style="width:100%;font-size:15px;padding:12px;">
+      入室
+    </button>
+  </div>
+</div>
+
 <header>
   <div>
     <div class="header-title">卓 管 理</div>
@@ -822,12 +897,17 @@
 <div class="tabs">
   <div class="tab active" onclick="switchTab('input')">📋 予定報告</div>
   <div class="tab" onclick="switchTab('tables')">📊 卓一覧</div>
+  <div class="tab" onclick="switchTab('first')">🔰 初回</div>
   <div class="tab" onclick="switchTab('view')">👁 全体</div>
 </div>
 
 <!-- 予定報告パネル -->
 <div class="panel active" id="panel-input">
-  <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.7;">予定がない場合は担当名と「予定未定」を記載し、報告ボタンを押してください。</p>
+  <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;">
+    <button class="btn btn-ghost btn-sm" onclick="addTemplate()" style="flex-shrink:0;">📋 追加</button>
+    <button class="btn btn-ghost btn-sm" onclick="clearTemplate()" style="flex-shrink:0;color:#c0392b;border-color:#c0392b;">🗑 削除</button>
+    <p style="font-size:12px;color:var(--text-dim);line-height:1.7;margin:0;">予定が現状未定の場合は「名前予定未定」と入力して報告ボタンを押してください。</p>
+  </div>
 
   <div style="display:flex; gap:10px; align-items:flex-start;">
     <!-- 左：入力フォーム -->
@@ -841,7 +921,7 @@
 ヘルプ：
 備考：</textarea>
       </div>
-      <button class="btn btn-primary" onclick="parseLineText()" id="parseBtn" style="margin-top:8px;">
+      <button class="btn btn-primary" onclick="parseLineText()" id="parseBtn" style="margin-top:8px;width:100%;">
         来店予定を報告する
       </button>
       <div class="loading" id="loading">
@@ -858,6 +938,17 @@
   </div>
 
   <div id="previewArea"></div>
+
+  <!-- 卓状況 -->
+  <div style="margin-top:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">
+      <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">卓状況</span>
+      <button onclick="openFloorSettings()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:2px 8px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
+    </div>
+    <div style="display:flex;gap:8px;" id="floorStatusArea">
+      <!-- V・A・Bフロア -->
+    </div>
+  </div>
 </div>
 
 <!-- 卓一覧パネル -->
@@ -870,6 +961,33 @@
   <div class="unassigned-section" id="unassignedSection" style="display:none;">
     <div class="section-label" style="margin-top:16px;">▼ 卓未割り当て</div>
     <div id="unassignedList"></div>
+  </div>
+</div>
+
+<!-- 初回パネル -->
+<div class="panel" id="panel-first">
+  <div style="font-size:14px;color:var(--text-dim);margin-bottom:8px;" id="firstStats"></div>
+  <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+    <button class="btn btn-ghost btn-sm" onclick="addFirstRow()">＋ 追加</button>
+    <button class="btn btn-ghost btn-sm" onclick="clearFirstData()" style="margin-left:auto;color:#c0392b;border-color:#c0392b;">🗑 全クリア</button>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="paper-table" id="firstTable">
+      <thead>
+        <tr>
+          <th style="width:30px;">No.</th>
+          <th style="width:36px;">人数</th>
+          <th style="width:44px;">卓番</th>
+          <th style="width:44px;">席位置</th>
+          <th style="width:56px;">写真指名①</th>
+          <th style="width:56px;">写真指名②</th>
+          <th style="width:50px;">送り</th>
+          <th style="width:50px;">飲直</th>
+          <th style="width:60px;">プラン</th>
+        </tr>
+      </thead>
+      <tbody id="firstTableBody"></tbody>
+    </table>
   </div>
 </div>
 
@@ -932,15 +1050,69 @@
 // ===== STATE =====
 let guests = []; // { id, name, arrive, leave, tanto, budget, help, note, tableNum, arrived }
 let nextId = 1;
+let firstGroups = [];
+let firstGid = 1;
+let firstRid = 1;
+let staffList = [];
+
+// ===== LOGIN =====
+const PASS_ADMIN = 'rj0123';
+const PASS_HOST  = '1234';
+
+function checkLogin() {
+  const role = localStorage.getItem('rj_role');
+  if (role === 'admin' || role === 'host') {
+    applyRole(role);
+    document.getElementById('loginScreen').style.display = 'none';
+  }
+}
+
+function doLogin() {
+  const val = document.getElementById('loginInput').value.trim();
+  if (val === PASS_ADMIN) {
+    localStorage.setItem('rj_role', 'admin');
+    applyRole('admin');
+    document.getElementById('loginScreen').style.display = 'none';
+  } else if (val === PASS_HOST) {
+    localStorage.setItem('rj_role', 'host');
+    applyRole('host');
+    document.getElementById('loginScreen').style.display = 'none';
+  } else {
+    document.getElementById('loginError').textContent = 'パスワードが違います';
+    document.getElementById('loginInput').value = '';
+  }
+}
+
+function applyRole(role) {
+  if (role === 'host') {
+    // ホストは卓一覧タブを非表示
+    const tabs = document.querySelectorAll('.tab');
+    const panels = document.querySelectorAll('.panel');
+    // 卓一覧タブ（index 1）を非表示
+    if (tabs[1]) tabs[1].style.display = 'none';
+    if (panels[1]) panels[1].style.display = 'none';
+    // アクティブを予定報告に
+    tabs[0].classList.add('active');
+    panels[0].classList.add('active');
+  }
+}
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   // Firebase module scriptからアクセスできるようにwindowに登録
   window.renderStaffStatus = renderStaffStatus;
   window.renderTables = renderTables;
+  window.renderFloorStatus = renderFloorStatus;
   window.renderView = renderView;
   window.updateStats = updateStats;
+  checkLogin();
+  // firstGroupsを必ずクリーンな状態で初期化
+  firstGroups = [];
+  firstGid = 1;
+  firstRid = 1;
+  loadFirstData();
   updateDate();
+  renderFirstTab();
   // Firebase準備完了時に実行
   window._fbReady = function() {
     if (window._fbGuests) {
@@ -967,15 +1139,44 @@ function updateDate() {
 // ===== TABS =====
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t,i) => {
-    t.classList.toggle('active', ['input','tables','view'][i] === name);
+    t.classList.toggle('active', ['input','tables','first','view'][i] === name);
   });
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
   if (name === 'tables') renderTables();
   if (name === 'view') renderView();
+  if (name === 'first') renderFirstTab();
+  if (name === 'input') renderFloorStatus();
 }
 
 // ===== AI TEXT PARSE =====
+function resetTemplate() {
+  document.getElementById('lineTextInput').value = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
+}
+
+function clearTemplate() {
+  const ta = document.getElementById('lineTextInput');
+  const tmpl = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
+  const blocks = ta.value.split('\n\n').filter(b => b.trim());
+  const filtered = blocks.filter(block => {
+    const lines = block.split('\n');
+    return lines.some(line => {
+      const idx = line.indexOf('：');
+      const val = idx >= 0 ? line.slice(idx + 1).trim() : line.trim();
+      return val !== '';
+    });
+  });
+  ta.value = filtered.join('\n\n');
+}
+
+function addTemplate() {
+  const ta = document.getElementById('lineTextInput');
+  const current = ta.value.trim();
+  const tmpl = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
+  ta.value = current ? current + '\n\n' + tmpl : tmpl;
+  ta.scrollTop = ta.scrollHeight;
+}
+
 function parseLineText() {
   const text = document.getElementById('lineTextInput').value.trim();
   if (!text) { showToast('内容を入力してください'); return; }
@@ -990,24 +1191,47 @@ function parseLineText() {
       return match ? match[1].trim() : '';
     };
 
+    // テンプレ形式かチェック
     const tanto = get('担当名');
     const name = get('お客様名');
 
-    // 予定未定はスキップ
-    if (!tanto && !name) return;
-    if (name.includes('予定未定') || tanto.includes('予定未定')) return;
-    if (!tanto) { showToast('担当名を入力してください'); return; }
-    if (!name) { showToast('お客様名を入力してください'); return; }
-
-    parsed.push({
-      tanto,
-      name,
-      arrive: get('来店時間'),
-      leave:  get('退店時間'),
-      budget: get('予算'),
-      help:   get('ヘルプ'),
-      note:   get('備考'),
-    });
+    if (tanto || name) {
+      // テンプレ形式
+      if (!tanto) { showToast('担当名を入力してください'); return; }
+      // 予定未定はスキップ（お客様名なしor予定未定）
+      if (!name || name.includes('予定未定')) {
+        // 報告状況に反映するためtantoだけ記録
+        markReported(tanto);
+        return;
+      }
+      parsed.push({
+        tanto, name,
+        arrive: get('来店時間'),
+        leave:  get('退店時間'),
+        budget: get('予算'),
+        help:   get('ヘルプ'),
+        note:   get('備考'),
+      });
+    } else {
+      // 自由入力形式（例：「カルマ 予定未定」）
+      const trimmed = block.trim();
+      if (!trimmed) return;
+      // 予定未定を含む場合は報告状況に反映してスキップ
+      if (trimmed.includes('予定未定')) {
+        // 名前部分を抽出（「カルマ予定未定」「カルマ 予定未定」両対応）
+        const tName = trimmed.replace(/\s*予定未定.*/, '').trim();
+        if (tName) markReported(tName);
+        return;
+      }
+      // スペース区切りで最初の単語を担当名、残りをお客様名として扱う
+      const parts = trimmed.split(/\s+/);
+      if (parts.length < 2) { showToast('担当名とお客様名を入力してください'); return; }
+      parsed.push({
+        tanto: parts[0],
+        name: parts.slice(1).join(' '),
+        arrive: '', leave: '', budget: '', help: '', note: '',
+      });
+    }
   });
 
   if (!parsed.length) {
@@ -1155,10 +1379,6 @@ function editCell(id, field, td) {
 
 // 空行タップで新規作成してその場編集
 function createAndEdit(rowNum, field, td) {
-  const g = { id: nextId++, rowNum: String(rowNum), tableNum:'', arrive:'', leave:'', tanto:'', name:'', budget:'', note:'', help:'', arrived: false };
-  guests.push(g);
-  saveToStorage();
-  // レンダリングせず直接編集
   const input = document.createElement('input');
   input.className = 'cell-input';
   input.placeholder = field === 'tableNum' ? 'A1〜P12' : '';
@@ -1166,58 +1386,500 @@ function createAndEdit(rowNum, field, td) {
   td.appendChild(input);
   input.focus();
   function save() {
-    g[field] = input.value.trim();
+    const val = input.value.trim();
+    if (!val) { renderTables(); return; } // 空なら何もしない
+    const g = { id: nextId++, rowNum: String(rowNum), tableNum:'', arrive:'', leave:'', tanto:'', name:'', budget:'', note:'', help:'', arrived: false };
+    g[field] = val;
+    guests.push(g);
+    repackRowNums();
     saveToStorage();
     renderTables();
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') {
-      guests = guests.filter(x => x.id !== g.id);
-      saveToStorage();
-      renderTables();
-    }
+    if (e.key === 'Escape') { renderTables(); }
   });
 }
 
-// ===== RENDER VIEW =====
-function renderView() {
-  const container = document.getElementById('viewList');
-  // 退店済みは除外
-  const active = guests.filter(g => !g.left);
-  if (!active.length) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">👁</div><p>予約がありません</p></div>';
-    return;
+
+
+// ===== 卓状況 =====
+const DEFAULT_FLOORS = {
+  V: Array.from({length:9},(_,i)=>'V'+(i+1)),
+  A: Array.from({length:6},(_,i)=>'A'+(i+1)),
+  B: Array.from({length:9},(_,i)=>'B'+(i+1)),
+};
+let floorData = JSON.parse(JSON.stringify(DEFAULT_FLOORS));
+
+function loadFloorData() {
+  try {
+    const raw = localStorage.getItem('rj_floorData');
+    if (raw) floorData = JSON.parse(raw);
+  } catch(e) {}
+}
+
+function saveFloorData() {
+  try { localStorage.setItem('rj_floorData', JSON.stringify(floorData)); } catch(e) {}
+}
+
+function renderFloorStatus() {
+  const area = document.getElementById('floorStatusArea');
+  if (!area) return;
+  // 使用中の卓番を取得（初回も含む）
+  const usedTables = new Set([
+    ...guests.filter(g => g.tableNum && !g.left).map(g => g.tableNum.toUpperCase()),
+    ...(firstGroups||[]).filter(g => g.tableNum).map(g => g.tableNum.toUpperCase())
+  ]);
+
+  const floors = ['V','A','B'];
+  area.innerHTML = floors.map(f => {
+    const tables = floorData[f] || [];
+    return `
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:4px;font-weight:700;">${f}フロア</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          ${tables.map(t => {
+            const used = usedTables.has(t.toUpperCase());
+            return `<div style="font-size:11px;text-align:center;padding:3px 4px;border-radius:4px;border:1px solid ${used?'#c9a84c':'var(--border)'};background:${used?'#c9a84c':'transparent'};color:${used?'#000':'var(--text-dim)'};">${t}</div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openFloorSettings() {
+  let modal = document.getElementById('floorModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'floorModal';
+    document.body.appendChild(modal);
+  }
+  const floors = ['V','A','B'];
+  modal.innerHTML = `
+    <div class="modal" style="max-width:360px;">
+      <div class="modal-header">
+        <span>卓状況 編集</span>
+        <button onclick="document.getElementById('floorModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">1行に1卓ずつ入力（例：V1）</p>
+        <div style="display:flex;gap:10px;">
+          ${floors.map(f => `
+            <div style="flex:1;">
+              <div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:4px;">${f}フロア</div>
+              <textarea id="floorInput_${f}" style="width:100%;min-height:160px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:12px;padding:8px;outline:none;resize:none;">${(floorData[f]||[]).join('\n')}</textarea>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="resetFloorData()">デフォルトに戻す</button>
+        <button class="btn btn-primary" onclick="saveFloorFromModal()">保存</button>
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
+function saveFloorFromModal() {
+  ['V','A','B'].forEach(f => {
+    const raw = document.getElementById('floorInput_'+f).value;
+    floorData[f] = raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  });
+  saveFloorData();
+  document.getElementById('floorModal').classList.remove('show');
+  renderFloorStatus();
+}
+
+function resetFloorData() {
+  floorData = JSON.parse(JSON.stringify(DEFAULT_FLOORS));
+  saveFloorData();
+  document.getElementById('floorModal').classList.remove('show');
+  renderFloorStatus();
+  openFloorSettings();
+}
+
+// ===== 初回タブ =====
+// groups: [{id, count, tableNum, rows:[{id,seat,photo1,photo2,okuri,nominaoshi,plan}]}]
+function loadFirstData() {
+  try {
+    const raw = localStorage.getItem('rj_firstData');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      firstGroups = Array.isArray(parsed) ? parsed : [];
+      if (firstGroups.length) {
+        firstGid = firstGroups.reduce((m,g)=>Math.max(m,(g.id||0)+1),1);
+        firstGroups.forEach(g => {
+          if (Array.isArray(g.rows)) {
+            g.rows.forEach(r => { firstRid = Math.max(firstRid, (r.id||0)+1); });
+          } else {
+            g.rows = [];
+          }
+        });
+      }
+    }
+  } catch(e) { firstGroups = []; }
+}
+
+function saveFirstData() {
+  try { localStorage.setItem('rj_firstData', JSON.stringify(firstGroups)); } catch(e) {}
+}
+
+function addFirstRow() {
+  firstGroups.push({ id: firstGid++, count:'', tableNum:'', rows:[{id:firstRid++,seat:'',photo1:'',photo2:'',okuri:'',nominaoshi:'',plan:''}] });
+  saveFirstData();
+  renderFirstTab();
+}
+
+function clearFirstData() {
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">初回データを全て消去しますか？</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';firstGroups=[];firstGid=1;firstRid=1;saveFirstData();renderFirstTab();showToast('消去しました');" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">消去</button>
+    </div>
+  </div>`;
+  overlay.style.display='flex';
+}
+
+function renderFirstTab() {
+  const tbody = document.getElementById('firstTableBody');
+  if (!tbody) return;
+  if (!Array.isArray(firstGroups)) firstGroups = [];
+  const MAX_GROUPS = 20;
+  let rows = '';
+  let noCounter = 1;
+
+  // グループを描画
+  firstGroups.forEach(g => {
+    const count = parseInt(g.count) || 1;
+    const rowspan = count > 1 ? ` rowspan="${count}"` : '';
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => r.nominaoshi && r.nominaoshi.trim() !== '');
+    g.rows.forEach((r, ri) => {
+      const isDone = r.nominaoshi && r.nominaoshi.trim() !== '';
+      const doneStyle = isDone ? 'background:#d4edda;color:#555;' : '';
+      rows += `<tr id="fr-${r.id}" oncontextmenu="event.preventDefault();deleteFirstGroup(${g.id})"
+          ontouchstart="startHold2(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">`;
+      if (ri === 0) {
+        rows += `<td style="text-align:center;color:#c9a84c;font-size:12px;font-weight:700;${allDone?'background:#d4edda;':''}"${rowspan}>${noCounter}</td>`;
+        rows += `<td${rowspan} style="${allDone?'background:#d4edda;':''}">
+          <select onchange="onCountChange(${g.id},this.value)"
+            style="width:100%;background:var(--surface2);border:none;color:var(--text);font-family:var(--font-main);font-size:12px;padding:2px;outline:none;">
+            <option value="">-</option>
+            ${[1,2,3].map(n=>`<option value="${n}" ${g.count==n?'selected':''}>${n}名</option>`).join('')}
+          </select>
+        </td>`;
+        rows += `<td${rowspan} class="editable" onclick="editFirstGroup(${g.id},'tableNum',this)" style="font-weight:700;color:var(--accent);${allDone?'background:#d4edda;':''}">${g.tableNum||''}</td>`;
+      }
+      rows += `<td style="${doneStyle}">
+        <select onchange="updateFirstRow(${g.id},${r.id},'seat',this.value)"
+          style="width:100%;background:${isDone?'#d4edda':'var(--surface2)'};border:none;color:${isDone?'#555':'var(--text)'};font-family:var(--font-main);font-size:12px;padding:2px;outline:none;">
+          <option value="">-</option>
+          ${['左','中','右'].map(s=>`<option value="${s}" ${r.seat===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>`;
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo1',this)" style="${doneStyle}">${r.photo1||''}</td>`;
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo2',this)" style="${doneStyle}">${r.photo2||''}</td>`;
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'okuri',this)" style="${isDone?'background:#d4edda;color:#555;':''}">${r.okuri||''}</td>`;
+      const nomiDone = r.nominaoshi && r.nominaoshi.trim() !== '';
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'nominaoshi',this)" style="${nomiDone?'background:#d4edda;color:#000;':''}">${r.nominaoshi||''}</td>`;
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'plan',this)" style="${nomiDone?'background:#d4edda;color:#555;':''}">${r.plan||''}</td>`;
+      rows += '</tr>';
+    });
+    noCounter++;
+  });
+
+  // 空行を20まで埋める
+  const remaining = MAX_GROUPS - firstGroups.length;
+  for (let i = 0; i < remaining; i++) {
+    rows += `<tr><td style="text-align:center;color:#555;font-size:11px;">${noCounter++}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   }
 
-  const arrived = active.filter(g => g.arrived).sort((a,b) => Number(a.tableNum||99) - Number(b.tableNum||99));
-  const waiting = active.filter(g => !g.arrived && g.tableNum).sort((a,b) => Number(a.tableNum) - Number(b.tableNum));
-  const unassigned = active.filter(g => !g.arrived && !g.tableNum);
+  tbody.innerHTML = rows;
+
+  // 統計表示更新
+  const statsEl = document.getElementById('firstStats');
+  if (statsEl) {
+    const total = firstGroups.reduce((s,g) => s + (parseInt(g.count)||0), 0);
+    const current = firstGroups.reduce((s,g) => {
+      const cnt = parseInt(g.count)||0;
+      const rowCnt = (g.rows||[]).length || 1;
+      const doneRows = (g.rows||[]).filter(r => r.nominaoshi && r.nominaoshi.trim()).length;
+      return s + Math.round(cnt * (rowCnt - doneRows) / rowCnt);
+    }, 0);
+    statsEl.innerHTML = total > 0
+      ? `初回数 現在<span style="color:var(--accent);font-weight:700;">${current}名</span>／トータル<span style="font-weight:700;">${total}名</span>`
+      : '';
+  }
+}
+
+function onCountChange(gid, val) {
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  const newCount = parseInt(val) || 1;
+  g.count = val;
+  // 行数を調整
+  while (g.rows.length < newCount) g.rows.push({id:firstRid++,seat:'',photo1:'',photo2:'',okuri:'',nominaoshi:'',plan:''});
+  while (g.rows.length > newCount) g.rows.pop();
+  // 席位置を自動設定
+  const seatMap = {1:[''], 2:['左','右'], 3:['左','中','右']};
+  const seats = seatMap[newCount] || g.rows.map(()=>'');
+  g.rows.forEach((r, i) => { r.seat = seats[i] || ''; });
+  saveFirstData();
+  renderFirstTab();
+  syncFirstGroupToView(g);
+}
+
+function updateFirstRow(gid, rid, field, val) {
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  const r = g.rows.find(x => x.id === rid);
+  if (!r) return;
+  r[field] = val;
+  saveFirstData();
+  // 飲直が入ったら卓一覧に反映
+  if (field === 'nominaoshi') {
+    syncNominaoshiToTable(g, r);
+  }
+}
+
+function syncNominaoshiToTable(g, r) {
+  const key = `first_${g.id}_${r.id}`;
+  const nomi = (r.nominaoshi || '').trim();
+  // 飲直がない or「なし」の場合は卓一覧から削除
+  if (!nomi || nomi === 'なし') {
+    guests = guests.filter(x => x.firstKey !== key);
+    saveToStorage();
+    renderTables();
+    return;
+  }
+  const noteStr = ['飲直', r.plan ? r.plan.trim() : ''].filter(Boolean).join(' ');
+  const existing = guests.find(x => x.firstKey === key);
+  if (existing) {
+    existing.tableNum = g.tableNum || '';
+    existing.tanto = r.okuri || '';
+    existing.name = nomi;
+    existing.note = noteStr;
+    existing.arrived = true;
+  } else {
+    guests.push({
+      id: nextId++,
+      rowNum: '999', // 仮番号、repackRowNumsで整理
+      tableNum: g.tableNum || '',
+      tanto: r.okuri || '',
+      name: nomi,
+      note: noteStr,
+      arrive: '', leave: '', budget: '', help: '',
+      arrived: true,
+      firstKey: key
+    });
+  }
+  repackRowNums();
+  saveToStorage();
+  renderTables();
+}
+
+function editFirstGroup(gid, field, td) {
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  const current = g[field] || '';
+  const input = document.createElement('input');
+  input.className = 'cell-input';
+  input.value = current;
+  td.innerHTML = '';
+  td.appendChild(input);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  function save() {
+    g[field] = input.value.trim();
+    saveFirstData();
+    renderFirstTab();
+    // 卓番変更時は全行を再同期＋初回卓を反映
+    if (field === 'tableNum') {
+      (g.rows||[]).forEach(r => syncNominaoshiToTable(g, r));
+      syncFirstGroupToView(g);
+    }
+  }
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => { if (e.key==='Enter') input.blur(); if (e.key==='Escape') { td.textContent=current; } });
+}
+
+function editFirstRow(gid, rid, field, td) {
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  const r = g.rows.find(x => x.id === rid);
+  if (!r) return;
+  const current = r[field] || '';
+  const input = document.createElement('input');
+  input.className = 'cell-input';
+  input.value = current;
+  td.innerHTML = '';
+  td.appendChild(input);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  function save() {
+    r[field] = input.value.trim();
+    saveFirstData();
+    renderFirstTab();
+    // 飲直・送り・卓番が変更されたら卓一覧に反映
+    if (field === 'nominaoshi' || field === 'okuri' || field === 'plan') {
+      syncNominaoshiToTable(g, r);
+    }
+  }
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e => { if (e.key==='Enter') input.blur(); if (e.key==='Escape') { td.textContent=current; } });
+}
+
+function deleteFirstGroup(gid) {
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;"><div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">この組を削除しますか？</div><div style="display:flex;gap:10px;"><button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button><button onclick="document.getElementById('deleteOverlay').style.display='none';firstGroups=firstGroups.filter(x=>x.id!==${gid});saveFirstData();renderFirstTab();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button></div></div>`;
+  overlay.style.display='flex';
+}
+
+let _holdTimer2 = null;
+function startHold2(id) {
+  _holdTimer2 = setTimeout(() => { deleteFirstGroup(id); }, 600);
+}
+
+
+// ===== 初回→全体タブ同期 =====
+function syncFirstGroupToView(g) {
+  if (!g.tableNum) return;
+  // renderFloorStatusを更新
+  if (window.renderFloorStatus) window.renderFloorStatus();
+  // 全体タブが表示中なら更新
+  if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) {
+    renderView();
+  }
+}
+
+// ===== RENDER VIEW =====
+// 卓番ソート: V・P（同フロア）→A→B→その他、番号順
+function tableNumSort(a, b) {
+  const getGroup = (t) => {
+    if (!t) return 9;
+    const p = t[0].toUpperCase();
+    if (p === 'V' || p === 'P') return 0; // VとPは同グループ
+    if (p === 'A') return 1;
+    if (p === 'B') return 2;
+    return 9;
+  };
+  const numA = parseInt((a.tableNum || '').replace(/[^0-9]/g,'')) || 0;
+  const numB = parseInt((b.tableNum || '').replace(/[^0-9]/g,'')) || 0;
+  const groupA = getGroup(a.tableNum);
+  const groupB = getGroup(b.tableNum);
+  if (groupA !== groupB) return groupA - groupB;
+  return numA - numB;
+}
+
+function renderView() {
+  const container = document.getElementById('viewList');
+  const active = guests.filter(g => !g.left);
+
+  // 全卓をV→A→Bの順に並べて表示
+  const allFloorTables = [...(floorData.V||[]), ...(floorData.A||[]), ...(floorData.B||[])];
+  // 卓番→ゲストのマップ
+  const tableMap = {};
+  active.forEach(g => {
+    if (g.tableNum) tableMap[g.tableNum.toUpperCase()] = g;
+  });
 
   let html = '';
 
-  if (arrived.length) {
-    // 特記事項が1件でもあれば凡例表示
-    const hasSpecial = arrived.some(g => g.specials && g.specials.length);
-    const legendHtml = hasSpecial
-      ? SPECIALS.filter(s => arrived.some(g => g.specials && g.specials.includes(s.key)))
-          .map(s => `<span style="font-size:11px;color:var(--text-dim);">${s.icon}${s.label}</span>`).join(' ')
-      : '';
-    html += `<div class="view-section-label" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span>✅ 来店済み（${arrived.length}組）</span>
-      <button onclick="undoLeft()" style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;cursor:pointer;font-family:var(--font-main);">↩ 元に戻す</button>
-      ${legendHtml}
-    </div>`;
-    html += arrived.map(g => viewRow(g)).join('');
+  // 特記事項凡例
+  const hasSpecial = active.some(g => g.specials && g.specials.length);
+  if (hasSpecial) {
+    const legendHtml = SPECIALS.filter(s => active.some(g => g.specials && g.specials.includes(s.key)))
+      .map(s => `<span style="font-size:11px;color:var(--text-dim);">${s.icon}${s.label}</span>`).join(' ');
+    html += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">${legendHtml}</div>`;
   }
-  if (waiting.length) {
-    html += `<div class="view-section-label">🍾 来店待ち（${waiting.length}組）</div>`;
-    html += waiting.map(g => viewRow(g)).join('');
-  }
-  // 卓未定は表示しない
 
-  container.innerHTML = html;
+  // 元に戻すボタン
+  const arrivedCount = active.filter(g => g.arrived).length;
+  if (arrivedCount > 0) {
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:12px;color:var(--text-dim);">来店済み ${arrivedCount}組</span>
+      <button onclick="undoLeft()" style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;cursor:pointer;font-family:var(--font-main);">↩ 元に戻す</button>
+    </div>`;
+  }
+
+  // 卓番→ゲスト複数対応のマップ
+  const tableMapMulti = {};
+  active.forEach(g => {
+    if (g.tableNum) {
+      const key = g.tableNum.toUpperCase();
+      if (!tableMapMulti[key]) tableMapMulti[key] = [];
+      tableMapMulti[key].push({ type: 'guest', data: g });
+    }
+  });
+  // 初回グループも追加
+  (firstGroups||[]).forEach(g => {
+    if (!g.tableNum) return;
+    const key = g.tableNum.toUpperCase();
+    if (!tableMapMulti[key]) tableMapMulti[key] = [];
+    tableMapMulti[key].push({ type: 'first', data: g });
+  });
+
+  // 全卓を順番に表示（フロアごとに区切り）
+  const floors = ['V','A','B'];
+  floors.forEach(floor => {
+    const tables = floorData[floor] || [];
+    if (!tables.length) return;
+    html += `<div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.1em;padding:6px 0 4px;border-bottom:1px solid var(--accent-dim);margin-bottom:4px;margin-top:${floor==='V'?'0':'12px'};">${floor}フロア</div>`;
+    tables.forEach(t => {
+    const gs = tableMapMulti[t.toUpperCase()];
+    if (gs && gs.length) {
+      gs.forEach(item => {
+        if (item.type === 'guest') {
+          html += viewRow(item.data);
+        } else {
+          // 初回グループ
+          const g = item.data;
+          const count = parseInt(g.count) || 0;
+          const photos = (g.rows||[]).map(r => {
+            const seat = r.seat ? `<span style="color:#888;font-size:11px;">${r.seat}:</span>` : '';
+            const p = [r.photo1, r.photo2].filter(Boolean).join('/');
+            return p ? seat + `<span style="color:var(--text);">${p}</span>` : '';
+          }).filter(Boolean).join('<span style="color:#555;"> ・ </span>');
+          const displayT = (g.tableNum||'').replace(/^[Pp]/, 'V');
+          html += `<div class="view-row">
+            <div class="view-body">
+              <div class="view-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span class="view-num-inline">${displayT}卓</span>
+                <span style="color:#f0c040;font-size:13px;">初回</span>
+                <span style="font-weight:700;">${count}名</span>
+                ${photos ? `<span style="font-size:12px;">${photos}</span>` : ''}
+              </div>
+            </div>
+          </div>`;
+        }
+      });
+    } else {
+      // 空席は小さめで表示
+      html += `<div class="view-row" style="opacity:0.3;padding:3px 0;">
+        <div class="view-body">
+          <div class="view-name" style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:10px;color:var(--text-dim);min-width:32px;">${t}</span>
+            <span style="font-size:9px;color:var(--text-dim);">空席</span>
+          </div>
+        </div>
+      </div>`;
+      }
+    });
+  });
+
+  // 卓未定の来店中
+  const unassignedArrived = active.filter(g => !g.tableNum && g.arrived);
+  if (unassignedArrived.length) {
+    html += `<div class="view-section-label" style="margin-top:8px;">卓未定・来店中</div>`;
+    html += unassignedArrived.map(g => viewRow(g)).join('');
+  }
+
+  container.innerHTML = html || '<div class="empty-state"><div class="icon">👁</div><p>予約がありません</p></div>';
 }
 
 function viewRow(g) {
@@ -1227,12 +1889,15 @@ function viewRow(g) {
     return s ? `<span style="font-size:15px;" title="${s.label}">${s.icon}</span>` : '';
   }).join('');
 
+  // PをVに統一表示
+  const displayTable = g.tableNum ? g.tableNum.replace(/^[Pp]/, 'V') : null;
+
   return `
     <div class="view-row" onclick="openSpecialModal(${g.id})" style="cursor:pointer;">
       <div class="view-body">
         <div class="view-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           ${specialIcons ? `<span>${specialIcons}</span>` : ''}
-          <span class="view-num-inline">${g.tableNum ? g.tableNum+'卓' : '未定'}</span>
+          <span class="view-num-inline">${displayTable ? displayTable+'卓' : '未定'}</span>
           <span style="color:#f0c040;font-size:13px;">${g.tanto || ''}</span>
           <span style="font-weight:700;">${(g.name || '名前不明').replace('△','').trim()}様</span>
           &nbsp;
@@ -1373,9 +2038,9 @@ function confirmDelete(id) {
 }
 
 function repackRowNums() {
-  const sorted = guests
-    .filter(g => g.rowNum)
-    .sort((a,b) => Number(a.rowNum) - Number(b.rowNum));
+  // データがある行だけ詰め直す（空行は除外して削除）
+  guests = guests.filter(g => g.name || g.tanto || g.tableNum);
+  const sorted = guests.sort((a,b) => Number(a.rowNum||0) - Number(b.rowNum||0));
   sorted.forEach((g, i) => { g.rowNum = String(i + 1); });
 }
 
@@ -1394,14 +2059,6 @@ function deleteGuest(id) {
   renderTables();
   renderStaffStatus();
   showToast('削除しました');
-}
-
-// 削除後にrowNumを1から詰め直す
-function repackRowNums() {
-  const sorted = guests
-    .filter(g => g.rowNum)
-    .sort((a,b) => Number(a.rowNum) - Number(b.rowNum));
-  sorted.forEach((g, i) => { g.rowNum = String(i + 1); });
 }
 
 function clearAll() {
@@ -1430,7 +2087,15 @@ function updateTableStats() {
   // △の件数（来店済みは除外）
   const deltaCount = withData.filter(g => g.name && g.name.includes('△') && !g.arrived).length;
   const arrivedCount = withData.filter(g => g.arrived).length;
-  el.innerHTML = `<span style="font-size:14px;">現在の予定卓数 <span style="color:var(--accent);font-weight:700;">${maxRow}卓</span><span style="color:var(--text-dim);">（△<span style="color:#e74c3c;font-weight:700;">${deltaCount}</span>件含）</span></span>&nbsp;&nbsp;&nbsp;<span style="font-size:14px;">現状卓数 <span style="color:#2ecc71;font-weight:700;">${arrivedCount}卓</span></span>`;
+  // 初回人数集計
+  const allRows = firstGroups.reduce((arr, g) => arr.concat(g.rows||[]), []);
+  const firstTotal = firstGroups.reduce((sum, g) => sum + (parseInt(g.count)||0), 0);
+  const firstCurrent = firstGroups.reduce((sum, g) => {
+    return sum + (g.rows||[]).reduce((s, r) => s + (r.nominaoshi && r.nominaoshi.trim() ? 0 : (parseInt(g.count)||0) / (g.rows||[1]).length), 0);
+  }, 0);
+  const firstCurrentInt = Math.round(firstCurrent);
+
+  el.innerHTML = `<span style="font-size:14px;white-space:nowrap;">予定卓数 <span style="color:var(--accent);font-weight:700;">${maxRow}卓</span><span style="color:var(--text-dim);">（△<span style="color:#e74c3c;font-weight:700;">${deltaCount}</span>）</span>&nbsp;&nbsp;現状 <span style="color:#2ecc71;font-weight:700;">${arrivedCount}卓</span>&nbsp;&nbsp;初回 現在<span style="color:var(--accent);font-weight:700;">${firstCurrentInt}名</span>／<span style="color:var(--text-dim);font-weight:700;">${firstTotal}名</span></span>`;
 }
 
 // ===== STORAGE =====
@@ -1450,7 +2115,6 @@ function loadFromStorage() {
 }
 
 // ===== STAFF STATUS =====
-let staffList = []; // 在籍スタッフ名リスト
 
 function loadStaff() {
   try {
@@ -1478,6 +2142,15 @@ function saveStaff() {
   }
 }
 
+// 予定未定報告済みのスタッフ名を管理
+let pendingReported = new Set();
+
+function markReported(name) {
+  pendingReported.add(name);
+  renderStaffStatus();
+  showToast(name + ' の予定未定を受け付けました');
+}
+
 function renderStaffStatus() {
   const container = document.getElementById('staffStatusList');
   if (!container) return;
@@ -1489,9 +2162,12 @@ function renderStaffStatus() {
   const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
   container.innerHTML = staffList.map(name => {
     const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
+    const pending = !done && [...pendingReported].some(p => p.includes(name) || name.includes(p));
+    const color = done ? '#2ecc71' : pending ? '#3498db' : 'var(--border)';
+    const textColor = done ? '#2ecc71' : pending ? '#3498db' : 'var(--text-dim)';
     return `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px;">
-      <span style="width:8px;height:8px;border-radius:50%;background:${done ? '#2ecc71' : 'var(--border)'};flex-shrink:0;display:inline-block;"></span>
-      <span style="color:${done ? '#2ecc71' : 'var(--text-dim)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
+      <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
+      <span style="color:${textColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
     </div>`;
   }).join('');
 }
