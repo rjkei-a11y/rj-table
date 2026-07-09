@@ -861,7 +861,7 @@
       <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">卓状況</span>
       <button onclick="openFloorSettings()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:2px 8px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
     </div>
-    <div style="display:flex;gap:8px;" id="floorStatusArea">
+    <div style="display:flex;flex-direction:column;gap:10px;" id="floorStatusArea">
       <!-- V・A・Bフロア -->
     </div>
   </div>
@@ -1408,41 +1408,66 @@ function renderFloorStatus() {
   const floors = ['V','A','B'];
   area.innerHTML = floors.map(f => {
     const tables = floorData[f] || [];
+    const emptyTables = [];
+    const occupiedRows = [];
+
+    tables.forEach(t => {
+      const key = t.toUpperCase();
+      const info = infoMap[key];
+      const baanaiName = baanaiMap[key];
+      const used = !!info || !!baanaiName;
+
+      if (!used) {
+        emptyTables.push(t);
+        return;
+      }
+
+      // 表示順: 卓番 → アイコン → キャスト → お客様名 → ヘルプ指名 → 場内指名
+      const iconsHtml = (info && info.specials && info.specials.length)
+        ? info.specials.map(k => { const s = SPECIALS.find(x => x.key === k); return s ? s.icon : ''; }).join('')
+        : '';
+      let mainLine;
+      if (info && info.isFirst) {
+        mainLine = info.name;
+      } else if (info) {
+        const bits = [];
+        if (info.tanto) bits.push(`<span style="color:#000;font-weight:700;">${info.tanto}</span>`);
+        if (info.name) bits.push(`<span>${info.name}様</span>`);
+        mainLine = bits.join(' ');
+      } else {
+        mainLine = '';
+      }
+      const subBits = [];
+      if (info && info.help) subBits.push('H: ' + info.help);
+      if (baanaiName) subBits.push('場内: ' + baanaiName);
+      const subLine = subBits.join('　');
+
+      occupiedRows.push(`
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid #c9a84c;background:#c9a84c;color:#000;">
+          <div style="font-weight:900;font-size:15px;flex-shrink:0;min-width:34px;">${t}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;line-height:1.4;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+              ${iconsHtml ? `<span>${iconsHtml}</span>` : ''}${mainLine}
+            </div>
+            ${subLine ? `<div style="font-size:11px;color:#5a4a1a;line-height:1.4;margin-top:1px;">${subLine}</div>` : ''}
+          </div>
+        </div>`);
+    });
+
+    const emptyHtml = emptyTables.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;">
+          ${emptyTables.map(t => `<div style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border);color:var(--text-dim);">${t}</div>`).join('')}
+        </div>`
+      : '';
+
     return `
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:4px;font-weight:700;">${f}フロア</div>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          ${tables.map(t => {
-            const key = t.toUpperCase();
-            const info = infoMap[key];
-            const baanaiName = baanaiMap[key];
-            const used = !!info || !!baanaiName;
-            if (!used) {
-              return `<div style="display:flex;align-items:center;font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);">
-                <span style="font-weight:700;flex-shrink:0;">${t}</span>
-              </div>`;
-            }
-            // 表示順: 卓番 → アイコン → キャスト → お客様名 → ヘルプ指名 → 場内指名
-            const iconsHtml = (info && info.specials && info.specials.length)
-              ? info.specials.map(k => { const s = SPECIALS.find(x => x.key === k); return s ? s.icon : ''; }).join('')
-              : '';
-            const parts = [];
-            if (iconsHtml) parts.push(iconsHtml);
-            if (info && info.isFirst) {
-              parts.push(info.name);
-            } else if (info) {
-              if (info.tanto) parts.push(info.tanto);
-              if (info.name) parts.push(info.name + '様');
-              if (info.help) parts.push('H:' + info.help);
-            }
-            if (baanaiName) parts.push('場内:' + baanaiName);
-            const sub = parts.join(' ');
-            return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid #c9a84c;background:#c9a84c;color:#000;overflow:hidden;">
-              <span style="font-weight:700;flex-shrink:0;">${t}</span>
-              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sub}</span>
-            </div>`;
-          }).join('')}
+      <div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:5px;font-weight:700;letter-spacing:0.05em;">${f}フロア</div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          ${occupiedRows.join('')}
         </div>
+        ${occupiedRows.length && emptyTables.length ? '<div style="height:5px;"></div>' : ''}
+        ${emptyHtml}
       </div>`;
   }).join('');
 }
