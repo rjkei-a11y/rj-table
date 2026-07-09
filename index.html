@@ -2803,6 +2803,7 @@ function updateFixedTop() {
     top += baanaiEl.offsetHeight;
   }
 
+  
   // header〜baanaiBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる
   document.body.style.paddingTop = top + 'px';
   // spacerはもう使わないが、古い呼び出しが残っていても実害が無いよう0にしておく
