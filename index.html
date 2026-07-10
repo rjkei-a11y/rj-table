@@ -275,7 +275,7 @@
   .p-col-tanto{ width: 46px; }
   .p-col-guest{ width: 80px; }
   .p-col-keep { width: 44px; text-align: center; }
-  .p-col-note { width: 136px; font-size: 11px; }
+  .p-col-note { width: 136px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .table-num-input {
     width: 100%;
@@ -514,6 +514,41 @@
     outline: none;
   }
   .form-input:focus { border-color: var(--accent); }
+
+  /* 項目数の多いモーダル用のコンパクト表示 */
+  .form-row-compact { margin-bottom: 7px; }
+  .form-label-compact { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; display: block; }
+  .form-input-compact {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 13px;
+    padding: 6px 8px;
+    outline: none;
+  }
+  .form-input-compact:focus { border-color: var(--accent); }
+
+  .aiban-input {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 12px;
+    padding: 5px 7px;
+    outline: none;
+  }
+  .aiban-input:focus {
+    border-color: #3498db;
+    background: #0d1b26;
+    box-shadow: 0 0 0 1px #3498db;
+  }
   .modal-footer {
     padding: 12px 16px;
     display: flex;
@@ -632,12 +667,19 @@
   const aliasRef = ref(db, 'staffAliases');
   const baanaiRef = ref(db, 'baanai');
   const floorRef = ref(db, 'floorData');
+  const dayStatusRef = ref(db, 'staffDayStatus');
+  const monthlyLogsRef = ref(db, 'monthlyLogs');
 
   // Firebaseにゲストデータを保存
-  window.fbSave = function(guestsData) {
-    const obj = {};
-    guestsData.forEach(g => { obj['g' + g.id] = g; });
-    set(guestsRef, obj).catch(e => console.error('FB save error:', e));
+  // Firebaseにゲスト1件を保存（衝突回避：全体を上書きせず該当IDのみ書き込む）
+  window.fbSaveGuest = function(guest) {
+    if (!guest || guest.id == null) return;
+    set(ref(db, 'guests/g' + guest.id), guest).catch(e => console.error('FB save guest error:', e));
+  };
+  // Firebaseからゲスト1件を削除
+  window.fbRemoveGuest = function(id) {
+    if (id == null) return;
+    remove(ref(db, 'guests/g' + id)).catch(e => console.error('FB remove guest error:', e));
   };
 
   // Firebaseにスタッフリストを保存
@@ -646,8 +688,15 @@
   };
 
   // Firebaseに初回データを保存
-  window.fbSaveFirst = function(firstGroupsData) {
-    set(firstRef, firstGroupsData || []).catch(e => console.error('FB first save error:', e));
+  // Firebaseに初回グループ1件を保存（衝突回避：全体を上書きせず該当IDのみ書き込む）
+  window.fbSaveFirstGroup = function(group) {
+    if (!group || group.id == null) return;
+    set(ref(db, 'firstGroups/g' + group.id), group).catch(e => console.error('FB save firstGroup error:', e));
+  };
+  // Firebaseから初回グループ1件を削除
+  window.fbRemoveFirstGroup = function(id) {
+    if (id == null) return;
+    remove(ref(db, 'firstGroups/g' + id)).catch(e => console.error('FB remove firstGroup error:', e));
   };
 
   // Firebaseにリセット直前のバックアップを保存
@@ -659,6 +708,11 @@
   window.fbSaveAliases = function(aliasData) {
     set(aliasRef, aliasData || {}).catch(e => console.error('FB alias save error:', e));
   };
+  // 呼び名は1名分だけをピンポイントで更新する版（衝突回避）
+  window.fbSaveAliasesFor = function(staffName, aliasList) {
+    if (!staffName) return;
+    set(ref(db, 'staffAliases/' + staffName), aliasList || []).catch(e => console.error('FB alias save error:', e));
+  };
 
   // Firebaseに場内メモを保存
   window.fbSaveBaanai = function(text) {
@@ -668,6 +722,21 @@
   // Firebaseに卓状況（フロア構成）を保存
   window.fbSaveFloor = function(floorDataObj) {
     set(floorRef, floorDataObj || {}).catch(e => console.error('FB floor save error:', e));
+  };
+
+  // Firebaseに本日の報告状況（休み・有休・半休・予定未定）を保存
+  window.fbSaveDayStatus = function(dayStatusObj) {
+    set(dayStatusRef, dayStatusObj || {}).catch(e => console.error('FB dayStatus save error:', e));
+  };
+  // 報告状況は1名分だけをピンポイントで更新する版（衝突回避）
+  window.fbSaveDayStatusFor = function(staffName, entry) {
+    if (!staffName) return;
+    set(ref(db, 'staffDayStatus/' + staffName), entry).catch(e => console.error('FB dayStatus save error:', e));
+  };
+
+  // Firebaseに月次集計ログの1日分を保存（キーは日付文字列）
+  window.fbSaveMonthlyLog = function(dateKey, logData) {
+    set(ref(db, 'monthlyLogs/' + dateKey), logData).catch(e => console.error('FB monthlyLog save error:', e));
   };
 
   // Firebaseからゲストをリアルタイム受信
@@ -707,7 +776,8 @@
   // Firebaseから初回データをリアルタイム受信
   onValue(firstRef, (snapshot) => {
     const data = snapshot.val();
-    const list = Array.isArray(data) ? data : [];
+    // 1件ずつ 'g'+id キーで保存された形式に対応（配列としてもオブジェクトとしても受け取れるようにする）
+    const list = Array.isArray(data) ? data.filter(Boolean) : (data && typeof data === 'object' ? Object.values(data).filter(Boolean) : []);
     window._fbFirstGroups = list;
     if (typeof firstGroups !== 'undefined' && typeof renderFirstTab === 'function') {
       firstGroups = list;
@@ -772,6 +842,27 @@
       }
     }
   });
+
+  // Firebaseから本日の報告状況（休み・有休・半休・予定未定）をリアルタイム受信
+  onValue(dayStatusRef, (snapshot) => {
+    const data = snapshot.val();
+    const statusObj = (data && typeof data === 'object') ? data : {};
+    window._fbDayStatus = statusObj;
+    if (typeof staffDayStatus !== 'undefined') {
+      staffDayStatus = statusObj;
+      try { localStorage.setItem('rj_staffDayStatus', JSON.stringify(staffDayStatus)); } catch(e) {}
+      if (window.renderStaffStatus) window.renderStaffStatus();
+    }
+  });
+
+  // Firebaseから月次集計ログをリアルタイム受信（過去分含む全件）
+  onValue(monthlyLogsRef, (snapshot) => {
+    const data = snapshot.val();
+    const logs = (data && typeof data === 'object') ? data : {};
+    window._fbMonthlyLogs = logs;
+    try { localStorage.setItem('rj_monthlyLogs', JSON.stringify(logs)); } catch(e) {}
+    if (window.refreshSummaryModalIfOpen) window.refreshSummaryModalIfOpen();
+  });
 </script>
 </head>
 <body>
@@ -819,10 +910,19 @@
 
 <!-- 予定報告パネル -->
 <div class="panel active" id="panel-input">
+  <div id="identityIndicator" style="margin-bottom:10px;font-size:12px;"></div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+    <button onclick="promptQuickStatus('pending')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #3498db;background:transparent;color:#3498db;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">予定未定</button>
+    <button onclick="promptQuickStatus('off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e74c3c;background:transparent;color:#e74c3c;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">本日お休み</button>
+    <button onclick="promptQuickStatus('paid_off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e74c3c;background:transparent;color:#e74c3c;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">有休</button>
+    <button onclick="promptQuickStatus('half_off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e67e22;background:transparent;color:#e67e22;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">半休</button>
+  </div>
+
   <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;">
     <button class="btn btn-ghost btn-sm" onclick="addTemplate()" style="flex-shrink:0;">📋 追加</button>
-    <button class="btn btn-ghost btn-sm" onclick="clearTemplate()" style="flex-shrink:0;color:#c0392b;border-color:#c0392b;">🗑 削除</button>
-    <p style="font-size:12px;color:var(--text-dim);line-height:1.7;margin:0;">予定が現状未定の場合は「名前予定未定」と入力して報告ボタンを押してください。</p>
+    <button class="btn btn-ghost btn-sm" onclick="clearTemplate()" style="flex-shrink:0;color:var(--text-dim);">空欄を削除</button>
+    <p style="font-size:11px;color:var(--text-dim);line-height:1.6;margin:0;">予定卓が複数ある場合は「追加」でテンプレを複製できます。「空欄を削除」は未入力のまま残ったテンプレだけを消すので、入力済みの内容が消える心配はありません。</p>
   </div>
 
   <div style="display:flex; gap:10px; align-items:flex-start;">
@@ -861,6 +961,7 @@
       <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">卓状況</span>
       <button onclick="openFloorSettings()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:2px 8px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
     </div>
+    <div id="floorLegend" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"></div>
     <div style="display:flex;gap:8px;" id="floorStatusArea">
       <!-- V・A・Bフロア -->
     </div>
@@ -869,6 +970,9 @@
 
 <!-- 卓一覧パネル -->
 <div class="panel" id="panel-tables">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+    <button onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
+  </div>
   <div id="assignedTables"></div>
   <div class="unassigned-section" id="unassignedSection" style="display:none;">
     <div class="section-label" style="margin-top:16px;">▼ 卓未割り当て</div>
@@ -973,6 +1077,8 @@ let firstGid = 1;
 let firstRid = 1;
 let staffList = [];
 let staffAliases = {}; // { "本名": ["呼び名1","呼び名2", ...] }
+let staffDayStatus = {}; // { "本名": { status: 'pending'|'off'|'paid_off'|'half_off', reportType: 'self'|'proxy'|null, timestamp } }
+let proxyMode = false; // 内勤端末での「代理入力モード」。ページを開くたびOFFにリセットされる（意図的に永続化しない）
 
 // ===== LOGIN =====
 const PASS_ADMIN = 'rj0123';
@@ -1021,6 +1127,7 @@ function applyRole(role) {
     if (summaryBtn) summaryBtn.style.display = 'none';
   }
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
+  if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
   setTimeout(updateFixedTop, 50);
 }
 
@@ -1036,6 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.updateUndoButtonState = updateUndoButtonState;
   window.refreshAliasModalIfOpen = refreshAliasModalIfOpen;
   window.refreshFloorModalIfOpen = refreshFloorModalIfOpen;
+  window.refreshSummaryModalIfOpen = refreshSummaryModalIfOpen;
   window.renderFirstTabFromFB = function() {
     renderFirstTab();
     if (window.renderFloorStatus) window.renderFloorStatus();
@@ -1077,6 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadFloorData();
   renderTables();
   renderStaffStatus();
+  renderIdentityIndicator();
   updateFixedTop();
   setTimeout(updateFixedTop, 100);
 });
@@ -1162,6 +1271,7 @@ function parseLineText() {
         budget: get('予算'),
         help:   get('ヘルプ'),
         note:   get('備考'),
+        aiban:  get('アイバン'),
       });
     } else {
       // 自由入力形式（例：「カルマ 予定未定」）
@@ -1190,7 +1300,164 @@ function parseLineText() {
     return;
   }
 
-  importTextParsed(parsed);
+  showReportPreview(parsed);
+}
+
+// ===== 報告内容の確認ポップアップ =====
+let _reportPreviewData = [];
+
+function showReportPreview(parsed) {
+  const previous = _reportPreviewData || [];
+  _reportPreviewData = parsed.map(p => {
+    const copy = { ...p };
+    // 「戻って修正」→再度「報告する」で戻ってきた時、同じ担当名+お客様名ならアイバン入力を引き継ぐ
+    if (!copy.aiban) {
+      const match = previous.find(prev => prev.tanto === copy.tanto && prev.name === copy.name && prev.aiban);
+      if (match) {
+        copy.aiban = match.aiban;
+        copy._aibanTanto = match._aibanTanto;
+        copy._aibanName = match._aibanName;
+      }
+    }
+    return copy;
+  });
+  _aibanFormOpen = {};
+  renderReportPreviewModal();
+}
+
+function renderReportPreviewModal() {
+  let modal = document.getElementById('reportPreviewModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'reportPreviewModal';
+    document.body.appendChild(modal);
+  }
+
+  const fields = [
+    ['tanto', '担当'], ['name', 'お客様名'], ['arrive', '来店時間'], ['leave', '退店時間'],
+    ['budget', '予算'], ['help', 'ヘルプ'], ['note', '備考']
+  ];
+
+  const cards = _reportPreviewData.map((p, i) => {
+    const fieldsHtml = fields.map(([key, label]) => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <div style="width:56px;flex-shrink:0;font-size:11px;color:var(--text-dim);">${label}</div>
+          <input value="${(p[key] || '').replace(/"/g,'&quot;')}" oninput="updateReportPreviewField(${i},'${key}',this.value)"
+            style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:5px 7px;outline:none;">
+        </div>`);
+    // お客様名の直下にアイバン専用UIを挿入（設定済みならチップ表示、未設定ならボタン→簡易フォーム）
+    const aibanBlock = renderAibanBlock(p, i);
+    fieldsHtml.splice(2, 0, aibanBlock);
+
+    return `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;">
+      <div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:8px;">報告 ${i + 1}件目</div>
+      ${fieldsHtml.join('')}
+      <button onclick="removeReportPreviewRow(${i})" style="margin-top:4px;background:none;border:1px solid #c0392b;border-radius:4px;color:#c0392b;font-size:11px;padding:3px 10px;cursor:pointer;font-family:var(--font-main);">この報告を削除</button>
+    </div>`;
+  }).join('');
+
+  modal.innerHTML = `
+    <div class="modal" style="max-width:420px;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>この内容で報告しますか？</span>
+        <button onclick="document.getElementById('reportPreviewModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        ${cards || '<p style="color:var(--text-dim);text-align:center;">報告内容がありません</p>'}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('reportPreviewModal').classList.remove('show')">戻って修正</button>
+        <button class="btn btn-primary" onclick="confirmReportPreview()">この内容で報告する</button>
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
+// アイバン欄のミニUIを組み立てる（未設定→追加ボタン／入力中→2項目フォーム／設定済み→チップ表示）
+let _aibanFormOpen = {};
+function renderAibanBlock(p, i) {
+  const hasValue = p.aiban && p.aiban.trim();
+  if (hasValue && !_aibanFormOpen[i]) {
+    return `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <div style="width:56px;flex-shrink:0;"></div>
+          <span style="display:inline-flex;align-items:center;gap:5px;background:#1a3a52;border:1px solid #3498db;border-radius:12px;padding:3px 6px 3px 10px;font-size:12px;color:#5dade2;max-width:100%;overflow:hidden;">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔗 ${p.aiban}</span>
+            <button onclick="toggleAibanForm(${i})" style="background:none;border:none;color:#5dade2;font-size:12px;cursor:pointer;padding:0 4px;flex-shrink:0;">編集</button>
+            <button onclick="clearAibanField(${i})" style="background:none;border:none;color:#e74c3c;font-size:12px;cursor:pointer;padding:0 4px 0 0;flex-shrink:0;">削除</button>
+          </span>
+        </div>`;
+  }
+  if (_aibanFormOpen[i]) {
+    return `
+        <div style="margin-bottom:6px;background:var(--surface);border:1px solid #3498db;border-radius:6px;padding:8px;box-sizing:border-box;">
+          <div style="font-size:10px;color:#5dade2;margin-bottom:5px;">🔗 アイバン予定の相手</div>
+          <div style="display:flex;gap:6px;margin-bottom:5px;">
+            <input class="aiban-input" placeholder="担当名" value="${(p._aibanTanto||'').replace(/"/g,'&quot;')}" oninput="updateAibanField(${i},'tanto',this.value)">
+            <input class="aiban-input" placeholder="お客様名" value="${(p._aibanName||'').replace(/"/g,'&quot;')}" oninput="updateAibanField(${i},'name',this.value)">
+          </div>
+          <button onclick="toggleAibanForm(${i})" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:3px 10px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
+        </div>`;
+  }
+  return `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <div style="width:56px;flex-shrink:0;"></div>
+          <button onclick="toggleAibanForm(${i})" style="background:none;border:1px dashed var(--border);border-radius:12px;color:var(--text-dim);font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">🔗 アイバン予定を追加</button>
+        </div>`;
+}
+
+function toggleAibanForm(i) {
+  _aibanFormOpen[i] = !_aibanFormOpen[i];
+  renderReportPreviewModal();
+}
+
+function updateAibanField(index, part, value) {
+  const p = _reportPreviewData[index];
+  if (!p) return;
+  if (part === 'tanto') p._aibanTanto = value;
+  if (part === 'name') p._aibanName = value;
+  p.aiban = [p._aibanTanto, p._aibanName].filter(Boolean).join(' ');
+}
+
+function clearAibanField(index) {
+  const p = _reportPreviewData[index];
+  if (!p) return;
+  p.aiban = '';
+  p._aibanTanto = '';
+  p._aibanName = '';
+  _aibanFormOpen[index] = false;
+  renderReportPreviewModal();
+}
+
+function updateReportPreviewField(index, key, value) {
+  if (!_reportPreviewData[index]) return;
+  _reportPreviewData[index][key] = value;
+}
+
+function removeReportPreviewRow(index) {
+  _reportPreviewData.splice(index, 1);
+  if (!_reportPreviewData.length) {
+    document.getElementById('reportPreviewModal').classList.remove('show');
+    showToast('報告内容がなくなりました');
+    return;
+  }
+  renderReportPreviewModal();
+}
+
+function confirmReportPreview() {
+  document.getElementById('reportPreviewModal').classList.remove('show');
+  // アイバン入力フォーム用の一時フィールドはゲストデータに持ち込まない
+  const cleaned = _reportPreviewData.map(p => {
+    const copy = { ...p };
+    delete copy._aibanTanto;
+    delete copy._aibanName;
+    return copy;
+  });
+  importTextParsed(cleaned);
+  _reportPreviewData = [];
+  _aibanFormOpen = {};
 }
 
 function importTextParsed(parsed) {
@@ -1210,7 +1477,7 @@ function importTextParsed(parsed) {
     if (isDuplicate) { skipped++; return; }
     while (usedRows.has(rc)) rc++;
     usedRows.add(rc);
-    guests.push({ id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false });
+    guests.push({ id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType() });
   });
   document.getElementById('previewArea').innerHTML = '';
   document.getElementById('lineTextInput').value = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
@@ -1233,9 +1500,11 @@ function renderTables() {
   repackRowNums();
   const afterRepack = JSON.stringify(guests.map(g => g.rowNum));
   if (beforeRepack !== afterRepack) {
-    // 詰め直しで変化があった場合のみ保存し直し、他端末にも修復結果を反映する
+    // 詰め直しで変化があった場合のみ保存し直し、他端末にも修復結果を反映する（1件ずつ書き込み）
     try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
-    if (window.fbSave) window.fbSave(guests);
+    if (window.fbSaveGuest) {
+      guests.forEach(g => window.fbSaveGuest(g));
+    }
   }
 
   // No.ごとにゲストをマップ（rowNum = 行番号）
@@ -1279,10 +1548,142 @@ function renderTables() {
   updateTableStats();
 }
 
+// アイバン文字列（「担当名 お客様名」形式）を、担当名部分とお客様名部分に分解する
+// 編集モーダルなどで2列入力欄に事前入力するために使う
+function splitAibanText(text) {
+  if (!text || !text.trim()) return { tanto: '', name: '' };
+  const trimmed = text.trim();
+  const aliasIndex = buildAliasIndex();
+  const normText = toHiragana(trimmed);
+  const staffMatch = aliasIndex.find(entry => normText.startsWith(entry.norm));
+  if (staffMatch) {
+    return { tanto: staffMatch.name, name: trimmed.slice(staffMatch.text.length).trim() };
+  }
+  return { tanto: '', name: trimmed };
+}
+
+// アイバン欄（「担当名　お客様名」形式）から、対応する相手のゲストを探す
+// 表記は担当名の呼び名マッチ＋お客様名の部分一致で判定する（完全一致は求めない）
+function findAibanPartner(g) {
+  if (!g.aiban) return null;
+  const text = g.aiban.trim();
+  if (!text) return null;
+  const aliasIndex = buildAliasIndex();
+  const normText = toHiragana(text);
+  // 担当名らしき部分を先頭から検出
+  const staffMatch = aliasIndex.find(entry => normText.startsWith(entry.norm));
+  const nameHint = staffMatch ? text.slice(staffMatch.text.length).trim() : text;
+  return guests.find(other => {
+    if (other.id === g.id || other.left) return false;
+    const nameOk = nameHint && other.name && toHiragana(other.name).includes(toHiragana(nameHint).replace(/[△\s]/g,''));
+    const tantoOk = !staffMatch || (other.tanto && toHiragana(other.tanto).includes(staffMatch.norm));
+    return nameOk && tantoOk;
+  }) || null;
+}
+
+// そのゲストがアイバンで誰かと紐づいているかを判定する（自分が設定側／相手として参照される側の両方に対応）
+// アイバンで繋がっているグループごとに色を割り当てる（複数組のアイバンが同時にあっても見分けられるように）
+const AIBAN_PALETTE = ['#3498db', '#9b59b6', '#e67e22', '#1abc9c', '#e91e63', '#2ecc71', '#f39c12', '#95a5a6'];
+function computeAibanColorMap() {
+  const active = guests.filter(g => !g.left);
+  const parent = {};
+  function find(x) {
+    if (!(x in parent)) parent[x] = x;
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  }
+  function union(a, b) {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  }
+  active.forEach(g => {
+    if (g.aiban && g.aiban.trim()) {
+      const partner = findAibanPartner(g);
+      if (partner) { find(g.id); find(partner.id); union(g.id, partner.id); }
+    }
+  });
+  const groupsMap = {};
+  Object.keys(parent).forEach(idStr => {
+    const id = Number(idStr);
+    const root = find(id);
+    if (!groupsMap[root]) groupsMap[root] = [];
+    groupsMap[root].push(id);
+  });
+  // グループ内最小idの昇順で色を安定的に割り当てる
+  const groupList = Object.values(groupsMap).sort((a,b) => Math.min(...a) - Math.min(...b));
+  const colorMap = {};
+  groupList.forEach((ids, idx) => {
+    const color = AIBAN_PALETTE[idx % AIBAN_PALETTE.length];
+    ids.forEach(id => { colorMap[id] = color; });
+  });
+  return colorMap;
+}
+
+function getAibanLinkInfo(g) {
+  const colorMap = computeAibanColorMap();
+  const color = colorMap[g.id] || '#3498db';
+  if (g.aiban && g.aiban.trim()) {
+    const partner = findAibanPartner(g);
+    const label = partner
+      ? `アイバン: ${partner.tanto||''} ${(partner.name||'').replace('△','').trim()}様`
+      : `アイバン: ${g.aiban}`;
+    return { linked: true, label, color, partnerId: partner ? partner.id : null };
+  }
+  const referrer = guests.find(other => {
+    if (other.id === g.id || other.left || !other.aiban) return false;
+    const partner = findAibanPartner(other);
+    return partner && partner.id === g.id;
+  });
+  if (referrer) {
+    return { linked: true, label: `アイバン: ${referrer.tanto||''} ${(referrer.name||'').replace('△','').trim()}様と`, color, partnerId: referrer.id };
+  }
+  return { linked: false, label: '', color: null, partnerId: null };
+}
+
+// アイバンの詳細をポップアップで表示（自分とペア相手、双方の卓番などを確認できる）
+function openAibanDetailModal(id) {
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
+  const info = getAibanLinkInfo(g);
+  const partner = info.partnerId ? guests.find(x => x.id === info.partnerId) : null;
+  let modal = document.getElementById('aibanDetailModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'aibanDetailModal';
+    document.body.appendChild(modal);
+  }
+  const rowHtml = (label, g2) => g2 ? `
+    <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">${label}</div>
+      <div style="font-size:14px;color:var(--text);">
+        <span style="color:var(--accent);font-weight:700;">${g2.tableNum ? g2.tableNum+'卓 ' : ''}</span>
+        <span style="color:#f0c040;">${g2.tanto||''}</span>
+        <span style="font-weight:700;">${(g2.name||'').replace('△','').trim()}様</span>
+      </div>
+    </div>` : '';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:340px;">
+      <div class="modal-header">
+        <span>🔗 アイバン</span>
+        <button onclick="document.getElementById('aibanDetailModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        ${rowHtml('この予約', g)}
+        ${partner ? rowHtml('アイバン相手', partner) : `<div style="padding:10px 0;color:var(--text-dim);font-size:13px;">相手の予約が見つかりませんでした（入力: ${g.aiban || ''}）</div>`}
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
 function rowHTML(no, g) {
   const bottleState = g.bottle || 0;
   const bottleIcon = bottleState === 0 ? '' : bottleState === 1 ? '○' : '◉';
   const bottleColor = bottleState === 2 ? '#2ecc71' : '#c9a84c';
+  const aibanInfo = getAibanLinkInfo(g);
+  const aibanIcon = aibanInfo.linked
+    ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="color:${aibanInfo.color};margin-right:2px;cursor:pointer;">🔗</span>`
+    : '';
   return `
     <tr class="${g.arrived ? 'arrived' : ''}" id="card-${g.id}"
         oncontextmenu="event.preventDefault();confirmDelete(${g.id})"
@@ -1291,7 +1692,7 @@ function rowHTML(no, g) {
       <td class="p-col-num editable" onclick="editCell(${g.id},'tableNum',this)">${g.tableNum||''}</td>
       <td class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)">${g.arrive||''}</td>
       <td class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)">${g.tanto||''}</td>
-      <td class="p-col-guest editable" onclick="editCell(${g.id},'name',this)">${g.name||''}</td>
+      <td class="p-col-guest editable" onclick="editCell(${g.id},'name',this)">${aibanIcon}${g.name||''}</td>
       <td class="p-col-keep" onclick="toggleBottle(${g.id})" style="cursor:pointer;text-align:center;font-size:16px;color:${bottleColor};user-select:none;">${bottleIcon}</td>
       <td class="p-col-note editable" onclick="editCell(${g.id},'note',this)">${g.note||''}</td>
     </tr>`;
@@ -1397,6 +1798,7 @@ function renderFloorStatus() {
         tanto: g.tanto || '',
         name: (g.name || '').replace('△','').trim(),
         help: g.help || '',
+        leave: g.leave || '',
         specials: g.specials || [],
         isFirst: false
       };
@@ -1414,6 +1816,21 @@ function renderFloorStatus() {
   let baanaiText = '';
   try { baanaiText = localStorage.getItem('rj_baanai') || ''; } catch(e) {}
   const baanaiMap = parseBaanaiAssignments(baanaiText);
+
+  // 特記事項アイコンの凡例（表示中の卓に1つでも使われていれば表示）
+  const legendEl = document.getElementById('floorLegend');
+  if (legendEl) {
+    const usedKeys = new Set();
+    Object.values(infoMap).forEach(info => (info.specials || []).forEach(k => usedKeys.add(k)));
+    if (usedKeys.size) {
+      legendEl.innerHTML = SPECIALS.filter(s => usedKeys.has(s.key))
+        .map(s => `<span style="font-size:10px;color:var(--text-dim);">${s.icon}${s.label}</span>`).join('');
+      legendEl.style.display = 'flex';
+    } else {
+      legendEl.style.display = 'none';
+      legendEl.innerHTML = '';
+    }
+  }
 
   const floors = ['V','A','B'];
   area.innerHTML = floors.map(f => {
@@ -1436,24 +1853,25 @@ function renderFloorStatus() {
             const iconsHtml = (info && info.specials && info.specials.length)
               ? info.specials.map(k => { const s = SPECIALS.find(x => x.key === k); return s ? s.icon : ''; }).join('')
               : '';
-            let line1, line2;
+            let line1, line2, line3;
             if (info && info.isFirst) {
               line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}`;
               line2 = `<span style="color:#000;">${info.name}</span>`;
+              line3 = baanaiName ? `<span style="color:#5a4a1a;">場内: ${baanaiName}</span>` : '';
             } else {
               const tanto = (info && info.tanto) || '';
-              line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}`;
+              const leaveHtml = (info && info.leave) ? ` <span style="color:#8b2f2f;font-weight:700;">⏰${info.leave}</span>` : '';
+              line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
               const subBits = [];
               if (info && info.name) subBits.push(`<span style="color:#000;">${info.name}様</span>`);
-              const dimBits = [];
-              if (info && info.help) dimBits.push('H:' + info.help);
-              if (baanaiName) dimBits.push('場内:' + baanaiName);
-              if (dimBits.length) subBits.push(`<span style="color:#5a4a1a;">${dimBits.join(' ')}</span>`);
+              if (info && info.help) subBits.push(`<span style="color:#5a4a1a;">H: ${info.help}</span>`);
               line2 = subBits.join(' ');
+              line3 = baanaiName ? `<span style="color:#5a4a1a;">場内: ${baanaiName}</span>` : '';
             }
             return `<div onclick="openTableDetailModal('${key}')" style="cursor:pointer;padding:3px 5px;border-radius:4px;border:1px solid #c9a84c;background:#c9a84c;color:#000;overflow:hidden;">
               <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
               <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
+              ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
             </div>`;
           }).join('')}
         </div>
@@ -1494,6 +1912,7 @@ function openTableDetailModal(tableKey) {
       ['予算', guest.budget],
       ['ヘルプ', guest.help],
       ['備考', guest.note],
+      ['アイバン', guest.aiban],
       ['場内指名', baanaiName],
     ].filter(([,v]) => v);
     bodyHtml = `
@@ -1623,7 +2042,16 @@ function loadFirstData() {
 
 function saveFirstData() {
   try { localStorage.setItem('rj_firstData', JSON.stringify(firstGroups)); } catch(e) {}
-  if (window.fbSaveFirst) window.fbSaveFirst(firstGroups);
+  // Firebase: 各初回グループを個別のパスに書き込む（全体を丸ごと上書きしないので、他端末の変更と衝突しにくい）
+  if (window.fbSaveFirstGroup) {
+    firstGroups.forEach(g => window.fbSaveFirstGroup(g));
+  }
+  if (window.fbRemoveFirstGroup && window._fbFirstGroups) {
+    const currentIds = new Set(firstGroups.map(g => g.id));
+    window._fbFirstGroups.forEach(g => {
+      if (g && g.id != null && !currentIds.has(g.id)) window.fbRemoveFirstGroup(g.id);
+    });
+  }
 }
 
 function addFirstRow() {
@@ -1871,7 +2299,8 @@ function parseBaanaiAssignments(text) {
   ].map(t => t.toUpperCase()));
   const tokens = text.split(/[\s,、,\/]+/).map(s => s.trim()).filter(Boolean);
   tokens.forEach(token => {
-    const match = aliasIndex.find(entry => token.startsWith(entry.text));
+    const normToken = toHiragana(token);
+    const match = aliasIndex.find(entry => normToken.startsWith(entry.norm));
     if (!match) return;
     const remainder = token.slice(match.text.length).toUpperCase().replace(/^P/, 'V');
     if (allTables.has(remainder)) {
@@ -2000,10 +2429,6 @@ function renderView() {
     tables.forEach(t => {
     const gs = tableMapMulti[t.toUpperCase()];
     if (gs && gs.length) {
-      // 同一卓番に複数いる場合は警告表示
-      if (gs.length > 1) {
-        html += `<div style="font-size:11px;color:#e74c3c;padding:2px 0 2px 4px;">⚠ ${t}卓 ${gs.length}組被り</div>`;
-      }
       gs.forEach(item => {
         if (item.type === 'guest') {
           html += viewRow(item.data);
@@ -2059,6 +2484,10 @@ function viewRow(g) {
     const s = SPECIALS.find(x => x.key === k);
     return s ? `<span style="font-size:15px;" title="${s.label}">${s.icon}</span>` : '';
   }).join('');
+  const aibanInfo = getAibanLinkInfo(g);
+  const aibanIcon = aibanInfo.linked
+    ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="font-size:14px;color:${aibanInfo.color};cursor:pointer;">🔗</span>`
+    : '';
 
   // PをVに統一表示
   const displayTable = g.tableNum ? g.tableNum.replace(/^[Pp]/, 'V') : null;
@@ -2068,6 +2497,7 @@ function viewRow(g) {
       <div class="view-body">
         <div class="view-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           ${specialIcons ? `<span>${specialIcons}</span>` : ''}
+          ${aibanIcon}
           <span class="view-num-inline">${displayTable ? displayTable+'卓' : '未定'}</span>
           <span style="color:#f0c040;font-size:13px;">${g.tanto || ''}</span>
           <span style="font-weight:700;">${(g.name || '名前不明').replace('△','').trim()}様</span>
@@ -2076,12 +2506,41 @@ function viewRow(g) {
             style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">
             退店
           </button>
-          ${g.leave ? `<span style="font-size:11px;color:var(--text-dim);">${g.leave}</span>` : ''}
+          ${g.leave ? `<span style="font-size:12px;color:#e57373;font-weight:700;">⏰${g.leave}</span>` : ''}
           ${g.budget ? `<span style="font-size:11px;color:var(--text-dim);">${g.budget}</span>` : ''}
         </div>
-        ${noteStr ? `<div class="view-meta" style="color:#e74c3c;">${noteStr}</div>` : ''}
+        ${noteStr ? `<div class="view-meta" style="color:#e74c3c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="event.stopPropagation();openNoteDetailModal(${g.id})">${noteStr}</div>` : ''}
       </div>
     </div>`;
+}
+
+// ヘルプ・備考の全文をポップアップで表示
+function openNoteDetailModal(id) {
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
+  let modal = document.getElementById('noteDetailModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'noteDetailModal';
+    document.body.appendChild(modal);
+  }
+  const rows = [['ヘルプ', g.help], ['備考', g.note], ['アイバン', g.aiban]].filter(([,v]) => v);
+  modal.innerHTML = `
+    <div class="modal" style="max-width:340px;">
+      <div class="modal-header">
+        <span>${(g.name || '名前不明').replace('△','').trim()}様</span>
+        <button onclick="document.getElementById('noteDetailModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        ${rows.map(([label, val]) => `
+          <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">${label}</div>
+            <div style="font-size:14px;color:var(--text);line-height:1.6;">${val}</div>
+          </div>`).join('') || '<p style="color:var(--text-dim);text-align:center;">内容がありません</p>'}
+      </div>
+    </div>`;
+  modal.classList.add('show');
 }
 
 
@@ -2232,6 +2691,7 @@ function deleteGuest(id) {
   saveToStorage();
   renderTables();
   renderStaffStatus();
+  renderFloorStatus();
   showToast('削除しました');
 }
 
@@ -2274,7 +2734,17 @@ function saveToStorage() {
   guests = guests.filter(g => g.name || g.tanto || g.tableNum);
   repackRowNums();
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
-  if (window.fbSave) window.fbSave(guests);
+  // Firebase: 各ゲストを個別のパスに書き込む（全体を丸ごと上書きしないので、他端末の変更と衝突しにくい）
+  if (window.fbSaveGuest) {
+    guests.forEach(g => window.fbSaveGuest(g));
+  }
+  // 直近でFirebaseから受信していた一覧と比較し、ローカルから消えたものだけを個別に削除する
+  if (window.fbRemoveGuest && window._fbGuests) {
+    const currentIds = new Set(guests.map(g => g.id));
+    window._fbGuests.forEach(g => {
+      if (g && g.id != null && !currentIds.has(g.id)) window.fbRemoveGuest(g.id);
+    });
+  }
 }
 function loadFromStorage() {
   try {
@@ -2297,6 +2767,10 @@ function loadStaff() {
     const rawAlias = localStorage.getItem('rj_staffAliases');
     if (rawAlias) staffAliases = JSON.parse(rawAlias);
   } catch(e) {}
+  try {
+    const rawDayStatus = localStorage.getItem('rj_staffDayStatus');
+    if (rawDayStatus) staffDayStatus = JSON.parse(rawDayStatus);
+  } catch(e) {}
   // Firebaseスタッフ受信時に更新
   window._fbStaffReady = function() {
     if (window._fbStaff) {
@@ -2305,6 +2779,86 @@ function loadStaff() {
       renderStaffStatus();
     }
   };
+}
+
+function saveDayStatus(staffName) {
+  try { localStorage.setItem('rj_staffDayStatus', JSON.stringify(staffDayStatus)); } catch(e) {}
+  // 特定の1名分だけの変更ならピンポイントで書き込み、それ以外（全消去・復元など）は全体を保存する
+  if (staffName && window.fbSaveDayStatusFor) {
+    window.fbSaveDayStatusFor(staffName, staffDayStatus[staffName] || null);
+  } else if (window.fbSaveDayStatus) {
+    window.fbSaveDayStatus(staffDayStatus);
+  }
+}
+
+// ===== 端末アイデンティティ（本人/代理の判定基盤） =====
+// キャスト用ログイン端末：一度選んだ「あなたは誰か」を端末に記憶し、以後は自動で本人扱いにする
+// 内勤ログイン端末：常に代理入力候補。「代理入力モード」トグルで代理/無印を切り替える（起動毎にOFFへリセット）
+function getMyIdentity() {
+  try { return localStorage.getItem('rj_myIdentity') || ''; } catch(e) { return ''; }
+}
+function setMyIdentity(name) {
+  try { localStorage.setItem('rj_myIdentity', name); } catch(e) {}
+}
+
+// 今の入力が「本人」か「代理」かを判定する
+// host端末: 常に self / admin端末: 代理モードONならproxy、OFFならnull（集計対象外・テスト運用時のノイズを避ける）
+function getCurrentReportType() {
+  const role = localStorage.getItem('rj_role');
+  if (role === 'host') return 'self';
+  if (role === 'admin') return proxyMode ? 'proxy' : null;
+  return null;
+}
+
+function promptIdentityModal(onDone) {
+  let modal = document.getElementById('identityModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'identityModal';
+    document.body.appendChild(modal);
+  }
+  const options = staffList.map(name => `
+    <button onclick="setMyIdentity('${name.replace(/'/g,"\\'")}');document.getElementById('identityModal').classList.remove('show');renderIdentityIndicator();${onDone ? 'window._identityCallback && window._identityCallback();' : ''}"
+      style="display:block;width:100%;text-align:left;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;margin-bottom:6px;cursor:pointer;">${name}</button>
+  `).join('');
+  window._identityCallback = onDone || null;
+  modal.innerHTML = `
+    <div class="modal" style="max-width:320px;max-height:70vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>あなたは誰ですか？</span>
+        <button onclick="document.getElementById('identityModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;">
+        ${options || '<p style="color:var(--text-dim);text-align:center;">スタッフが未登録です</p>'}
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
+// キャスト用端末の予定報告タブに「あなた: 〇〇（変更）」を表示。内勤端末には代理入力モードのトグルを表示
+function renderIdentityIndicator() {
+  const el = document.getElementById('identityIndicator');
+  if (!el) return;
+  const role = localStorage.getItem('rj_role');
+  if (role === 'host') {
+    const me = getMyIdentity();
+    el.innerHTML = me
+      ? `<span style="color:var(--text-dim);">あなた: </span><span style="color:var(--accent);font-weight:700;">${me}</span> <button onclick="promptIdentityModal()" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;cursor:pointer;">変更</button>`
+      : `<button onclick="promptIdentityModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">あなたの名前を選択</button>`;
+  } else if (role === 'admin') {
+    el.innerHTML = `
+      <span style="color:var(--text-dim);">代理入力モード</span>
+      <button onclick="toggleProxyMode()" style="background:${proxyMode ? '#c0392b' : 'var(--surface2)'};border:1px solid ${proxyMode ? '#c0392b' : 'var(--border)'};border-radius:12px;color:${proxyMode ? '#fff' : 'var(--text-dim)'};font-size:11px;padding:3px 12px;cursor:pointer;font-family:var(--font-main);font-weight:700;">${proxyMode ? 'ON' : 'OFF'}</button>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function toggleProxyMode() {
+  proxyMode = !proxyMode;
+  renderIdentityIndicator();
+  showToast(proxyMode ? '代理入力モードをONにしました' : '代理入力モードをOFFにしました');
 }
 
 function saveStaff() {
@@ -2318,9 +2872,14 @@ function saveStaff() {
   }
 }
 
-function saveAliases() {
+function saveAliases(staffName) {
   try { localStorage.setItem('rj_staffAliases', JSON.stringify(staffAliases)); } catch(e) {}
-  if (window.fbSaveAliases) window.fbSaveAliases(staffAliases);
+  // 特定の1名分だけの変更ならピンポイントで書き込み、それ以外は全体を保存する
+  if (staffName && window.fbSaveAliasesFor) {
+    window.fbSaveAliasesFor(staffName, staffAliases[staffName] || []);
+  } else if (window.fbSaveAliases) {
+    window.fbSaveAliases(staffAliases);
+  }
 }
 
 // ===== 呼び名（エイリアス）編集 =====
@@ -2379,7 +2938,7 @@ function addAlias() {
   if (!staffAliases[_currentAliasStaff]) staffAliases[_currentAliasStaff] = [];
   if (!staffAliases[_currentAliasStaff].includes(val)) {
     staffAliases[_currentAliasStaff].push(val);
-    saveAliases();
+    saveAliases(_currentAliasStaff);
   }
   input.value = '';
   renderAliasModalContent();
@@ -2390,7 +2949,7 @@ function addAlias() {
 function removeAlias(alias) {
   if (!_currentAliasStaff || !staffAliases[_currentAliasStaff]) return;
   staffAliases[_currentAliasStaff] = staffAliases[_currentAliasStaff].filter(a => a !== alias);
-  saveAliases();
+  saveAliases(_currentAliasStaff);
   renderAliasModalContent();
 }
 
@@ -2408,13 +2967,58 @@ function refreshAliasModalIfOpen() {
   }
 }
 
-// 予定未定報告済みのスタッフ名を管理
-let pendingReported = new Set();
-
-function markReported(name) {
-  pendingReported.add(name);
+// 予定未定・お休み・有休・半休のステータスを設定する統一関数
+// status: 'pending' | 'off' | 'paid_off' | 'half_off'
+function setStaffDayStatus(name, status) {
+  const reportType = getCurrentReportType();
+  staffDayStatus[name] = { status, reportType, timestamp: Date.now() };
+  saveDayStatus(name);
   renderStaffStatus();
-  showToast(name + ' の予定未定を受け付けました');
+  const labels = { pending: '予定未定', off: 'お休み', paid_off: '有休', half_off: '半休' };
+  showToast(`${name} を「${labels[status] || status}」として記録しました`);
+}
+
+// 後方互換：テキスト報告で「予定未定」が検出された時に呼ばれる
+function markReported(name) {
+  setStaffDayStatus(name, 'pending');
+}
+
+// 内勤端末でのクイックボタン用：対象キャストを選んでからステータスを適用する
+function promptQuickStatus(status) {
+  const role = localStorage.getItem('rj_role');
+  if (role === 'host') {
+    const me = getMyIdentity();
+    if (!me) {
+      promptIdentityModal(() => setStaffDayStatus(getMyIdentity(), status));
+      return;
+    }
+    setStaffDayStatus(me, status);
+    return;
+  }
+  // 内勤：対象キャストを選ぶ簡易ピッカー
+  let modal = document.getElementById('quickStatusModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'quickStatusModal';
+    document.body.appendChild(modal);
+  }
+  const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休' };
+  const options = staffList.map(name => `
+    <button onclick="document.getElementById('quickStatusModal').classList.remove('show');setStaffDayStatus('${name.replace(/'/g,"\\'")}','${status}')"
+      style="display:block;width:100%;text-align:left;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;margin-bottom:6px;cursor:pointer;">${name}</button>
+  `).join('');
+  modal.innerHTML = `
+    <div class="modal" style="max-width:320px;max-height:70vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>「${labels[status]}」にする対象は？</span>
+        <button onclick="document.getElementById('quickStatusModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;">
+        ${options || '<p style="color:var(--text-dim);text-align:center;">スタッフが未登録です</p>'}
+      </div>
+    </div>`;
+  modal.classList.add('show');
 }
 
 // ===== 本日分リセット（予定報告タブ） =====
@@ -2443,6 +3047,7 @@ function doResetReports() {
   const backup = {
     guests: JSON.parse(JSON.stringify(guests)),
     firstGroups: JSON.parse(JSON.stringify(firstGroups)),
+    staffDayStatus: JSON.parse(JSON.stringify(staffDayStatus)),
     baanai: currentBaanai,
     timestamp: Date.now()
   };
@@ -2450,11 +3055,15 @@ function doResetReports() {
   if (window.fbSaveBackup) window.fbSaveBackup(backup);
   window._fbBackup = backup;
 
+  // ===== 月次集計ログに本日分を保存（リセットで消える前に数値だけ残す） =====
+  saveTodayToMonthlyLog();
+
   // 卓データ
   guests = [];
   saveToStorage();
-  // 報告状況（予定未定の青ドット）
-  pendingReported = new Set();
+  // 報告状況（予定未定・休み・有休・半休）
+  staffDayStatus = {};
+  saveDayStatus();
   // 初回データ
   firstGroups = [];
   firstGid = 1;
@@ -2473,6 +3082,28 @@ function doResetReports() {
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   updateUndoButtonState();
   showToast('本日分をリセットしました（復元ボタンから元に戻せます）');
+}
+
+// 今日の日付キー（YYYY-MM-DD、ローカル時刻基準）
+function getTodayKey() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// 本日の集計結果を月次ログとして保存する（リセット直前に呼ばれる）
+function saveTodayToMonthlyLog() {
+  const dateKey = getTodayKey();
+  const summary = computeDailySummary();
+  try {
+    const raw = localStorage.getItem('rj_monthlyLogs');
+    const logs = raw ? JSON.parse(raw) : {};
+    logs[dateKey] = summary;
+    localStorage.setItem('rj_monthlyLogs', JSON.stringify(logs));
+  } catch(e) {}
+  if (window.fbSaveMonthlyLog) window.fbSaveMonthlyLog(dateKey, summary);
 }
 
 // ===== リセットの復元 =====
@@ -2529,6 +3160,9 @@ function doUndoReset() {
   });
   saveFirstData();
 
+  staffDayStatus = (backup.staffDayStatus && typeof backup.staffDayStatus === 'object') ? backup.staffDayStatus : {};
+  saveDayStatus();
+
   try { localStorage.setItem('rj_baanai', backup.baanai || ''); } catch(e) {}
   const baanaiInput = document.getElementById('baanaiInput');
   if (baanaiInput) baanaiInput.value = backup.baanai || '';
@@ -2544,15 +3178,22 @@ function doUndoReset() {
 
 // ===== 本日の集計 =====
 
+// カタカナをひらがなに変換する（呼び名の表記ゆれ吸収用）
+// 全角カタカナ(U+30A1-U+30F6)は対応するひらがな(U+3041-U+3096)に1文字ずつ変換される（文字数は変わらない）
+function toHiragana(str) {
+  return (str || '').replace(/[\u30a1-\u30f6]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+}
+
 // テキストの先頭から、登録済みの呼び名（長い順）でどのスタッフかを判定する
 // 例："なるとあ" -> "なると"(成) を先にマッチ、残り"あ" -> "あい"は長さ不足で不一致 のように貪欲に処理
 function buildAliasIndex() {
-  // [{ text: "なると", name: "成" }, ...] を文字列長の降順で並べる（本名自体もエイリアスとして含める）
+  // [{ text: "なると", norm: "なると", name: "成" }, ...] を文字列長の降順で並べる（本名自体もエイリアスとして含める）
+  // normはひらがな正規化済みテキスト。カタカナで入力されても同じ呼び名として拾えるようにする
   const index = [];
   staffList.forEach(name => {
-    index.push({ text: name, name });
+    index.push({ text: name, norm: toHiragana(name), name });
     (staffAliases[name] || []).forEach(a => {
-      if (a) index.push({ text: a, name });
+      if (a) index.push({ text: a, norm: toHiragana(a), name });
     });
   });
   index.sort((a, b) => b.text.length - a.text.length);
@@ -2566,10 +3207,12 @@ function extractStaffNames(text, aliasIndex) {
   if (!remaining) return found;
   // まず区切り文字ベースで分割してから、各断片の全開始位置をチェックする
   // （呼び名同士が文字を共有していても両方拾えるよう、消費せず1文字ずつずらして走査）
+  // 比較はひらがな正規化した文字列同士で行う（カタカナ表記の呼び名も拾えるように）
   const chunks = remaining.split(' ').filter(Boolean);
   chunks.forEach(chunk => {
+    const normChunk = toHiragana(chunk);
     for (let pos = 0; pos < chunk.length; pos++) {
-      const match = aliasIndex.find(entry => chunk.startsWith(entry.text, pos));
+      const match = aliasIndex.find(entry => normChunk.startsWith(entry.norm, pos));
       if (match) found.push(match.name);
     }
   });
@@ -2594,14 +3237,15 @@ function computeDailySummary() {
     if (!rawText) return null;
     const text = rawText.trim();
     if (!text) return null;
-    // 完全一致優先
-    const exact = staffList.find(s => s === text) ||
-      Object.keys(staffAliases).find(name => (staffAliases[name] || []).includes(text));
+    const normText = toHiragana(text);
+    // 完全一致優先（ひらがな正規化して比較）
+    const exact = staffList.find(s => toHiragana(s) === normText) ||
+      Object.keys(staffAliases).find(name => (staffAliases[name] || []).some(a => toHiragana(a) === normText));
     if (exact) return exact;
     // 部分一致
-    const partial = staffList.find(s => text.includes(s) || s.includes(text));
+    const partial = staffList.find(s => normText.includes(toHiragana(s)) || toHiragana(s).includes(normText));
     if (partial) return partial;
-    const aliasPartial = aliasIndex.find(entry => text.includes(entry.text) || entry.text.includes(text));
+    const aliasPartial = aliasIndex.find(entry => normText.includes(entry.norm) || entry.norm.includes(normText));
     return aliasPartial ? aliasPartial.name : text; // どれにも該当しなければ入力値そのまま
   }
 
@@ -2622,28 +3266,125 @@ function computeDailySummary() {
   });
 
   // ----- 予定報告集計（guestsから） -----
+  const selfCount = {};
+  const proxyCount = {};
   guests.forEach(g => {
     // ヘルプ指名（呼び名リストで貪欲マッチ）
     if (g.help) {
       extractStaffNames(g.help, aliasIndex).forEach(name => bump(helpCount, name));
     }
-    // 新規・初回RP判定（お客様名に含まれる文字列で判定）
+    // 新規・初回RP判定（お客様名に含まれる文字列で判定）※来店確認済みの卓のみカウント
     const name = g.name || '';
     const tanto = matchStaff(g.tanto);
-    if (name.includes('初回RP')) {
-      bump(shinkiCount, tanto);
-      bump(rpCount, tanto);
-    } else if (name.includes('新規')) {
-      bump(shinkiCount, tanto);
+    if (g.arrived) {
+      if (name.includes('初回RP')) {
+        bump(shinkiCount, tanto);
+        bump(rpCount, tanto);
+      } else if (name.includes('新規')) {
+        bump(shinkiCount, tanto);
+      }
     }
+    // 本人／代理の集計（記録されているものだけカウント。未記録はノイズを避けるためスキップ）
+    if (g.reportType === 'self') bump(selfCount, tanto);
+    else if (g.reportType === 'proxy') bump(proxyCount, tanto);
   });
 
-  return { photoCount, okuriCount, nomiCount, helpCount, shinkiCount, rpCount };
+  // ----- 休み・有休・半休・予定未定の集計（staffDayStatusから） -----
+  const offCount = {};
+  const paidOffCount = {};
+  const halfOffCount = {};
+  const pendingCount = {};
+  Object.keys(staffDayStatus).forEach(name => {
+    const entry = staffDayStatus[name];
+    if (!entry) return;
+    if (entry.status === 'off') bump(offCount, name);
+    else if (entry.status === 'paid_off') bump(paidOffCount, name);
+    else if (entry.status === 'half_off') bump(halfOffCount, name);
+    else if (entry.status === 'pending') bump(pendingCount, name);
+    if (entry.reportType === 'self') bump(selfCount, name);
+    else if (entry.reportType === 'proxy') bump(proxyCount, name);
+  });
+
+  return { photoCount, okuriCount, nomiCount, helpCount, shinkiCount, rpCount, selfCount, proxyCount, offCount, paidOffCount, halfOffCount, pendingCount };
 }
+
+// 月次ログを合算する（当月かつliveなら本日のcomputeDailySummary()も加算）
+function aggregateMonthlyLogs(monthKey) {
+  let logs = {};
+  try {
+    const raw = localStorage.getItem('rj_monthlyLogs');
+    if (raw) logs = JSON.parse(raw);
+  } catch(e) {}
+  if (window._fbMonthlyLogs) logs = window._fbMonthlyLogs;
+
+  const keys = ['photoCount','okuriCount','nomiCount','helpCount','shinkiCount','rpCount','selfCount','proxyCount','offCount','paidOffCount','halfOffCount','pendingCount'];
+  const merged = {};
+  keys.forEach(k => merged[k] = {});
+
+  function addInto(summary) {
+    keys.forEach(k => {
+      const src = summary[k] || {};
+      Object.keys(src).forEach(name => {
+        merged[k][name] = (merged[k][name] || 0) + src[name];
+      });
+    });
+  }
+
+  Object.keys(logs).forEach(dateKey => {
+    if (dateKey.slice(0, 7) === monthKey) addInto(logs[dateKey] || {});
+  });
+
+  // 当月かつ今日がまだリセットされていない場合、本日分のライブ集計も加算する
+  const todayKey = getTodayKey();
+  if (monthKey === todayKey.slice(0, 7) && !(logs[todayKey])) {
+    addInto(computeDailySummary());
+  }
+
+  return merged;
+}
+
+// 保存済みログから利用可能な月一覧（降順）を取得
+function getAvailableMonths() {
+  let logs = {};
+  try {
+    const raw = localStorage.getItem('rj_monthlyLogs');
+    if (raw) logs = JSON.parse(raw);
+  } catch(e) {}
+  if (window._fbMonthlyLogs) logs = window._fbMonthlyLogs;
+  const months = new Set(Object.keys(logs).map(d => d.slice(0, 7)));
+  months.add(getTodayKey().slice(0, 7)); // 当月は常に選べるようにする
+  return [...months].sort().reverse();
+}
+
+let _summaryTab = 'today'; // 'today' | 'month'
+let _summaryMonthKey = null;
 
 function openSummaryModal() {
   if (localStorage.getItem('rj_role') !== 'admin') return;
-  const summary = computeDailySummary();
+  _summaryTab = 'today';
+  _summaryMonthKey = getTodayKey().slice(0, 7);
+  let modal = document.getElementById('summaryModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'summaryModal';
+    document.body.appendChild(modal);
+  }
+  renderSummaryModalContent();
+  modal.classList.add('show');
+}
+
+function switchSummaryTab(tab) {
+  _summaryTab = tab;
+  renderSummaryModalContent();
+}
+
+function changeSummaryMonth(monthKey) {
+  _summaryMonthKey = monthKey;
+  renderSummaryModalContent();
+}
+
+function buildSummaryTable(summary) {
   const allNames = new Set([
     ...staffList,
     ...Object.keys(summary.photoCount),
@@ -2652,8 +3393,9 @@ function openSummaryModal() {
     ...Object.keys(summary.helpCount),
     ...Object.keys(summary.shinkiCount),
     ...Object.keys(summary.rpCount),
+    ...Object.keys(summary.selfCount || {}),
+    ...Object.keys(summary.proxyCount || {}),
   ]);
-  // staffList登録順を優先、未登録名は末尾にアルファベット順で追加
   const orderedNames = [
     ...staffList.filter(n => allNames.has(n)),
     ...[...allNames].filter(n => !staffList.includes(n)).sort()
@@ -2666,6 +3408,10 @@ function openSummaryModal() {
     const help = summary.helpCount[name] || 0;
     const shinki = summary.shinkiCount[name] || 0;
     const rp = summary.rpCount[name] || 0;
+    const self = (summary.selfCount || {})[name] || 0;
+    const proxy = (summary.proxyCount || {})[name] || 0;
+    const off = ((summary.offCount || {})[name] || 0) + ((summary.paidOffCount || {})[name] || 0);
+    const half = (summary.halfOffCount || {})[name] || 0;
     return `<tr>
       <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);font-weight:700;color:var(--accent);white-space:nowrap;">${name}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
@@ -2674,43 +3420,83 @@ function openSummaryModal() {
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${help}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${shinki}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${rp}</td>
+      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#2ecc71;">${self}</td>
+      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${proxy}</td>
+      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e74c3c;">${off}</td>
+      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${half}</td>
     </tr>`;
   }).join('');
 
-  let modal = document.getElementById('summaryModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.id = 'summaryModal';
-    document.body.appendChild(modal);
+  return `
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:620px;">
+        <thead>
+          <tr style="color:var(--accent);">
+            <th style="padding:6px 8px 6px 4px;text-align:left;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">キャスト</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">写真指名</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">送り</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">飲直</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">ヘルプ指名</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">新規</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">初回RP</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">本人</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">代理</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">休/有休</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">半休</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderSummaryModalContent() {
+  const modal = document.getElementById('summaryModal');
+  if (!modal) return;
+
+  const tabBtn = (key, label) => `<button onclick="switchSummaryTab('${key}')" style="flex:1;padding:8px;border:none;border-bottom:2px solid ${_summaryTab===key?'var(--accent)':'transparent'};background:none;color:${_summaryTab===key?'var(--accent)':'var(--text-dim)'};font-family:var(--font-main);font-size:12px;font-weight:700;cursor:pointer;">${label}</button>`;
+
+  let bodyHtml, titleSuffix;
+  if (_summaryTab === 'today') {
+    bodyHtml = buildSummaryTable(computeDailySummary());
+    titleSuffix = '（本日）';
+  } else {
+    const months = getAvailableMonths();
+    const monthOptions = months.map(m => `<option value="${m}" ${m===_summaryMonthKey?'selected':''}>${m.replace('-','年')}月</option>`).join('');
+    const summary = aggregateMonthlyLogs(_summaryMonthKey);
+    bodyHtml = `
+      <div style="margin-bottom:10px;">
+        <select onchange="changeSummaryMonth(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:6px 8px;outline:none;">
+          ${monthOptions}
+        </select>
+      </div>
+      ${buildSummaryTable(summary)}`;
+    titleSuffix = '（月間）';
   }
+
   modal.innerHTML = `
-    <div class="modal" style="max-width:480px;max-height:85vh;display:flex;flex-direction:column;">
+    <div class="modal" style="max-width:640px;max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
-        <span>📊 本日の集計</span>
+        <span>📊 集計${titleSuffix}</span>
         <button onclick="document.getElementById('summaryModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
+      <div style="display:flex;border-bottom:1px solid var(--border);">
+        ${tabBtn('today', '今日')}
+        ${tabBtn('month', '月間')}
+      </div>
       <div class="modal-body" style="overflow:auto;flex:1;padding:12px;">
-        <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px;">
-            <thead>
-              <tr style="color:var(--accent);">
-                <th style="padding:6px 8px 6px 4px;text-align:left;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">キャスト</th>
-                <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);">写真指名</th>
-                <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);">送り</th>
-                <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);">飲直</th>
-                <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);">ヘルプ指名</th>
-                <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);">新規</th>
-                <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);">初回RP</th>
-              </tr>
-            </thead>
-            <tbody>${rows || '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>'}</tbody>
-          </table>
-        </div>
-        <p style="font-size:10px;color:var(--text-dim);margin-top:12px;line-height:1.6;">※ヘルプ指名の集計精度は「⚙ 呼び名」（報告状況のキャスト名タップ）で登録した呼び名の充実度に左右されます。表記ゆれに気づいたら随時追加してください。</p>
+        ${bodyHtml}
+        <p style="font-size:10px;color:var(--text-dim);margin-top:12px;line-height:1.6;">※ヘルプ指名の集計精度は「⚙ 呼び名」（報告状況のキャスト名タップ）で登録した呼び名の充実度に左右されます。表記ゆれに気づいたら随時追加してください。<br>※月間集計は「本日分リセット」を押した時点のデータが記録される仕組みです。リセットを忘れた日は月間集計に反映されません。</p>
       </div>
     </div>`;
-  modal.classList.add('show');
+}
+
+// Firebase側から月次ログが更新された時、モーダルが開いていれば再描画
+function refreshSummaryModalIfOpen() {
+  const modal = document.getElementById('summaryModal');
+  if (modal && modal.classList.contains('show')) {
+    renderSummaryModalContent();
+  }
 }
 
 function renderStaffStatus() {
@@ -2724,9 +3510,21 @@ function renderStaffStatus() {
   const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
   container.innerHTML = staffList.map(name => {
     const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
-    const pending = !done && [...pendingReported].some(p => p.includes(name) || name.includes(p));
-    const color = done ? '#2ecc71' : pending ? '#3498db' : 'var(--border)';
-    const textColor = done ? '#2ecc71' : pending ? '#3498db' : 'var(--text-dim)';
+    const dayStatus = staffDayStatus[name] ? staffDayStatus[name].status : null;
+    // 優先順位: 報告済み(緑) > 休み/有休(赤) > 半休(オレンジ) > 予定未定(青) > 未報告(グレー)
+    let color, textColor;
+    if (done) {
+      color = textColor = '#2ecc71';
+    } else if (dayStatus === 'off' || dayStatus === 'paid_off') {
+      color = textColor = '#e74c3c';
+    } else if (dayStatus === 'half_off') {
+      color = textColor = '#e67e22';
+    } else if (dayStatus === 'pending') {
+      color = textColor = '#3498db';
+    } else {
+      color = 'var(--border)';
+      textColor = 'var(--text-dim)';
+    }
     const nameEsc = name.replace(/'/g, "\\'");
     return `<div onclick="openAliasModal('${nameEsc}')" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px;cursor:pointer;">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
@@ -2745,17 +3543,21 @@ function openManageModal() {
     document.body.appendChild(modal);
   }
 
-  const rows = guests.filter(g => g.name || g.tanto).map(g => `
+  const rows = guests.filter(g => g.name || g.tanto).map(g => {
+    const aibanInfo = getAibanLinkInfo(g);
+    const aibanMark = aibanInfo.linked ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" style="color:${aibanInfo.color};margin-right:4px;">🔗</span>` : '';
+    return `
     <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
       <span style="color:var(--accent);font-weight:700;min-width:36px;font-size:13px;">${g.rowNum ? 'No.'+g.rowNum : '未'}</span>
       <div style="flex:1;">
-        <div style="font-size:13px;font-weight:700;">${g.name || '−'}</div>
+        <div style="font-size:13px;font-weight:700;">${aibanMark}${g.name || '−'}</div>
         <div style="font-size:11px;color:var(--text-dim);">担当: ${g.tanto || '−'} ／ 来店: ${g.arrive || '−'}</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="closeManageModal();openEditModal(${g.id})">編集</button>
       <button class="btn btn-danger btn-sm" onclick="deleteGuest(${g.id});openManageModal()">削除</button>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   modal.innerHTML = `
     <div class="modal" style="max-height:80vh;display:flex;flex-direction:column;">
@@ -2777,6 +3579,7 @@ function closeManageModal() {
 function openEditModal(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
+  const aibanSplit = splitAibanText(g.aiban || '');
   let modal = document.getElementById('editModal');
   if (!modal) {
     modal = document.createElement('div');
@@ -2785,21 +3588,28 @@ function openEditModal(id) {
     document.body.appendChild(modal);
   }
   modal.innerHTML = `
-    <div class="modal">
+    <div class="modal" style="max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <span>予約を編集</span>
         <button onclick="document.getElementById('editModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
-      <div class="modal-body">
-        <div class="form-row"><label class="form-label">No.（行番号）</label><input class="form-input" id="e-rownum" type="number" min="1" max="30" value="${g.rowNum || ''}"></div>
-        <div class="form-row"><label class="form-label">卓番</label><input class="form-input" id="e-table" value="${g.tableNum || ''}"></div>
-        <div class="form-row"><label class="form-label">お客様名</label><input class="form-input" id="e-name" value="${g.name || ''}"></div>
-        <div class="form-row"><label class="form-label">来店時間</label><input class="form-input" id="e-arrive" value="${g.arrive || ''}"></div>
-        <div class="form-row"><label class="form-label">退店時間</label><input class="form-input" id="e-leave" value="${g.leave || ''}"></div>
-        <div class="form-row"><label class="form-label">担当者</label><input class="form-input" id="e-tanto" value="${g.tanto || ''}"></div>
-        <div class="form-row"><label class="form-label">予算</label><input class="form-input" id="e-budget" value="${g.budget || ''}"></div>
-        <div class="form-row"><label class="form-label">ヘルプ</label><input class="form-input" id="e-help" value="${g.help || ''}"></div>
-        <div class="form-row"><label class="form-label">備考</label><input class="form-input" id="e-note" value="${g.note || ''}"></div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        <div class="form-row-compact"><label class="form-label-compact">No.（行番号）</label><input class="form-input-compact" id="e-rownum" type="number" min="1" max="30" value="${g.rowNum || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">卓番</label><input class="form-input-compact" id="e-table" value="${g.tableNum || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">お客様名</label><input class="form-input-compact" id="e-name" value="${g.name || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">来店時間</label><input class="form-input-compact" id="e-arrive" value="${g.arrive || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">退店時間</label><input class="form-input-compact" id="e-leave" value="${g.leave || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">担当者</label><input class="form-input-compact" id="e-tanto" value="${g.tanto || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">予算</label><input class="form-input-compact" id="e-budget" value="${g.budget || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">ヘルプ</label><input class="form-input-compact" id="e-help" value="${g.help || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">備考</label><input class="form-input-compact" id="e-note" value="${g.note || ''}"></div>
+        <div class="form-row-compact">
+          <label class="form-label-compact">アイバン（担当名 / お客様名）</label>
+          <div style="display:flex;gap:6px;">
+            <input class="aiban-input" id="e-aiban-tanto" placeholder="担当名" value="${aibanSplit.tanto}">
+            <input class="aiban-input" id="e-aiban-name" placeholder="お客様名" value="${aibanSplit.name}">
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('editModal').classList.remove('show')">キャンセル</button>
@@ -2821,9 +3631,16 @@ function saveEdit(id) {
   g.budget = document.getElementById('e-budget').value;
   g.help = document.getElementById('e-help').value;
   g.note = document.getElementById('e-note').value;
+  {
+    const aibanTanto = document.getElementById('e-aiban-tanto').value.trim();
+    const aibanName = document.getElementById('e-aiban-name').value.trim();
+    g.aiban = [aibanTanto, aibanName].filter(Boolean).join(' ');
+  }
   saveToStorage();
   document.getElementById('editModal').classList.remove('show');
   renderTables();
+  renderFloorStatus();
+  if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast('保存しました');
 }
 
