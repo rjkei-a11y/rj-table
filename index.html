@@ -1713,7 +1713,7 @@ function rowHTML(no, g) {
   // 未来店で、来店予定時刻を過ぎている行はハイライトする
   const isOverdue = !g.arrived && isTimeOverdue(g.arrive);
   return `
-    <tr class="${g.arrived ? 'arrived' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}"
+    <tr class="${g.arrived ? 'arrived' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         oncontextmenu="event.preventDefault();confirmDelete(${g.id})"
         data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
       <td class="p-col-no" onclick="toggleArrived(${g.id})" style="cursor:pointer;user-select:none;">${no}${isOverdue ? ' ⏰' : ''}</td>
@@ -1729,7 +1729,7 @@ function rowHTML(no, g) {
 function emptyRowHTML(no) {
   // 空行タップで新規ゲスト作成
   return `
-    <tr id="emptyrow-${no}">
+    <tr id="emptyrow-${no}" data-rownum="${no}">
       <td class="p-col-no" style="color:#aaa;">${no}</td>
       <td class="p-col-num editable empty-cell" onclick="createAndEdit(${no},'tableNum',this)"></td>
       <td class="p-col-time editable empty-cell" onclick="createAndEdit(${no},'arrive',this)"></td>
@@ -1742,18 +1742,32 @@ function emptyRowHTML(no) {
 
 // インライン編集でセルを再描画すると、キーボードが閉じるタイミングと重なって
 // 画面が勝手にスクロールしてしまうことがあるため、再描画の前後でスクロール位置を保持する
-function withScrollPreserved(renderFn) {
-  // キーボードが閉じるアニメーションと再描画のタイミングが重なるとスクロール位置が崩れるため、
-  // 少し待ってキーボードが閉じきってから再描画し、その直後にもスクロール位置を強制的に戻す
-  const scrollY = window.scrollY;
+// 編集していた行(trEl)を目印に、再描画後も同じ行が画面上の同じ位置に見えるよう調整する
+// （絶対スクロール位置の保持だけだと、編集前後で行の高さがわずかに変わる場合にズレてしまうため）
+function withScrollPreserved(renderFn, trEl) {
+  const rowNum = trEl ? trEl.getAttribute('data-rownum') : null;
+  const trId = trEl ? trEl.id : null;
+  const beforeTop = trEl ? trEl.getBoundingClientRect().top : null;
+
+  function realign() {
+    if (beforeTop === null) return;
+    let newTr = null;
+    if (rowNum) newTr = document.querySelector(`[data-rownum="${rowNum}"]`);
+    if (!newTr && trId) newTr = document.getElementById(trId);
+    if (newTr) {
+      const afterTop = newTr.getBoundingClientRect().top;
+      window.scrollBy(0, afterTop - beforeTop);
+    }
+  }
+
+  // キーボードが閉じるアニメーションと再描画のタイミングが重なるとズレやすいため、
+  // 少し待ってキーボードが閉じきってから再描画し、その後複数回にわたって位置を補正する
   setTimeout(() => {
     renderFn();
-    window.scrollTo(0, scrollY);
-    requestAnimationFrame(() => {
-      window.scrollTo(0, scrollY);
-      setTimeout(() => window.scrollTo(0, scrollY), 100);
-      setTimeout(() => window.scrollTo(0, scrollY), 300);
-    });
+    realign();
+    requestAnimationFrame(realign);
+    setTimeout(realign, 100);
+    setTimeout(realign, 300);
   }, 120);
 }
 
@@ -1775,7 +1789,7 @@ function editCell(id, field, td) {
   function save() {
     g[field] = input.value.trim();
     saveToStorage();
-    withScrollPreserved(renderTables);
+    withScrollPreserved(renderTables, td.closest('tr'));
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
@@ -1794,18 +1808,18 @@ function createAndEdit(rowNum, field, td) {
   input.focus();
   function save() {
     const val = input.value.trim();
-    if (!val) { withScrollPreserved(renderTables); return; } // 空なら何もしない
+    if (!val) { withScrollPreserved(renderTables, td.closest('tr')); return; } // 空なら何もしない
     const g = { id: nextId++, rowNum: String(rowNum), tableNum:'', arrive:'', leave:'', tanto:'', name:'', budget:'', note:'', help:'', arrived: false };
     g[field] = val;
     guests.push(g);
     repackRowNums();
     saveToStorage();
-    withScrollPreserved(renderTables);
+    withScrollPreserved(renderTables, td.closest('tr'));
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') { withScrollPreserved(renderTables); }
+    if (e.key === 'Escape') { withScrollPreserved(renderTables, td.closest('tr')); }
   });
 }
 
@@ -2407,7 +2421,7 @@ function editFirstGroup(gid, field, td) {
   function save() {
     g[field] = input.value.trim();
     saveFirstData();
-    withScrollPreserved(renderFirstTab);
+    withScrollPreserved(renderFirstTab, td.closest('tr'));
     // 卓番変更時は全行を再同期＋初回卓を反映
     if (field === 'tableNum') {
       (g.rows||[]).forEach(r => syncNominaoshiToTable(g, r));
@@ -2436,7 +2450,7 @@ function editFirstRow(gid, rid, field, td) {
   function save() {
     r[field] = input.value.trim();
     saveFirstData();
-    withScrollPreserved(renderFirstTab);
+    withScrollPreserved(renderFirstTab, td.closest('tr'));
     // 飲直・送り・卓番が変更されたら卓一覧に反映
     if (field === 'nominaoshi' || field === 'okuri' || field === 'plan') {
       syncNominaoshiToTable(g, r);
@@ -4031,4 +4045,3 @@ function showToast(msg) {
 </script>
 </body>
 </html>
-
