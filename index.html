@@ -1702,6 +1702,21 @@ function openAibanDetailModal(id) {
   modal.classList.add('show');
 }
 
+// 卓一覧の特定の1行だけを差し替える（他の行のDOMには一切触れないので、
+// テーブル全体を作り直すことによるスクロールのズレが原理的に起きない）
+function updateSingleGuestRow(guestId) {
+  const g = guests.find(x => x.id === guestId);
+  if (!g || !g.rowNum) { renderTables(); return; }
+  const tr = document.getElementById('card-' + guestId);
+  if (!tr) { renderTables(); return; }
+  const temp = document.createElement('tbody');
+  temp.innerHTML = rowHTML(g.rowNum, g).trim();
+  const newTr = temp.firstElementChild;
+  tr.replaceWith(newTr);
+  updateStats();
+  updateTableStats();
+}
+
 function rowHTML(no, g) {
   const bottleState = g.bottle || 0;
   const bottleIcon = bottleState === 0 ? '' : bottleState === 1 ? '○' : '◉';
@@ -1789,7 +1804,7 @@ function editCell(id, field, td) {
   function save() {
     g[field] = input.value.trim();
     saveToStorage();
-    withScrollPreserved(renderTables, td.closest('tr'));
+    updateSingleGuestRow(id);
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
@@ -1933,7 +1948,7 @@ function renderFloorStatus() {
               line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
             } else {
               const tanto = (info && info.tanto) || '';
-              const leaveHtml = (info && info.leave) ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
+              const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
               line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
               const subBits = [];
               if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
@@ -2450,7 +2465,13 @@ function editFirstRow(gid, rid, field, td) {
   function save() {
     r[field] = input.value.trim();
     saveFirstData();
-    withScrollPreserved(renderFirstTab, td.closest('tr'));
+    if (field === 'nominaoshi') {
+      // 飲直の確定/解除は行全体の色分けが変わるため、行ごと再描画する
+      withScrollPreserved(renderFirstTab, td.closest('tr'));
+    } else {
+      // それ以外の項目は、このセルの表示だけを直接書き換える（他のDOMに触れないので画面がズレない）
+      td.textContent = r[field] || '';
+    }
     // 飲直・送り・卓番が変更されたら卓一覧に反映
     if (field === 'nominaoshi' || field === 'okuri' || field === 'plan') {
       syncNominaoshiToTable(g, r);
@@ -2707,7 +2728,7 @@ function viewRow(g) {
             style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">
             退店
           </button>
-          ${g.leave ? `<span style="font-size:12px;color:#e57373;font-weight:700;">⏰${g.leave}</span>` : ''}
+          ${g.leave && g.leave.trim() !== 'ラスト' ? `<span style="font-size:12px;color:#e57373;font-weight:700;">⏰${g.leave}</span>` : ''}
           ${g.budget ? `<span style="font-size:11px;color:var(--text-dim);">${g.budget}</span>` : ''}
         </div>
         ${noteStr ? `<div class="view-meta" style="color:#e74c3c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="event.stopPropagation();openNoteDetailModal(${g.id})">${noteStr}</div>` : ''}
@@ -2788,10 +2809,25 @@ function toggleSpecial(id, key) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
   if (!g.specials) g.specials = [];
-  if (g.specials.includes(key)) {
-    g.specials = g.specials.filter(k => k !== key);
-  } else {
+  const turningOn = !g.specials.includes(key);
+  if (turningOn) {
     g.specials.push(key);
+  } else {
+    g.specials = g.specials.filter(k => k !== key);
+  }
+  // 主役アイコンは「その担当者の卓すべて」に付くものなので、同じ担当者の他の卓にも自動で連動させる
+  if (key === 'event' && g.tanto) {
+    const tantoNorm = toHiragana(g.tanto.trim());
+    guests.forEach(other => {
+      if (other.id === g.id || other.left || !other.tanto) return;
+      if (toHiragana(other.tanto.trim()) !== tantoNorm) return;
+      if (!other.specials) other.specials = [];
+      if (turningOn) {
+        if (!other.specials.includes('event')) other.specials.push('event');
+      } else {
+        other.specials = other.specials.filter(k => k !== 'event');
+      }
+    });
   }
   saveToStorage();
   openSpecialModal(id); // モーダル更新
@@ -2866,6 +2902,7 @@ function openLeaveTimeQuickEdit(type, idOrKey) {
   }
   if (!guest) { showToast('編集対象の予約が見つかりませんでした'); return; }
 
+  const aibanSplit = splitAibanText(guest.aiban || '');
   let modal = document.getElementById('leaveTimeEditModal');
   if (!modal) {
     modal = document.createElement('div');
@@ -2874,14 +2911,26 @@ function openLeaveTimeQuickEdit(type, idOrKey) {
     document.body.appendChild(modal);
   }
   modal.innerHTML = `
-    <div class="modal" style="max-width:300px;">
+    <div class="modal" style="max-width:340px;max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
-        <span>退店予定時間を編集</span>
+        <span>予約を編集</span>
         <button onclick="document.getElementById('leaveTimeEditModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
-      <div class="modal-body">
-        <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">${guest.tanto||''} ${formatGuestDisplayName(guest.name)}</div>
-        <input class="form-input" id="quickLeaveInput" value="${guest.leave||''}" placeholder="例: 24時 / ラスト">
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        <div class="form-row-compact"><label class="form-label-compact">担当</label><input class="form-input-compact" id="qe-tanto" value="${guest.tanto || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">お客様名</label><input class="form-input-compact" id="qe-name" value="${guest.name || ''}"></div>
+        <div class="form-row-compact">
+          <label class="form-label-compact">アイバン（担当名 / お客様名）</label>
+          <div style="display:flex;gap:6px;">
+            <input class="aiban-input" id="qe-aiban-tanto" placeholder="担当名" value="${aibanSplit.tanto}">
+            <input class="aiban-input" id="qe-aiban-name" placeholder="お客様名" value="${aibanSplit.name}">
+          </div>
+        </div>
+        <div class="form-row-compact"><label class="form-label-compact">来店時間</label><input class="form-input-compact" id="qe-arrive" value="${guest.arrive || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">退店予定時間</label><input class="form-input-compact" id="qe-leave" value="${guest.leave || ''}" placeholder="例: 24時 / ラスト"></div>
+        <div class="form-row-compact"><label class="form-label-compact">予算</label><input class="form-input-compact" id="qe-budget" value="${guest.budget || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">ヘルプ</label><input class="form-input-compact" id="qe-help" value="${guest.help || ''}"></div>
+        <div class="form-row-compact"><label class="form-label-compact">備考</label><input class="form-input-compact" id="qe-note" value="${guest.note || ''}"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('leaveTimeEditModal').classList.remove('show')">キャンセル</button>
@@ -2894,13 +2943,22 @@ function openLeaveTimeQuickEdit(type, idOrKey) {
 function saveQuickLeaveTime(guestId) {
   const g = guests.find(x => x.id === guestId);
   if (!g) return;
-  g.leave = document.getElementById('quickLeaveInput').value.trim();
+  g.tanto = document.getElementById('qe-tanto').value.trim();
+  g.name = document.getElementById('qe-name').value.trim();
+  g.arrive = document.getElementById('qe-arrive').value.trim();
+  g.leave = document.getElementById('qe-leave').value.trim();
+  g.budget = document.getElementById('qe-budget').value.trim();
+  g.help = document.getElementById('qe-help').value.trim();
+  g.note = document.getElementById('qe-note').value.trim();
+  const aibanTanto = document.getElementById('qe-aiban-tanto').value.trim();
+  const aibanName = document.getElementById('qe-aiban-name').value.trim();
+  g.aiban = [aibanTanto, aibanName].filter(Boolean).join(' ');
   saveToStorage();
   document.getElementById('leaveTimeEditModal').classList.remove('show');
   renderTables();
   renderFloorStatus();
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
-  showToast('退店予定時間を更新しました');
+  showToast('保存しました');
 }
 
 function cancelHold() {
@@ -3105,15 +3163,18 @@ function renderIdentityIndicator() {
   const el = document.getElementById('identityIndicator');
   if (!el) return;
   const role = localStorage.getItem('rj_role');
+  const logoutLink = `<button onclick="confirmLogout()" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;cursor:pointer;margin-left:6px;">ログアウト</button>`;
   if (role === 'host') {
     const me = getMyIdentity();
-    el.innerHTML = me
+    el.innerHTML = (me
       ? `<span style="color:var(--text-dim);">あなた: </span><span style="color:var(--accent);font-weight:700;">${me}</span> <button onclick="promptIdentityModal()" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;cursor:pointer;">変更</button>`
-      : `<button onclick="promptIdentityModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">あなたの名前を選択</button>`;
+      : `<button onclick="promptIdentityModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">あなたの名前を選択</button>`)
+      + logoutLink;
   } else if (role === 'admin') {
     el.innerHTML = `
       <span style="color:var(--text-dim);">代理入力モード</span>
-      <button onclick="toggleProxyMode()" style="background:${proxyMode ? '#c0392b' : 'var(--surface2)'};border:1px solid ${proxyMode ? '#c0392b' : 'var(--border)'};border-radius:12px;color:${proxyMode ? '#fff' : 'var(--text-dim)'};font-size:11px;padding:3px 12px;cursor:pointer;font-family:var(--font-main);font-weight:700;">${proxyMode ? 'ON' : 'OFF'}</button>`;
+      <button onclick="toggleProxyMode()" style="background:${proxyMode ? '#c0392b' : 'var(--surface2)'};border:1px solid ${proxyMode ? '#c0392b' : 'var(--border)'};border-radius:12px;color:${proxyMode ? '#fff' : 'var(--text-dim)'};font-size:11px;padding:3px 12px;cursor:pointer;font-family:var(--font-main);font-weight:700;">${proxyMode ? 'ON' : 'OFF'}</button>`
+      + logoutLink;
   } else {
     el.innerHTML = '';
   }
@@ -3123,6 +3184,28 @@ function toggleProxyMode() {
   proxyMode = !proxyMode;
   renderIdentityIndicator();
   showToast(proxyMode ? '代理入力モードをONにしました' : '代理入力モードをOFFにしました');
+}
+
+function confirmLogout() {
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">ログアウトしますか？</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">次回はパスワード入力から始まります。<br>あなたの名前選択もリセットされます。</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';doLogout()" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">ログアウト</button>
+    </div>
+  </div>`;
+  overlay.style.display='flex';
+}
+
+function doLogout() {
+  try {
+    localStorage.removeItem('rj_role');
+    localStorage.removeItem('rj_myIdentity');
+  } catch(e) {}
+  location.reload();
 }
 
 function saveStaff() {
@@ -3253,10 +3336,10 @@ function promptQuickStatus(status) {
   if (role === 'host') {
     const me = getMyIdentity();
     if (!me) {
-      promptIdentityModal(() => setStaffDayStatus(getMyIdentity(), status));
+      promptIdentityModal(() => confirmQuickStatus(getMyIdentity(), status));
       return;
     }
-    setStaffDayStatus(me, status);
+    confirmQuickStatus(me, status);
     return;
   }
   // 内勤：対象キャストを選ぶ簡易ピッカー
@@ -3269,7 +3352,7 @@ function promptQuickStatus(status) {
   }
   const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休' };
   const options = staffList.map(name => `
-    <button onclick="document.getElementById('quickStatusModal').classList.remove('show');setStaffDayStatus('${name.replace(/'/g,"\\'")}','${status}')"
+    <button onclick="document.getElementById('quickStatusModal').classList.remove('show');confirmQuickStatus('${name.replace(/'/g,"\\'")}','${status}')"
       style="display:block;width:100%;text-align:left;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;margin-bottom:6px;cursor:pointer;">${name}</button>
   `).join('');
   modal.innerHTML = `
@@ -3283,6 +3366,21 @@ function promptQuickStatus(status) {
       </div>
     </div>`;
   modal.classList.add('show');
+}
+
+// 誤操作防止のため、実際に反映する前にもう一度確認する
+function confirmQuickStatus(name, status) {
+  const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休' };
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${name}を「${labels[status] || status}」にしますか？</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';setStaffDayStatus('${name.replace(/'/g,"\\'")}','${status}')" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#000;font-size:13px;font-weight:700;cursor:pointer;">決定</button>
+    </div>
+  </div>`;
+  overlay.style.display='flex';
 }
 
 // ===== 本日分リセット（予定報告タブ） =====
@@ -3453,6 +3551,7 @@ function doUndoReset() {
 function formatGuestDisplayName(rawName) {
   const name = (rawName || '').replace('△','').trim();
   if (!name) return '';
+  if (name === '体入') return name; // 体入はお客様ではないので「様」を付けない
   const m = name.match(/^(.*?)\s*[+＋]\s*枝\s*$/);
   if (m && m[1].trim()) {
     return `${m[1].trim()}様+枝`;
@@ -3476,7 +3575,7 @@ function parseTimeText(text) {
 // （深夜1時は22時より"後"として正しく比較できるようにする）
 function toShiftMinutes(hour, minute) {
   let h = hour;
-  if (h < 17) h += 24;
+  if (h < 6) h += 24; // 深夜0時〜5時台だけを「前日の続き」として後ろに回す（日中の時間帯まで巻き込まないように）
   return h * 60 + minute;
 }
 
@@ -3655,7 +3754,7 @@ function aggregateMonthlyLogs(monthKey) {
 
   return merged;
 }
-  
+
 // 保存済みログから利用可能な月一覧（降順）を取得
 function getAvailableMonths() {
   let logs = {};
