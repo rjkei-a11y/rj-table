@@ -1743,12 +1743,18 @@ function emptyRowHTML(no) {
 // インライン編集でセルを再描画すると、キーボードが閉じるタイミングと重なって
 // 画面が勝手にスクロールしてしまうことがあるため、再描画の前後でスクロール位置を保持する
 function withScrollPreserved(renderFn) {
+  // キーボードが閉じるアニメーションと再描画のタイミングが重なるとスクロール位置が崩れるため、
+  // 少し待ってキーボードが閉じきってから再描画し、その直後にもスクロール位置を強制的に戻す
   const scrollY = window.scrollY;
-  renderFn();
-  requestAnimationFrame(() => {
+  setTimeout(() => {
+    renderFn();
     window.scrollTo(0, scrollY);
-    setTimeout(() => window.scrollTo(0, scrollY), 50);
-  });
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollY);
+      setTimeout(() => window.scrollTo(0, scrollY), 100);
+      setTimeout(() => window.scrollTo(0, scrollY), 300);
+    });
+  }, 120);
 }
 
 // セルをインライン編集
@@ -1925,7 +1931,9 @@ function renderFloorStatus() {
             const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
             const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
             const finalBoxText = isLeaveSoon ? '#fff' : boxText;
-            return `<div onclick="openTableDetailModal('${key}')" style="cursor:pointer;padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':'#c9a84c'};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
+            return `<div onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTableDetailModal('${key}')"
+              ontouchstart="startLeaveEditHold('table','${key}')" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"
+              style="cursor:pointer;padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':'#c9a84c'};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
               <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
               <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
               ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
@@ -2328,6 +2336,8 @@ function syncNominaoshiToTable(g, r) {
     existing.name = nomi;
     existing.note = noteStr;
     existing.arrived = true;
+    if (!existing.specials) existing.specials = [];
+    if (!existing.specials.includes('new')) existing.specials.push('new'); // 飲直で出来た卓は自動で🔰マーク
   } else {
     guests.push({
       id: nextId++,
@@ -2338,6 +2348,7 @@ function syncNominaoshiToTable(g, r) {
       note: noteStr,
       arrive: '', leave: '', budget: '', help: '',
       arrived: true,
+      specials: ['new'], // 飲直で出来た卓は自動で🔰マーク
       firstKey: key
     });
   }
@@ -2667,7 +2678,9 @@ function viewRow(g) {
   const displayTable = g.tableNum ? g.tableNum.replace(/^[Pp]/, 'V') : null;
 
   return `
-    <div class="view-row" onclick="openSpecialModal(${g.id})" style="cursor:pointer;">
+    <div class="view-row" onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openSpecialModal(${g.id})"
+      ontouchstart="startLeaveEditHold('guest',${g.id})" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"
+      style="cursor:pointer;">
       <div class="view-body">
         <div class="view-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           ${specialIcons ? `<span>${specialIcons}</span>` : ''}
@@ -2814,6 +2827,68 @@ let _holdTimer = null;
 function startHold(id) {
   _holdTimer = setTimeout(() => { confirmDelete(id); }, 600);
 }
+// ===== 卓状況・全体タブの長押しで退店予定時間をクイック編集 =====
+let _leaveEditHoldTimer = null;
+let _leaveEditHoldFired = false;
+
+function startLeaveEditHold(type, idOrKey) {
+  _leaveEditHoldFired = false;
+  _leaveEditHoldTimer = setTimeout(() => {
+    _leaveEditHoldFired = true;
+    openLeaveTimeQuickEdit(type, idOrKey);
+  }, 600);
+}
+function cancelLeaveEditHold() {
+  if (_leaveEditHoldTimer) { clearTimeout(_leaveEditHoldTimer); _leaveEditHoldTimer = null; }
+}
+
+function openLeaveTimeQuickEdit(type, idOrKey) {
+  let guest = null;
+  if (type === 'guest') {
+    guest = guests.find(x => x.id === idOrKey);
+  } else if (type === 'table') {
+    const active = guests.filter(x => !x.left);
+    guest = active.find(x => x.tableNum && x.tableNum.toUpperCase().replace(/^P/, 'V') === idOrKey && x.arrived);
+  }
+  if (!guest) { showToast('編集対象の予約が見つかりませんでした'); return; }
+
+  let modal = document.getElementById('leaveTimeEditModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'leaveTimeEditModal';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `
+    <div class="modal" style="max-width:300px;">
+      <div class="modal-header">
+        <span>退店予定時間を編集</span>
+        <button onclick="document.getElementById('leaveTimeEditModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">${guest.tanto||''} ${formatGuestDisplayName(guest.name)}</div>
+        <input class="form-input" id="quickLeaveInput" value="${guest.leave||''}" placeholder="例: 24時 / ラスト">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('leaveTimeEditModal').classList.remove('show')">キャンセル</button>
+        <button class="btn btn-primary" onclick="saveQuickLeaveTime(${guest.id})">保存</button>
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
+function saveQuickLeaveTime(guestId) {
+  const g = guests.find(x => x.id === guestId);
+  if (!g) return;
+  g.leave = document.getElementById('quickLeaveInput').value.trim();
+  saveToStorage();
+  document.getElementById('leaveTimeEditModal').classList.remove('show');
+  renderTables();
+  renderFloorStatus();
+  if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
+  showToast('退店予定時間を更新しました');
+}
+
 function cancelHold() {
   if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
   if (_holdTimer2) { clearTimeout(_holdTimer2); _holdTimer2 = null; }
