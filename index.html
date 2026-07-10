@@ -27,6 +27,15 @@
     color: var(--text);
     font-family: var(--font-main);
     min-height: 100vh;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* 入力欄・テキストエリアは通常通りテキスト選択できるようにする */
+  input, textarea {
+    -webkit-touch-callout: default;
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   /* ===== HEADER ===== */
@@ -268,6 +277,7 @@
   }
   .paper-table tr:not(.arrived):nth-child(even) td { background: #fafafa; }
   .paper-table tr:not(.arrived) td { background: #fff; }
+  .paper-table tr.overdue-highlight td { background: #5a2a2a !important; color: #fff !important; }
 
   .p-col-no   { width: 24px; text-align: center; color: #888; font-size: 11px; cursor:pointer; }
   .p-col-num  { width: 42px; text-align: center; font-weight: 700; color: #c9a84c; }
@@ -306,7 +316,17 @@
     box-sizing: border-box;
   }
 
-  .paper-table tr { cursor: pointer; }
+  .paper-table tr {
+    cursor: pointer;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #deleteOverlay {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
   .paper-table tr:hover td { filter: brightness(0.95); }
 
   /* ===== TABLE LIST (テーブル形式) ===== */
@@ -549,6 +569,7 @@
     background: #0d1b26;
     box-shadow: 0 0 0 1px #3498db;
   }
+
   .modal-footer {
     padding: 12px 16px;
     display: flex;
@@ -1188,6 +1209,11 @@ document.addEventListener('DOMContentLoaded', () => {
   renderIdentityIndicator();
   updateFixedTop();
   setTimeout(updateFixedTop, 100);
+  // 来店予定・退店予定の時刻経過ハイライトを1分ごとに再評価する
+  setInterval(() => {
+    renderTables();
+    renderFloorStatus();
+  }, 60000);
 });
 
 function updateDate() {
@@ -1625,7 +1651,7 @@ function getAibanLinkInfo(g) {
   if (g.aiban && g.aiban.trim()) {
     const partner = findAibanPartner(g);
     const label = partner
-      ? `アイバン: ${partner.tanto||''} ${(partner.name||'').replace('△','').trim()}様`
+      ? `アイバン: ${partner.tanto||''} ${formatGuestDisplayName(partner.name)}`
       : `アイバン: ${g.aiban}`;
     return { linked: true, label, color, partnerId: partner ? partner.id : null };
   }
@@ -1635,7 +1661,7 @@ function getAibanLinkInfo(g) {
     return partner && partner.id === g.id;
   });
   if (referrer) {
-    return { linked: true, label: `アイバン: ${referrer.tanto||''} ${(referrer.name||'').replace('△','').trim()}様と`, color, partnerId: referrer.id };
+    return { linked: true, label: `アイバン: ${referrer.tanto||''} ${formatGuestDisplayName(referrer.name)}と`, color, partnerId: referrer.id };
   }
   return { linked: false, label: '', color: null, partnerId: null };
 }
@@ -1659,7 +1685,7 @@ function openAibanDetailModal(id) {
       <div style="font-size:14px;color:var(--text);">
         <span style="color:var(--accent);font-weight:700;">${g2.tableNum ? g2.tableNum+'卓 ' : ''}</span>
         <span style="color:#f0c040;">${g2.tanto||''}</span>
-        <span style="font-weight:700;">${(g2.name||'').replace('△','').trim()}様</span>
+        <span style="font-weight:700;">${formatGuestDisplayName(g2.name)}</span>
       </div>
     </div>` : '';
   modal.innerHTML = `
@@ -1684,11 +1710,13 @@ function rowHTML(no, g) {
   const aibanIcon = aibanInfo.linked
     ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="color:${aibanInfo.color};margin-right:2px;cursor:pointer;">🔗</span>`
     : '';
+  // 未来店で、来店予定時刻を過ぎている行はハイライトする
+  const isOverdue = !g.arrived && isTimeOverdue(g.arrive);
   return `
-    <tr class="${g.arrived ? 'arrived' : ''}" id="card-${g.id}"
+    <tr class="${g.arrived ? 'arrived' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}"
         oncontextmenu="event.preventDefault();confirmDelete(${g.id})"
         data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
-      <td class="p-col-no" onclick="toggleArrived(${g.id})" style="cursor:pointer;user-select:none;">${no}</td>
+      <td class="p-col-no" onclick="toggleArrived(${g.id})" style="cursor:pointer;user-select:none;">${no}${isOverdue ? ' ⏰' : ''}</td>
       <td class="p-col-num editable" onclick="editCell(${g.id},'tableNum',this)">${g.tableNum||''}</td>
       <td class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)">${g.arrive||''}</td>
       <td class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)">${g.tanto||''}</td>
@@ -1790,7 +1818,19 @@ function renderFloorStatus() {
   const area = document.getElementById('floorStatusArea');
   if (!area) return;
   // 卓番→表示情報のマップを作成（通常ゲスト・初回グループ両対応）
+  // 同じ卓に「予定報告の来店予定」と「今対応中の初回」が重なる場合、初回を優先表示する
+  // （例：22時に予定の客がいても、19時に来た初回を同じ卓で先に対応しているケース）
   const infoMap = {}; // { "V1": { tanto, name, help, specials, isFirst } }
+  (firstGroups || []).filter(g => g.tableNum).forEach(g => {
+    // 全員が飲直に転換済みなら、もう「初回」ではなく実際のお客様として扱う（優先表示の対象から外す）
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => r.nominaoshi && r.nominaoshi.trim() !== '');
+    if (allDone) return;
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    if (!infoMap[key]) {
+      const count = parseInt(g.count) || 0;
+      infoMap[key] = { tanto: '', name: `初回${count ? count+'名' : ''}`, help: '', specials: [], isFirst: true, arrived: true };
+    }
+  });
   guests.filter(g => g.tableNum && !g.left).forEach(g => {
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!infoMap[key]) {
@@ -1800,15 +1840,9 @@ function renderFloorStatus() {
         help: g.help || '',
         leave: g.leave || '',
         specials: g.specials || [],
-        isFirst: false
+        isFirst: false,
+        arrived: !!g.arrived
       };
-    }
-  });
-  (firstGroups || []).filter(g => g.tableNum).forEach(g => {
-    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
-    if (!infoMap[key]) {
-      const count = parseInt(g.count) || 0;
-      infoMap[key] = { tanto: '', name: `初回${count ? count+'名' : ''}`, help: '', specials: [], isFirst: true };
     }
   });
 
@@ -1853,22 +1887,31 @@ function renderFloorStatus() {
             const iconsHtml = (info && info.specials && info.specials.length)
               ? info.specials.map(k => { const s = SPECIALS.find(x => x.key === k); return s ? s.icon : ''; }).join('')
               : '';
+            const arrived = !!(info && info.arrived);
+            // 来店済み: ゴールド塗りつぶし（今まで通り） / 未来店: ゴールド枠線のみで控えめに
+            const boxBg = arrived ? '#c9a84c' : 'transparent';
+            const boxText = arrived ? '#000' : 'var(--text)';
+            const boxDim = arrived ? '#5a4a1a' : '#a68a4a';
             let line1, line2, line3;
             if (info && info.isFirst) {
               line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}`;
-              line2 = `<span style="color:#000;">${info.name}</span>`;
-              line3 = baanaiName ? `<span style="color:#5a4a1a;">場内: ${baanaiName}</span>` : '';
+              line2 = `<span style="color:${boxText};">${info.name}</span>`;
+              line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
             } else {
               const tanto = (info && info.tanto) || '';
-              const leaveHtml = (info && info.leave) ? ` <span style="color:#8b2f2f;font-weight:700;">⏰${info.leave}</span>` : '';
+              const leaveHtml = (info && info.leave) ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
               line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
               const subBits = [];
-              if (info && info.name) subBits.push(`<span style="color:#000;">${info.name}様</span>`);
-              if (info && info.help) subBits.push(`<span style="color:#5a4a1a;">H: ${info.help}</span>`);
+              if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
+              if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
               line2 = subBits.join(' ');
-              line3 = baanaiName ? `<span style="color:#5a4a1a;">場内: ${baanaiName}</span>` : '';
+              line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
             }
-            return `<div onclick="openTableDetailModal('${key}')" style="cursor:pointer;padding:3px 5px;border-radius:4px;border:1px solid #c9a84c;background:#c9a84c;color:#000;overflow:hidden;">
+            // 来店済みの卓で、退店予定10分前を過ぎたら赤くハイライトする
+            const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
+            const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
+            const finalBoxText = isLeaveSoon ? '#fff' : boxText;
+            return `<div onclick="openTableDetailModal('${key}')" style="cursor:pointer;padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':'#c9a84c'};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
               <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
               <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
               ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
@@ -1906,7 +1949,7 @@ function openTableDetailModal(tableKey) {
     }).join('');
     const rows = [
       ['担当', guest.tanto],
-      ['お客様名', (guest.name || '').replace('△','').trim() + '様'],
+      ['お客様名', formatGuestDisplayName(guest.name)],
       ['来店時間', guest.arrive],
       ['退店時間', guest.leave],
       ['予算', guest.budget],
@@ -1915,8 +1958,13 @@ function openTableDetailModal(tableKey) {
       ['アイバン', guest.aiban],
       ['場内指名', baanaiName],
     ].filter(([,v]) => v);
+    const actionButtons = guest.arrived
+      ? `<button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');toggleLeft(${guest.id})" style="flex:1;color:var(--text-dim);">退店にする</button>`
+      : `<button class="btn btn-primary" onclick="document.getElementById('tableDetailModal').classList.remove('show');toggleArrived(${guest.id})" style="flex:1;">来店にする</button>
+         <button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');confirmDelete(${guest.id})" style="flex:1;color:#c0392b;border-color:#c0392b;">予約をキャンセル</button>`;
     bodyHtml = `
       ${specialIcons ? `<div style="margin-bottom:10px;">${specialIcons}</div>` : ''}
+      ${!guest.arrived ? `<div style="font-size:11px;color:#e67e22;margin-bottom:10px;">⚠ まだ来店確認されていません</div>` : ''}
       ${rows.map(([label, val]) => `
         <div style="display:flex;padding:7px 0;border-bottom:1px solid var(--border);">
           <div style="width:80px;flex-shrink:0;font-size:11px;color:var(--text-dim);">${label}</div>
@@ -1924,7 +1972,7 @@ function openTableDetailModal(tableKey) {
         </div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:14px;">
         <button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');openSpecialModal(${guest.id})" style="flex:1;">特記事項を編集</button>
-        <button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');toggleLeft(${guest.id})" style="flex:1;color:var(--text-dim);">退店にする</button>
+        ${actionButtons}
       </div>`;
   } else if (firstGroup) {
     const count = parseInt(firstGroup.count) || 0;
@@ -2093,21 +2141,17 @@ function renderFirstTab() {
           ontouchstart="startHold2(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">`;
       if (ri === 0) {
         rows += `<td style="text-align:center;color:#c9a84c;font-size:12px;font-weight:700;${allDone?'background:#d4edda;':''}"${rowspan}>${noCounter}</td>`;
+        const countLabel = g.isEda ? `枝${g.count||''}名` : (g.count ? `${g.count}名` : '-');
         rows += `<td${rowspan} style="${allDone?'background:#d4edda;':''}">
-          <select onchange="onCountChange(${g.id},this.value)"
-            style="width:100%;background:var(--surface2);border:none;color:var(--text);font-family:var(--font-main);font-size:12px;padding:2px;outline:none;">
-            <option value="">-</option>
-            ${[1,2,3].map(n=>`<option value="${n}" ${g.count==n?'selected':''}>${n}名</option>`).join('')}
-          </select>
+          <div onclick="event.stopPropagation();openCountPicker(${g.id}, this)" style="width:100%;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:12px;padding:5px 2px;cursor:pointer;">${countLabel}</div>
         </td>`;
-        rows += `<td${rowspan} class="editable" onclick="editFirstGroup(${g.id},'tableNum',this)" style="font-weight:700;color:var(--accent);${allDone?'background:#d4edda;':''}">${g.tableNum||''}</td>`;
+        rows += `<td${rowspan} style="${allDone?'background:#d4edda;':''}">
+          <div class="editable" onclick="editFirstGroup(${g.id},'tableNum',this)" style="font-weight:700;color:var(--accent);padding:2px 0;">${g.tableNum||''}</div>
+          ${g.isEda ? `<div onclick="event.stopPropagation();editFirstGroup(${g.id},'edaReferrer',this)" style="font-size:10px;color:#f0c040;border-top:1px solid var(--border);padding-top:2px;margin-top:2px;cursor:pointer;">枝:${g.edaReferrer ? g.edaReferrer : '未入力'}</div>` : ''}
+        </td>`;
       }
       rows += `<td style="${doneStyle}">
-        <select onchange="updateFirstRow(${g.id},${r.id},'seat',this.value)"
-          style="width:100%;background:${isDone?'#d4edda':'var(--surface2)'};border:none;color:${isDone?'#555':'var(--text)'};font-family:var(--font-main);font-size:12px;padding:2px;outline:none;">
-          <option value="">-</option>
-          ${['左','中','右'].map(s=>`<option value="${s}" ${r.seat===s?'selected':''}>${s}</option>`).join('')}
-        </select>
+        <div onclick="event.stopPropagation();openSeatPicker(${g.id},${r.id}, this)" style="width:100%;text-align:center;background:${isDone?'#d4edda':'var(--surface2)'};border:1px solid var(--border);border-radius:4px;color:${isDone?'#555':'var(--text)'};font-family:var(--font-main);font-size:12px;padding:5px 2px;cursor:pointer;">${r.seat || '-'}</div>
       </td>`;
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo1',this)" style="${doneStyle}">${r.photo1||''}</td>`;
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo2',this)" style="${doneStyle}">${r.photo2||''}</td>`;
@@ -2144,11 +2188,88 @@ function renderFirstTab() {
   }
 }
 
+// ===== ミニピッカー（<select>のiOS崩れ回避のため、独自の軽量ドロップダウンを使う） =====
+let _inlinePickerCallback = null;
+
+function openCountPicker(gid, anchorEl) {
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  const options = [
+    { value: '', label: '-' },
+    { value: '1', label: '1名' },
+    { value: '2', label: '2名' },
+    { value: '3', label: '3名' },
+    { value: 'eda-1', label: '枝1名' },
+    { value: 'eda-2', label: '枝2名' },
+    { value: 'eda-3', label: '枝3名' },
+  ];
+  const currentVal = g.isEda ? ('eda-' + g.count) : (g.count || '');
+  renderInlinePicker(anchorEl, options, currentVal, (val) => { onCountChange(gid, val); });
+}
+
+function openSeatPicker(gid, rid, anchorEl) {
+  const g = firstGroups.find(x => x.id === gid);
+  const r = g ? (g.rows || []).find(x => x.id === rid) : null;
+  const options = [
+    { value: '', label: '-' },
+    { value: '左', label: '左' },
+    { value: '中', label: '中' },
+    { value: '右', label: '右' },
+  ];
+  const currentVal = r ? (r.seat || '') : '';
+  renderInlinePicker(anchorEl, options, currentVal, (val) => { updateFirstRow(gid, rid, 'seat', val); });
+}
+
+function renderInlinePicker(anchorEl, options, currentVal, onSelect) {
+  closeInlinePicker();
+  cancelHold();
+  _inlinePickerCallback = onSelect;
+  const picker = document.createElement('div');
+  picker.id = 'inlinePicker';
+  picker.style.cssText = 'position:fixed;z-index:300;background:#e8e8e8;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.4);min-width:72px;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;';
+  picker.innerHTML = options.map((opt, i) => `
+    <div onclick="event.stopPropagation();_inlinePickerCallback('${opt.value}');closeInlinePicker();"
+      style="padding:10px 14px;font-size:13px;color:${opt.value===currentVal?'#8a6d1a':'#333'};font-weight:${opt.value===currentVal?'700':'400'};cursor:pointer;white-space:nowrap;${i<options.length-1?'border-bottom:1px solid #ccc;':''}">${opt.label}</div>
+  `).join('');
+  document.body.appendChild(picker);
+  const rect = anchorEl.getBoundingClientRect();
+  const pickerHeight = Math.min(picker.offsetHeight, 240);
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  let top;
+  if (spaceBelow >= pickerHeight + 8 || spaceBelow >= spaceAbove) {
+    // 下に十分な余白があれば下向きに開く
+    top = rect.bottom + 4;
+  } else {
+    // 下が狭ければ上向きに開く
+    top = Math.max(8, rect.top - pickerHeight - 4);
+  }
+  const left = Math.min(rect.left, window.innerWidth - 90);
+  picker.style.top = top + 'px';
+  picker.style.left = left + 'px';
+  setTimeout(() => { document.addEventListener('click', closeInlinePickerOnce); }, 0);
+}
+
+function closeInlinePickerOnce() {
+  closeInlinePicker();
+  document.removeEventListener('click', closeInlinePickerOnce);
+}
+
+function closeInlinePicker() {
+  const el = document.getElementById('inlinePicker');
+  if (el) el.remove();
+  _inlinePickerCallback = null;
+}
+
 function onCountChange(gid, val) {
   const g = firstGroups.find(x => x.id === gid);
   if (!g) return;
-  const newCount = parseInt(val) || 1;
-  g.count = val;
+  const isEda = val.startsWith('eda-');
+  const countStr = isEda ? val.slice(4) : val;
+  const newCount = parseInt(countStr) || 1;
+  g.count = countStr;
+  g.isEda = isEda;
+  if (!isEda) g.edaReferrer = ''; // 枝でなくなったら紹介元情報はクリア
   // 行数を調整
   while (g.rows.length < newCount) g.rows.push({id:firstRid++,seat:'',photo1:'',photo2:'',okuri:'',nominaoshi:'',plan:''});
   while (g.rows.length > newCount) g.rows.pop();
@@ -2159,6 +2280,7 @@ function onCountChange(gid, val) {
   saveFirstData();
   renderFirstTab();
   syncFirstGroupToView(g);
+  checkFirstGroupTableConflict(g);
 }
 
 function updateFirstRow(gid, rid, field, val) {
@@ -2208,6 +2330,41 @@ function syncNominaoshiToTable(g, r) {
   repackRowNums();
   saveToStorage();
   renderTables();
+  // 飲直転換で卓が確定した際、その卓に別の予約が重複していないか確認する（アイバンは正常な重複として除外）
+  checkNominaoshiTableConflict(g, r, key);
+}
+
+// 飲直に転換した卓が、既に別の予約（アイバンでない）で埋まっていないか確認して警告する
+function checkNominaoshiTableConflict(g, r, firstKey) {
+  if (!g.tableNum) return;
+  const targetKey = g.tableNum.toUpperCase().replace(/^P/, 'V');
+  const conflictGuest = guests.find(other => {
+    if (other.left || other.firstKey === firstKey) return false;
+    if (!other.tableNum) return false;
+    if (other.tableNum.toUpperCase().replace(/^P/, 'V') !== targetKey) return false;
+    return true;
+  });
+  if (conflictGuest) {
+    // アイバンで意図的に同卓の場合は正常なので警告しない
+    const conflictAibanPartner = conflictGuest.aiban ? findAibanPartner(conflictGuest) : null;
+    const isAibanPair = conflictAibanPartner && guests.some(x => x.firstKey === firstKey && x.id === conflictAibanPartner.id);
+    if (isAibanPair) return;
+    showToast(`⚠ ${g.tableNum}卓は${formatGuestDisplayName(conflictGuest.name)}の予約と重複しています。卓の再配置をご確認ください`);
+  }
+}
+
+// 枝以外の初回が、既に別の予定客（アイバンでない）と同じ卓になっていないか確認して警告する
+// 枝タイプの初回は既存客と同卓になるのが正常なので対象外
+function checkFirstGroupTableConflict(g) {
+  if (!g.tableNum || g.isEda) return;
+  const targetKey = g.tableNum.toUpperCase().replace(/^P/, 'V');
+  const conflictGuest = guests.find(other => {
+    if (other.left || !other.tableNum) return false;
+    return other.tableNum.toUpperCase().replace(/^P/, 'V') === targetKey;
+  });
+  if (conflictGuest) {
+    showToast(`⚠ ${g.tableNum}卓は既存客(${formatGuestDisplayName(conflictGuest.name)})と重複しています。記入ミスの可能性があります`);
+  }
 }
 
 function editFirstGroup(gid, field, td) {
@@ -2230,6 +2387,7 @@ function editFirstGroup(gid, field, td) {
     if (field === 'tableNum') {
       (g.rows||[]).forEach(r => syncNominaoshiToTable(g, r));
       syncFirstGroupToView(g);
+      checkFirstGroupTableConflict(g);
     }
   }
   input.addEventListener('blur', save);
@@ -2412,9 +2570,11 @@ function renderView() {
       tableMapMulti[key].push({ type: 'guest', data: g });
     }
   });
-  // 初回グループも追加
+  // 初回グループも追加（全員が飲直に転換済みのグループは、もう実際のゲストとして別枠で表示されるので除外）
   (firstGroups||[]).forEach(g => {
     if (!g.tableNum) return;
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => r.nominaoshi && r.nominaoshi.trim() !== '');
+    if (allDone) return;
     const key = g.tableNum.toUpperCase();
     if (!tableMapMulti[key]) tableMapMulti[key] = [];
     tableMapMulti[key].push({ type: 'first', data: g });
@@ -2500,7 +2660,7 @@ function viewRow(g) {
           ${aibanIcon}
           <span class="view-num-inline">${displayTable ? displayTable+'卓' : '未定'}</span>
           <span style="color:#f0c040;font-size:13px;">${g.tanto || ''}</span>
-          <span style="font-weight:700;">${(g.name || '名前不明').replace('△','').trim()}様</span>
+          <span style="font-weight:700;">${formatGuestDisplayName(g.name || '名前不明')}</span>
           &nbsp;
           <button onclick="event.stopPropagation();toggleLeft(${g.id})"
             style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">
@@ -2529,7 +2689,7 @@ function openNoteDetailModal(id) {
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;">
       <div class="modal-header">
-        <span>${(g.name || '名前不明').replace('△','').trim()}様</span>
+        <span>${formatGuestDisplayName(g.name || '名前不明')}</span>
         <button onclick="document.getElementById('noteDetailModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body">
@@ -2630,6 +2790,7 @@ function toggleArrived(id) {
   g.arrived = !g.arrived;
   saveToStorage();
   renderTables();
+  renderFloorStatus();
   if (document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast(g.arrived ? `${g.name || ''} 来店確認 ✅` : `${g.name || ''} 来店取消`);
 }
@@ -3085,11 +3246,17 @@ function doResetReports() {
 }
 
 // 今日の日付キー（YYYY-MM-DD、ローカル時刻基準）
+// 営業日の基準日付を取得する（深夜0時ではなく朝6時を区切りとする）
+// 深夜0時〜5時台にリセットしても、その営業を開始した日の実績として記録されるようにする
 function getTodayKey() {
   const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
+  const businessDate = new Date(now);
+  if (now.getHours() < 6) {
+    businessDate.setDate(businessDate.getDate() - 1);
+  }
+  const y = businessDate.getFullYear();
+  const m = String(businessDate.getMonth() + 1).padStart(2, '0');
+  const d = String(businessDate.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
@@ -3177,6 +3344,49 @@ function doUndoReset() {
 }
 
 // ===== 本日の集計 =====
+
+// お客様名を表示用に整形する（△を除去し、「様」を正しい位置に付ける）
+// 「ひな+枝」のような「+枝」表記は、本来の名前より後ろに来るよう「ひな様+枝」の形にする
+function formatGuestDisplayName(rawName) {
+  const name = (rawName || '').replace('△','').trim();
+  if (!name) return '';
+  const m = name.match(/^(.*?)\s*[+＋]\s*枝\s*$/);
+  if (m && m[1].trim()) {
+    return `${m[1].trim()}様+枝`;
+  }
+  return `${name}様`;
+}
+
+// ===== 時刻の解析・経過判定（来店時間・退店時間の自由入力から数字を拾う） =====
+// 「21:00」「22時」「22時ごろ」のような表記から時刻を抽出する。「同伴」「未定」等は解析できず null を返す
+function parseTimeText(text) {
+  if (!text) return null;
+  const m = String(text).match(/(\d{1,2})[:時](\d{0,2})/);
+  if (!m) return null;
+  const hour = parseInt(m[1]);
+  const minute = m[2] ? parseInt(m[2]) : 0;
+  if (isNaN(hour) || hour > 23 || minute > 59) return null;
+  return { hour, minute };
+}
+
+// 深夜営業を考慮し、17時を「営業日の始まり」とした通し分数に変換する
+// （深夜1時は22時より"後"として正しく比較できるようにする）
+function toShiftMinutes(hour, minute) {
+  let h = hour;
+  if (h < 17) h += 24;
+  return h * 60 + minute;
+}
+
+// 指定した時刻テキストが、現在時刻から見て「経過済み」かどうか判定する
+// thresholdMinutesBefore を指定すると「その分数前から経過扱い」にできる（例：退店10分前から警告）
+function isTimeOverdue(timeText, thresholdMinutesBefore = 0) {
+  const t = parseTimeText(timeText);
+  if (!t) return false;
+  const now = new Date();
+  const nowShift = toShiftMinutes(now.getHours(), now.getMinutes());
+  const targetShift = toShiftMinutes(t.hour, t.minute) - thresholdMinutesBefore;
+  return nowShift >= targetShift;
+}
 
 // カタカナをひらがなに変換する（呼び名の表記ゆれ吸収用）
 // 全角カタカナ(U+30A1-U+30F6)は対応するひらがな(U+3041-U+3096)に1文字ずつ変換される（文字数は変わらない）
