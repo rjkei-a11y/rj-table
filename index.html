@@ -1740,6 +1740,17 @@ function emptyRowHTML(no) {
     </tr>`;
 }
 
+// インライン編集でセルを再描画すると、キーボードが閉じるタイミングと重なって
+// 画面が勝手にスクロールしてしまうことがあるため、再描画の前後でスクロール位置を保持する
+function withScrollPreserved(renderFn) {
+  const scrollY = window.scrollY;
+  renderFn();
+  requestAnimationFrame(() => {
+    window.scrollTo(0, scrollY);
+    setTimeout(() => window.scrollTo(0, scrollY), 50);
+  });
+}
+
 // セルをインライン編集
 function editCell(id, field, td) {
   const g = guests.find(x => x.id === id);
@@ -1758,7 +1769,7 @@ function editCell(id, field, td) {
   function save() {
     g[field] = input.value.trim();
     saveToStorage();
-    renderTables();
+    withScrollPreserved(renderTables);
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
@@ -1777,18 +1788,18 @@ function createAndEdit(rowNum, field, td) {
   input.focus();
   function save() {
     const val = input.value.trim();
-    if (!val) { renderTables(); return; } // 空なら何もしない
+    if (!val) { withScrollPreserved(renderTables); return; } // 空なら何もしない
     const g = { id: nextId++, rowNum: String(rowNum), tableNum:'', arrive:'', leave:'', tanto:'', name:'', budget:'', note:'', help:'', arrived: false };
     g[field] = val;
     guests.push(g);
     repackRowNums();
     saveToStorage();
-    renderTables();
+    withScrollPreserved(renderTables);
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') input.blur();
-    if (e.key === 'Escape') { renderTables(); }
+    if (e.key === 'Escape') { withScrollPreserved(renderTables); }
   });
 }
 
@@ -1828,7 +1839,8 @@ function renderFloorStatus() {
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!infoMap[key]) {
       const count = parseInt(g.count) || 0;
-      infoMap[key] = { tanto: '', name: `初回${count ? count+'名' : ''}`, help: '', specials: [], isFirst: true, arrived: true };
+      const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean))];
+      infoMap[key] = { tanto: '', name: `初回${count ? count+'名' : ''}`, help: photoNames.length ? '写指:'+photoNames.join('/') : '', specials: [], isFirst: true, arrived: true };
     }
   });
   guests.filter(g => g.tableNum && !g.left).forEach(g => {
@@ -1895,7 +1907,9 @@ function renderFloorStatus() {
             let line1, line2, line3;
             if (info && info.isFirst) {
               line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}`;
-              line2 = `<span style="color:${boxText};">${info.name}</span>`;
+              line2 = info.help
+                ? `<span style="color:${boxText};">${info.name}</span> <span style="color:${boxDim};">${info.help}</span>`
+                : `<span style="color:${boxText};">${info.name}</span>`;
               line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
             } else {
               const tanto = (info && info.tanto) || '';
@@ -2359,7 +2373,7 @@ function checkFirstGroupTableConflict(g) {
   if (!g.tableNum || g.isEda) return;
   const targetKey = g.tableNum.toUpperCase().replace(/^P/, 'V');
   const conflictGuest = guests.find(other => {
-    if (other.left || !other.tableNum) return false;
+    if (other.left || !other.tableNum || !other.arrived) return false; // 来店確認前の予約は「空いている」扱い
     return other.tableNum.toUpperCase().replace(/^P/, 'V') === targetKey;
   });
   if (conflictGuest) {
@@ -2382,7 +2396,7 @@ function editFirstGroup(gid, field, td) {
   function save() {
     g[field] = input.value.trim();
     saveFirstData();
-    renderFirstTab();
+    withScrollPreserved(renderFirstTab);
     // 卓番変更時は全行を再同期＋初回卓を反映
     if (field === 'tableNum') {
       (g.rows||[]).forEach(r => syncNominaoshiToTable(g, r));
@@ -2411,7 +2425,7 @@ function editFirstRow(gid, rid, field, td) {
   function save() {
     r[field] = input.value.trim();
     saveFirstData();
-    renderFirstTab();
+    withScrollPreserved(renderFirstTab);
     // 飲直・送り・卓番が変更されたら卓一覧に反映
     if (field === 'nominaoshi' || field === 'okuri' || field === 'plan') {
       syncNominaoshiToTable(g, r);
@@ -2561,9 +2575,9 @@ function renderView() {
     </div>`;
   }
 
-  // 卓番→ゲスト複数対応のマップ
+  // 卓番→ゲスト複数対応のマップ（全体タブは「今、実際に店内にいる人」を表示するため、来店確認済みのみ対象）
   const tableMapMulti = {};
-  active.forEach(g => {
+  active.filter(g => g.arrived).forEach(g => {
     if (g.tableNum) {
       const key = g.tableNum.toUpperCase();
       if (!tableMapMulti[key]) tableMapMulti[key] = [];
@@ -2608,7 +2622,7 @@ function renderView() {
                 <span class="view-num-inline">${displayT}卓</span>
                 <span style="color:#f0c040;font-size:13px;">初回</span>
                 <span style="font-weight:700;">${count}名</span>
-                ${photos ? `<span style="font-size:12px;">${photos}</span>` : ''}
+                ${photos ? `<span style="font-size:12px;">写指:${photos}</span>` : ''}
               </div>
             </div>
           </div>`;
