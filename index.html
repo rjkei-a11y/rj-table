@@ -380,6 +380,8 @@
   }
   .res-table tr.arrived td { background: var(--arrived); }
   .paper-table tr.arrived td { background: #d4edda !important; color: #000; }
+  /* 来店済みなのに卓番が未入力の行は薄青にして、入力忘れが分かりやすいようにする */
+  .paper-table tr.arrived.no-table td { background: #b8d4e8 !important; color: #000; }
   .res-table tr:nth-child(even):not(.arrived) td { background: rgba(255,255,255,0.02); }
 
   .col-num   { width: 30px; text-align: center; }
@@ -562,6 +564,23 @@
   /* 項目数の多いモーダル用のコンパクト表示 */
   .form-row-compact { margin-bottom: 7px; }
   .form-label-compact { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; display: block; }
+  /* 予定報告フォーム：ラベルを左、入力欄を右に並べる横並びレイアウト */
+  .mr-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .mr-label { width: 50px; flex-shrink: 0; font-size: 10px; color: var(--text-dim); }
+  .mr-input {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 12px;
+    padding: 3px 6px;
+    outline: none;
+  }
+  .mr-input:focus { border-color: var(--accent); }
   .form-input-compact {
     width: 100%;
     background: var(--surface2);
@@ -964,30 +983,25 @@
     <button onclick="promptQuickStatus('half_off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e67e22;background:transparent;color:#e67e22;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">半休</button>
   </div>
 
-  <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;">
-    <button class="btn btn-ghost btn-sm" onclick="addTemplate()" style="flex-shrink:0;">📋 追加</button>
-    <button class="btn btn-ghost btn-sm" onclick="clearTemplate()" style="flex-shrink:0;color:var(--text-dim);">空欄を削除</button>
-    <p style="font-size:11px;color:var(--text-dim);line-height:1.6;margin:0;">予定卓が複数ある場合は「追加」でテンプレを複製できます。「空欄を削除」は未入力のまま残ったテンプレだけを消すので、入力済みの内容が消える心配はありません。</p>
-  </div>
-
   <div style="display:flex; gap:10px; align-items:flex-start;">
     <!-- 左：入力フォーム -->
     <div style="flex:1; min-width:0;">
-      <div class="parse-area">
-        <textarea id="lineTextInput" style="min-height:220px;">担当名：
-お客様名：
-来店時間：
-退店時間：
-予算：
-ヘルプ：
-備考：</textarea>
+      <div id="multiReportForm" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div class="mr-row"><label class="mr-label">担当名</label><input class="mr-input" id="mr-tanto"></div>
+        <div class="mr-row"><label class="mr-label">お客様名</label><input class="mr-input" id="mr-name"></div>
+        <div id="mrAibanArea"></div>
+        <div class="mr-row"><label class="mr-label">来店時間</label><input class="mr-input" id="mr-arrive"></div>
+        <div class="mr-row"><label class="mr-label">退店時間</label><input class="mr-input" id="mr-leave"></div>
+        <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="mr-budget"></div>
+        <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="mr-help"></div>
+        <div class="mr-row"><label class="mr-label">備考</label><input class="mr-input" id="mr-note"></div>
+        <div id="queueStatusBar" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding:6px 2px;border-top:1px solid var(--border);">
+          <span id="queueStatusCount" style="font-size:12px;color:var(--text-dim);"></span>
+          <button onclick="openQueuePopup()" style="background:none;border:1px solid var(--accent-dim);border-radius:6px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-family:var(--font-main);font-weight:700;">確定する →</button>
+        </div>
+        <button class="btn btn-primary" onclick="addToReportQueue()" style="width:100%;margin-top:4px;">報告内容を確認</button>
       </div>
-      <button class="btn btn-primary" onclick="parseLineText()" id="parseBtn" style="margin-top:8px;width:100%;">
-        来店予定を報告する
-      </button>
-      <div class="loading" id="loading">
-        <span class="spinner"></span>読み取り中...
-      </div>
+
       <button id="myReportsBtn" onclick="openReportsListForRole()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:12px;padding:8px;cursor:pointer;font-family:var(--font-main);">📋 予約の確認・編集</button>
     </div>
 
@@ -1135,6 +1149,9 @@ function checkLogin() {
   if (role === 'admin' || role === 'host') {
     applyRole(role);
     document.getElementById('loginScreen').style.display = 'none';
+    if (role === 'host' && !getMyIdentity()) {
+      setTimeout(() => promptIdentityModal(), 200);
+    }
   }
 }
 
@@ -1148,6 +1165,10 @@ function doLogin() {
     localStorage.setItem('rj_role', 'host');
     applyRole('host');
     document.getElementById('loginScreen').style.display = 'none';
+    // ログイン直後に「あなたは誰か」を選んでもらう（未選択のまま使い始めるのを防ぐ）
+    if (!getMyIdentity()) {
+      setTimeout(() => promptIdentityModal(), 200);
+    }
   } else {
     document.getElementById('loginError').textContent = 'パスワードが違います';
     document.getElementById('loginInput').value = '';
@@ -1232,6 +1253,9 @@ document.addEventListener('DOMContentLoaded', () => {
   renderTables();
   renderStaffStatus();
   renderIdentityIndicator();
+  renderMrAibanArea();
+  prefillMrTanto();
+  updateQueueStatusBar();
   updateFixedTop();
   setTimeout(updateFixedTop, 100);
   // 来店予定・退店予定の時刻経過ハイライトを1分ごとに再評価する
@@ -1260,107 +1284,265 @@ function switchTab(name) {
   if (name === 'input') renderFloorStatus();
 }
 
-// ===== AI TEXT PARSE =====
-function resetTemplate() {
-  document.getElementById('lineTextInput').value = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
-}
+// ===== 1件ずつ入力してキューに追加する方式 =====
+let _multiReportQueue = [];
+let _queueEditOpen = {};
+let _queueAibanFormOpen = {};
+let _queueAibanParts = {}; // { idx: {tanto, name} } 推測での再分解をせず、入力中の値を直接保持する
 
-function clearTemplate() {
-  const ta = document.getElementById('lineTextInput');
-  const tmpl = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
-  const blocks = ta.value.split('\n\n').filter(b => b.trim());
-  const filtered = blocks.filter(block => {
-    const lines = block.split('\n');
-    return lines.some(line => {
-      const idx = line.indexOf('：');
-      const val = idx >= 0 ? line.slice(idx + 1).trim() : line.trim();
-      return val !== '';
-    });
-  });
-  ta.value = filtered.join('\n\n');
-}
+// 「予約を編集」モーダル用（一覧管理・卓一覧の編集で共通）
+let _editAibanFormOpen = false;
+let _editAibanParts = { tanto: '', name: '' };
+// 卓状況・全体タブの長押しクイック編集モーダル用
+let _qeAibanFormOpen = false;
+let _qeAibanParts = { tanto: '', name: '' };
+let _mrAiban = { tanto: '', name: '' };
+let _mrAibanFormOpen = false;
 
-function addTemplate() {
-  const ta = document.getElementById('lineTextInput');
-  const current = ta.value.trim();
-  const tmpl = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
-  ta.value = current ? current + '\n\n' + tmpl : tmpl;
-  ta.scrollTop = ta.scrollHeight;
-}
-
-function parseLineText() {
-  const text = document.getElementById('lineTextInput').value.trim();
-  if (!text) { showToast('内容を入力してください'); return; }
-
-  // ブロックを空行で分割
-  const blocks = text.split(/\n\s*\n/).filter(b => b.trim());
-  const parsed = [];
-
-  blocks.forEach(block => {
-    // ラベルの表記ゆれ（「担当名」→「担当」など短縮形も可）と、
-    // コロンの表記ゆれ（半角「:」・全角「：」どちらも可）に対応する
-    const get = (keys) => {
-      const keyArr = Array.isArray(keys) ? keys : [keys];
-      for (const k of keyArr) {
-        const match = block.match(new RegExp(k + '\\s*[:：]\\s*(.*)'));
-        if (match) return match[1].trim();
-      }
-      return '';
-    };
-
-    // テンプレ形式かチェック
-    const tanto = get(['担当名', '担当']);
-    const name = get(['お客様名', 'お客様', '名前', 'お名前']);
-
-    if (tanto || name) {
-      // テンプレ形式
-      if (!tanto) { showToast('担当名を入力してください'); return; }
-      // 予定未定はスキップ（お客様名なしor予定未定）
-      if (!name || name.includes('予定未定')) {
-        // 報告状況に反映するためtantoだけ記録
-        markReported(tanto);
-        return;
-      }
-      parsed.push({
-        tanto, name,
-        arrive: get(['来店時間', '来店']),
-        leave:  get(['退店時間', '退店']),
-        budget: get(['予算']),
-        help:   get(['ヘルプ']),
-        note:   get(['備考']),
-        aiban:  get(['アイバン']),
-      });
-    } else {
-      // 自由入力形式（例：「カルマ 予定未定」）
-      const trimmed = block.trim();
-      if (!trimmed) return;
-      // 予定未定を含む場合は報告状況に反映してスキップ
-      if (trimmed.includes('予定未定')) {
-        // 名前部分を抽出（「カルマ予定未定」「カルマ 予定未定」両対応）
-        const tName = trimmed.replace(/\s*予定未定.*/, '').trim();
-        if (tName) markReported(tName);
-        return;
-      }
-      // スペース区切りで最初の単語を担当名、残りをお客様名として扱う
-      const parts = trimmed.split(/\s+/);
-      if (parts.length < 2) { showToast('担当名とお客様名を入力してください'); return; }
-      parsed.push({
-        tanto: parts[0],
-        name: parts.slice(1).join(' '),
-        arrive: '', leave: '', budget: '', help: '', note: '',
-      });
-    }
-  });
-
-  if (!parsed.length) {
-    showToast('有効な報告が見つかりませんでした');
-    return;
+// アイバンの担当名/お客様名を取得する。個別保存された値があればそれを優先し（確実・推測不要）、
+// 無ければ従来通り結合文字列から推測で分割する（古いデータとの互換性のため）
+function getAibanParts(obj) {
+  if (!obj) return { tanto: '', name: '' };
+  if (obj.aibanTanto || obj.aibanName) {
+    return { tanto: obj.aibanTanto || '', name: obj.aibanName || '' };
   }
-
-  showReportPreview(parsed);
+  return splitAibanText(obj.aiban || '');
 }
 
-// ===== 報告内容の確認ポップアップ =====
+// アイバンUIの共通部品（チップ表示／2列入力フォーム／追加ボタン）。
+// 呼び出し元ごとに異なる開閉・更新処理をJS式の文字列として渡すことで、見た目と挙動を完全に統一する
+function aibanEditorHTML(combinedValue, isOpen, parts, openExpr, closeExpr, clearExpr, tantoInputExpr, nameInputExpr) {
+  const hasValue = combinedValue && combinedValue.trim();
+  if (hasValue && !isOpen) {
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:#1a3a52;border:1px solid #3498db;border-radius:12px;padding:3px 6px 3px 10px;font-size:12px;color:#5dade2;">
+          🔗 ${combinedValue}
+          <button onclick="${openExpr}" style="background:none;border:none;color:#5dade2;font-size:12px;cursor:pointer;padding:0 4px;">編集</button>
+          <button onclick="${clearExpr}" style="background:none;border:none;color:#e74c3c;font-size:12px;cursor:pointer;padding:0 4px 0 0;">削除</button>
+        </span>
+      </div>`;
+  }
+  if (isOpen) {
+    return `
+      <div style="margin-bottom:6px;background:var(--surface);border:1px solid #3498db;border-radius:6px;padding:8px;box-sizing:border-box;">
+        <div style="font-size:10px;color:#5dade2;margin-bottom:5px;">🔗 アイバン予定の相手</div>
+        <div style="display:flex;gap:6px;margin-bottom:5px;">
+          <input class="aiban-input" placeholder="担当名" value="${(parts.tanto||'').replace(/"/g,'&quot;')}" oninput="${tantoInputExpr}">
+          <input class="aiban-input" placeholder="お客様名" value="${(parts.name||'').replace(/"/g,'&quot;')}" oninput="${nameInputExpr}">
+        </div>
+        <button onclick="${closeExpr}" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:3px 10px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
+      </div>`;
+  }
+  return `
+    <div style="margin-bottom:6px;">
+      <button onclick="${openExpr}" style="background:none;border:1px dashed var(--border);border-radius:12px;color:var(--text-dim);font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">🔗 アイバン予定を追加</button>
+    </div>`;
+}
+
+function renderMrAibanArea() {
+  const el = document.getElementById('mrAibanArea');
+  if (!el) return;
+  const combined = [_mrAiban.tanto, _mrAiban.name].filter(Boolean).join(' ');
+  el.innerHTML = aibanEditorHTML(
+    combined, _mrAibanFormOpen, _mrAiban,
+    `_mrAibanFormOpen=true;renderMrAibanArea();`,
+    `_mrAibanFormOpen=false;renderMrAibanArea();`,
+    `_mrAiban={tanto:'',name:''};renderMrAibanArea();`,
+    `_mrAiban.tanto=this.value;`,
+    `_mrAiban.name=this.value;`
+  );
+}
+
+// キャスト用パスでログイン中なら、担当名にログイン中の名前を自動入力する
+function prefillMrTanto() {
+  const role = localStorage.getItem('rj_role');
+  const el = document.getElementById('mr-tanto');
+  if (!el || role !== 'host') return;
+  const me = getMyIdentity();
+  if (me) el.value = me;
+}
+
+function clearMrForm() {
+  ['mr-name','mr-arrive','mr-leave','mr-budget','mr-help','mr-note'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  prefillMrTanto();
+  _mrAiban = { tanto: '', name: '' };
+  _mrAibanFormOpen = false;
+  renderMrAibanArea();
+  updateQueueStatusBar();
+}
+
+// 入力欄の下に「現在○件／確定する」バーを表示する（すでに追加済みの予定がある時だけ表示）
+function updateQueueStatusBar() {
+  const bar = document.getElementById('queueStatusBar');
+  const countEl = document.getElementById('queueStatusCount');
+  if (!bar || !countEl) return;
+  if (_multiReportQueue.length > 0) {
+    bar.style.display = 'flex';
+    countEl.textContent = `現在の予定：${_multiReportQueue.length}件`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function addToReportQueue() {
+  const tanto = document.getElementById('mr-tanto').value.trim();
+  const name = document.getElementById('mr-name').value.trim();
+  if (!tanto) { showToast('担当名を入力してください'); return; }
+  if (!name) { showToast('お客様名を入力してください'); return; }
+  const aiban = [_mrAiban.tanto, _mrAiban.name].filter(Boolean).join(' ');
+  _multiReportQueue.push({
+    tanto, name,
+    arrive: document.getElementById('mr-arrive').value.trim(),
+    leave:  document.getElementById('mr-leave').value.trim(),
+    budget: document.getElementById('mr-budget').value.trim(),
+    help:   document.getElementById('mr-help').value.trim(),
+    note:   document.getElementById('mr-note').value.trim(),
+    aiban,
+    aibanTanto: _mrAiban.tanto,
+    aibanName: _mrAiban.name,
+  });
+  clearMrForm();
+  openQueuePopup();
+}
+
+// ポップアップ内で各項目を直接修正できるようにする
+function updateQueueField(idx, key, value) {
+  if (!_multiReportQueue[idx]) return;
+  _multiReportQueue[idx][key] = value;
+}
+
+// アイバンの担当名/お客様名どちらかが変更された時、直接保持している値を更新して結合する（推測での再分解はしない）
+function updateQueueAibanPart(idx, part, value) {
+  if (!_queueAibanParts[idx]) _queueAibanParts[idx] = { tanto: '', name: '' };
+  _queueAibanParts[idx][part] = value;
+  const p = _multiReportQueue[idx];
+  if (p) {
+    p.aiban = [_queueAibanParts[idx].tanto, _queueAibanParts[idx].name].filter(Boolean).join(' ');
+    p.aibanTanto = _queueAibanParts[idx].tanto;
+    p.aibanName = _queueAibanParts[idx].name;
+  }
+}
+
+function removeFromReportQueue(idx) {
+  _multiReportQueue.splice(idx, 1);
+  updateQueueStatusBar();
+  if (_multiReportQueue.length) {
+    openQueuePopup();
+  } else {
+    closeQueuePopup();
+  }
+}
+
+// 追加するたびに開く、これまでの予定一覧の確認ポップアップ（箇条書き・空欄は表示しない・スクロール対応）
+function openQueuePopup() {
+  let modal = document.getElementById('queuePopup');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'queuePopup';
+    document.body.appendChild(modal);
+  }
+  const fieldRow = (i, key, label) => `
+    <div class="mr-row" style="margin-bottom:3px;">
+      <label class="mr-label" style="width:44px;">${label}</label>
+      <input class="mr-input" value="${(_multiReportQueue[i][key] || '').replace(/"/g,'&quot;')}" oninput="updateQueueField(${i},'${key}',this.value)">
+    </div>`;
+  // アイバンは他の項目と違い、最初の入力画面と全く同じスタイル（幅いっぱいの独立ボックス）に統一する
+  const aibanBlock = (i) => {
+    const p = _multiReportQueue[i];
+    const parts = _queueAibanParts[i] || { tanto: '', name: '' };
+    return aibanEditorHTML(
+      p.aiban || '', !!_queueAibanFormOpen[i], parts,
+      `_queueAibanFormOpen[${i}]=true;_queueAibanParts[${i}]=getAibanParts(_multiReportQueue[${i}]);openQueuePopup();`,
+      `_queueAibanFormOpen[${i}]=false;openQueuePopup();`,
+      `updateQueueField(${i},'aiban','');openQueuePopup();`,
+      `updateQueueAibanPart(${i},'tanto',this.value)`,
+      `updateQueueAibanPart(${i},'name',this.value)`
+    );
+  };
+  const items = _multiReportQueue.map((p, i) => {
+    if (!_queueEditOpen[i]) {
+      // 折りたたみ状態：全項目をラベル：値の形で縦に並べる読み取り専用表示
+      return `
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+          <span style="font-size:12px;color:var(--accent);font-weight:700;">${i + 1}件目</span>
+          <div style="display:flex;gap:8px;">
+            <button onclick="_queueEditOpen[${i}]=true;openQueuePopup();" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);">修正</button>
+            <button onclick="removeFromReportQueue(${i})" style="background:none;border:none;color:#c0392b;font-size:11px;cursor:pointer;">削除</button>
+          </div>
+        </div>
+        <div style="font-size:12px;line-height:1.9;">
+          <div><span style="color:var(--text-dim);">担当名：</span><span style="color:#f0c040;">${p.tanto || '未定'}</span></div>
+          <div><span style="color:var(--text-dim);">お客様名：</span><span style="font-weight:700;">${p.name ? p.name + '様' : '未定'}</span></div>
+          <div><span style="color:var(--text-dim);">アイバン予定：</span>${p.aiban || 'なし'}</div>
+          <div><span style="color:var(--text-dim);">来店時間：</span>${p.arrive || '未定'}</div>
+          <div><span style="color:var(--text-dim);">退店時間：</span>${p.leave || '未定'}</div>
+          <div><span style="color:var(--text-dim);">予算：</span>${p.budget || '未定'}</div>
+          <div><span style="color:var(--text-dim);">ヘルプ：</span>${p.help || 'なし'}</div>
+          <div><span style="color:var(--text-dim);">備考：</span>${p.note || 'なし'}</div>
+        </div>
+      </div>`;
+    }
+    // 展開状態：全項目編集
+    return `
+      <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+          <span style="font-size:12px;color:var(--accent);font-weight:700;">${i + 1}件目</span>
+          <div style="display:flex;gap:8px;">
+            <button onclick="_queueEditOpen[${i}]=false;openQueuePopup();" style="background:none;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;">閉じる</button>
+            <button onclick="removeFromReportQueue(${i})" style="background:none;border:none;color:#c0392b;font-size:11px;cursor:pointer;">削除</button>
+          </div>
+        </div>
+        ${fieldRow(i, 'tanto', '担当名')}
+        ${fieldRow(i, 'name', 'お客様名')}
+        ${aibanBlock(i)}
+        ${fieldRow(i, 'arrive', '来店時間')}
+        ${fieldRow(i, 'leave', '退店時間')}
+        ${fieldRow(i, 'budget', '予算')}
+        ${fieldRow(i, 'help', 'ヘルプ')}
+        ${fieldRow(i, 'note', '備考')}
+      </div>`;
+  }).join('');
+  modal.innerHTML = `
+    <div class="modal" style="max-width:360px;max-height:80vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>予定 ${_multiReportQueue.length}件</span>
+        <button onclick="closeQueuePopup()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        ${items || '<p style="color:var(--text-dim);text-align:center;">まだ予定がありません</p>'}
+      </div>
+      <div class="modal-footer" style="flex-direction:column;gap:8px;">
+        <button class="btn btn-ghost" style="width:100%;" onclick="closeQueuePopup()">＋ 予定を追加</button>
+        <button class="btn btn-primary" style="width:100%;" onclick="confirmQueueSubmit()">この内容で確定する</button>
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
+function closeQueuePopup() {
+  document.getElementById('queuePopup')?.classList.remove('show');
+}
+
+function confirmQueueSubmit() {
+  if (!_multiReportQueue.length) { showToast('予定がありません'); return; }
+  closeQueuePopup();
+  importTextParsed(_multiReportQueue);
+  showToast(`${_multiReportQueue.length}件の予定を報告しました`);
+  _multiReportQueue = [];
+  _queueEditOpen = {};
+  _queueAibanFormOpen = {};
+  _queueAibanParts = {};
+  updateQueueStatusBar();
+  switchTab('input');
+}
+
+// ===== 報告内容の確認ポップアップ（現在は未使用だが、他機能からの参照用に残置） =====
 let _reportPreviewData = [];
 
 function showReportPreview(parsed) {
@@ -1515,6 +1697,9 @@ function confirmReportPreview() {
   importTextParsed(cleaned);
   _reportPreviewData = [];
   _aibanFormOpen = {};
+  // 送信済みのキューもクリアする
+  _multiReportQueue = [];
+  renderReportQueueArea();
 }
 
 function importTextParsed(parsed) {
@@ -1536,8 +1721,6 @@ function importTextParsed(parsed) {
     usedRows.add(rc);
     guests.push({ id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType() });
   });
-  document.getElementById('previewArea').innerHTML = '';
-  document.getElementById('lineTextInput').value = '担当名：\nお客様名：\n来店時間：\n退店時間：\n予算：\nヘルプ：\n備考：';
   saveToStorage();
   updateStats();
   renderStaffStatus();
@@ -1797,7 +1980,7 @@ function rowHTML(no, g) {
   // 未来店で、来店予定時刻を過ぎている行はハイライトする
   const isOverdue = !g.arrived && isTimeOverdue(g.arrive);
   return `
-    <tr class="${g.arrived ? 'arrived' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
+    <tr class="${g.arrived ? 'arrived' : ''}${g.arrived && !g.tableNum ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         oncontextmenu="event.preventDefault();confirmDelete(${g.id})"
         data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
       <td class="p-col-no" onclick="toggleArrived(${g.id})" style="cursor:pointer;user-select:none;">${no}${isOverdue ? ' ⏰' : ''}</td>
@@ -2105,8 +2288,11 @@ function openTableDetailModal(tableKey) {
       ['アイバン', guest.aiban],
       ['場内指名', baanaiName],
     ].filter(([,v]) => v);
-    const actionButtons = guest.arrived
-      ? `<button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');toggleLeft(${guest.id})" style="flex:1;color:var(--text-dim);">退店にする</button>`
+    const canEdit = canEditTable(guest);
+    const actionButtons = !canEdit
+      ? ''
+      : guest.arrived
+      ? `<button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');confirmToggleLeft(${guest.id})" style="flex:1;color:var(--text-dim);">退店にする</button>`
       : `<button class="btn btn-primary" onclick="document.getElementById('tableDetailModal').classList.remove('show');toggleArrived(${guest.id})" style="flex:1;">来店にする</button>
          <button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');confirmDelete(${guest.id})" style="flex:1;color:#c0392b;border-color:#c0392b;">予約をキャンセル</button>`;
     bodyHtml = `
@@ -2117,10 +2303,12 @@ function openTableDetailModal(tableKey) {
           <div style="width:80px;flex-shrink:0;font-size:11px;color:var(--text-dim);">${label}</div>
           <div style="font-size:13px;color:${label==='📢 共有事項' ? '#e74c3c' : 'var(--text)'};font-weight:${label==='📢 共有事項' ? '700' : '400'};">${val}</div>
         </div>`).join('')}
+      ${!canEdit ? `<div style="font-size:11px;color:var(--text-dim);margin-top:12px;text-align:center;">※この卓の担当者のみ編集できます</div>` : `
       <div style="display:flex;gap:8px;margin-top:14px;">
         <button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');openSpecialModal(${guest.id})" style="flex:1;">特記事項を編集</button>
         ${actionButtons}
-      </div>`;
+      </div>`}
+    `;
   } else if (firstGroup) {
     const count = parseInt(firstGroup.count) || 0;
     const rowsHtml = (firstGroup.rows || []).map(r => {
@@ -2256,16 +2444,35 @@ function addFirstRow() {
 }
 
 function clearFirstData() {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   let overlay = document.getElementById('deleteOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">初回データを全て消去しますか？</div>
     <div style="display:flex;gap:10px;">
       <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
-      <button onclick="document.getElementById('deleteOverlay').style.display='none';firstGroups=[];firstGid=1;firstRid=1;saveFirstData();renderFirstTab();showToast('消去しました');" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">消去</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';doClearFirstData();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">消去</button>
     </div>
   </div>`;
   overlay.style.display='flex';
+}
+
+function doClearFirstData() {
+  const backup = JSON.parse(JSON.stringify(firstGroups));
+  const backupGid = firstGid, backupRid = firstRid;
+  firstGroups = [];
+  firstGid = 1;
+  firstRid = 1;
+  saveFirstData();
+  renderFirstTab();
+  showToast('消去しました');
+  offerUndo('初回データを消去しました', () => {
+    firstGroups = backup;
+    firstGid = backupGid;
+    firstRid = backupRid;
+    saveFirstData();
+    renderFirstTab();
+  });
 }
 
 function renderFirstTab() {
@@ -2821,7 +3028,7 @@ function viewRow(g) {
           <span style="color:#f0c040;font-size:13px;">${g.tanto || ''}</span>
           <span style="font-weight:700;">${formatGuestDisplayName(g.name || '名前不明')}</span>
           &nbsp;
-          <button onclick="event.stopPropagation();toggleLeft(${g.id})"
+          <button onclick="event.stopPropagation();confirmToggleLeft(${g.id})"
             style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">
             退店
           </button>
@@ -2935,6 +3142,25 @@ function toggleSpecial(id, key) {
 // ===== LEFT (退店) =====
 let lastLeft = null; // 最後に退店したゲストのバックアップ
 
+// 退店操作は内勤のみ・必ず確認ダイアログを経由する
+function confirmToggleLeft(id) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
+  const label = (g.name || '').replace('△','').trim() || g.tanto || ('No.' + g.rowNum);
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">退店にしますか？</div>
+    <div style="font-size:16px;font-weight:700;color:#c9a84c;margin-bottom:20px;">「${label}」</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';toggleLeft(${id})" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">退店にする</button>
+    </div>
+  </div>`;
+  overlay.style.display = 'flex';
+}
+
 function toggleLeft(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
@@ -2989,6 +3215,18 @@ function cancelLeaveEditHold() {
   if (_leaveEditHoldTimer) { clearTimeout(_leaveEditHoldTimer); _leaveEditHoldTimer = null; }
 }
 
+// その卓の編集権限があるか判定する（内勤は常にOK、キャストは自分の担当卓のみOK）
+function canEditTable(guest) {
+  const role = localStorage.getItem('rj_role');
+  if (role === 'admin') return true;
+  if (role !== 'host') return false;
+  const me = getMyIdentity();
+  if (!me || !guest || !guest.tanto) return false;
+  const meNorm = toHiragana(me.trim());
+  const tantoNorm = toHiragana(guest.tanto.trim());
+  return tantoNorm === meNorm || tantoNorm.includes(meNorm) || meNorm.includes(tantoNorm);
+}
+
 function openLeaveTimeQuickEdit(type, idOrKey) {
   let guest = null;
   if (type === 'guest') {
@@ -2998,8 +3236,16 @@ function openLeaveTimeQuickEdit(type, idOrKey) {
     guest = active.find(x => x.tableNum && x.tableNum.toUpperCase().replace(/^P/, 'V') === idOrKey && x.arrived);
   }
   if (!guest) { showToast('編集対象の予約が見つかりませんでした'); return; }
+  if (!canEditTable(guest)) { showToast('この卓はあなたの担当ではないため編集できません'); return; }
 
-  const aibanSplit = splitAibanText(guest.aiban || '');
+  _qeAibanFormOpen = false;
+  _qeAibanParts = getAibanParts(guest);
+  renderLeaveTimeEditModal(guest.id);
+}
+
+function renderLeaveTimeEditModal(guestId) {
+  const guest = guests.find(x => x.id === guestId);
+  if (!guest) return;
   let modal = document.getElementById('leaveTimeEditModal');
   if (!modal) {
     modal = document.createElement('div');
@@ -3007,6 +3253,15 @@ function openLeaveTimeQuickEdit(type, idOrKey) {
     modal.id = 'leaveTimeEditModal';
     document.body.appendChild(modal);
   }
+  const combined = [_qeAibanParts.tanto, _qeAibanParts.name].filter(Boolean).join(' ');
+  const aibanHtml = aibanEditorHTML(
+    combined, _qeAibanFormOpen, _qeAibanParts,
+    `_qeAibanFormOpen=true;renderLeaveTimeEditModal(${guestId});`,
+    `_qeAibanFormOpen=false;renderLeaveTimeEditModal(${guestId});`,
+    `_qeAibanParts={tanto:'',name:''};renderLeaveTimeEditModal(${guestId});`,
+    `_qeAibanParts.tanto=this.value;`,
+    `_qeAibanParts.name=this.value;`
+  );
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
@@ -3017,11 +3272,8 @@ function openLeaveTimeQuickEdit(type, idOrKey) {
         <div class="form-row-compact"><label class="form-label-compact">担当</label><input class="form-input-compact" id="qe-tanto" value="${guest.tanto || ''}"></div>
         <div class="form-row-compact"><label class="form-label-compact">お客様名</label><input class="form-input-compact" id="qe-name" value="${guest.name || ''}"></div>
         <div class="form-row-compact">
-          <label class="form-label-compact">アイバン（担当名 / お客様名）</label>
-          <div style="display:flex;gap:6px;">
-            <input class="aiban-input" id="qe-aiban-tanto" placeholder="担当名" value="${aibanSplit.tanto}">
-            <input class="aiban-input" id="qe-aiban-name" placeholder="お客様名" value="${aibanSplit.name}">
-          </div>
+          <label class="form-label-compact">アイバン</label>
+          ${aibanHtml}
         </div>
         <div class="form-row-compact"><label class="form-label-compact">来店時間</label><input class="form-input-compact" id="qe-arrive" value="${guest.arrive || ''}"></div>
         <div class="form-row-compact"><label class="form-label-compact">退店予定時間</label><input class="form-input-compact" id="qe-leave" value="${guest.leave || ''}" placeholder="例: 24時 / ラスト"></div>
@@ -3052,9 +3304,9 @@ function saveQuickLeaveTime(guestId) {
   g.help = document.getElementById('qe-help').value.trim();
   g.note = document.getElementById('qe-note').value.trim();
   g.shareNote = document.getElementById('qe-sharenote').value.trim();
-  const aibanTanto = document.getElementById('qe-aiban-tanto').value.trim();
-  const aibanName = document.getElementById('qe-aiban-name').value.trim();
-  g.aiban = [aibanTanto, aibanName].filter(Boolean).join(' ');
+  g.aiban = [_qeAibanParts.tanto, _qeAibanParts.name].filter(Boolean).join(' ');
+  g.aibanTanto = _qeAibanParts.tanto;
+  g.aibanName = _qeAibanParts.name;
   saveToStorage();
   document.getElementById('leaveTimeEditModal').classList.remove('show');
   renderTables();
@@ -3067,7 +3319,8 @@ function cancelHold() {
   if (_holdTimer) { clearTimeout(_holdTimer); _holdTimer = null; }
   if (_holdTimer2) { clearTimeout(_holdTimer2); _holdTimer2 = null; }
 }
-function confirmDelete(id) {
+function confirmDelete(id, afterExpr) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const g = guests.find(x => x.id === id);
   if (!g) return;
   const label = g.name || g.tanto || ('No.' + g.rowNum);
@@ -3087,7 +3340,7 @@ function confirmDelete(id) {
       <div style="display:flex;gap:10px;">
         <button onclick="document.getElementById('deleteOverlay').style.display='none'"
           style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
-        <button onclick="document.getElementById('deleteOverlay').style.display='none';deleteGuest(${id})"
+        <button onclick="document.getElementById('deleteOverlay').style.display='none';deleteGuest(${id});${afterExpr || ''}"
           style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button>
       </div>
     </div>`;
@@ -3110,6 +3363,11 @@ function toggleBottle(id) {
 }
 
 function deleteGuest(id) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
+  const backup = JSON.parse(JSON.stringify(g));
+  const label = g.name || g.tanto || ('No.' + g.rowNum);
   guests = guests.filter(x => x.id !== id);
   repackRowNums();
   saveToStorage();
@@ -3117,6 +3375,14 @@ function deleteGuest(id) {
   renderStaffStatus();
   renderFloorStatus();
   showToast('削除しました');
+  offerUndo(`「${label}」を削除しました`, () => {
+    guests.push(backup);
+    repackRowNums();
+    saveToStorage();
+    renderTables();
+    renderStaffStatus();
+    renderFloorStatus();
+  });
 }
 
 // ===== STATS =====
@@ -3223,6 +3489,7 @@ function getMyIdentity() {
 }
 function setMyIdentity(name) {
   try { localStorage.setItem('rj_myIdentity', name); } catch(e) {}
+  prefillMrTanto();
 }
 
 // 今の入力が「本人」か「代理」かを判定する
@@ -3329,8 +3596,8 @@ function renderIdentityIndicator() {
   if (role === 'host') {
     const me = getMyIdentity();
     el.innerHTML = (me
-      ? `<span style="color:var(--text-dim);">あなた: </span><span style="color:var(--accent);font-weight:700;">${me}</span> <button onclick="promptIdentityModal()" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;cursor:pointer;">変更</button>`
-      : `<button onclick="promptIdentityModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">あなたの名前を選択</button>`)
+      ? `<span style="color:var(--accent);font-weight:700;font-size:16px;">${me}</span>`
+      : `<span style="color:var(--text-dim);font-size:11px;">未選択</span>`)
       + logoutLink;
   } else if (role === 'admin') {
     el.innerHTML = `
@@ -4128,7 +4395,7 @@ function openManageModal() {
         <div style="font-size:11px;color:var(--text-dim);">担当: ${g.tanto || '−'} ／ 来店: ${g.arrive || '−'}</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="closeManageModal();openEditModal(${g.id})">編集</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteGuest(${g.id});openManageModal()">削除</button>
+      <button class="btn btn-danger btn-sm" onclick="confirmDelete(${g.id},'openManageModal()')">削除</button>
     </div>
   `;
   }).join('');
@@ -4153,7 +4420,14 @@ function closeManageModal() {
 function openEditModal(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
-  const aibanSplit = splitAibanText(g.aiban || '');
+  _editAibanFormOpen = false;
+  _editAibanParts = getAibanParts(g);
+  renderEditModalContent(id);
+}
+
+function renderEditModalContent(id) {
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
   let modal = document.getElementById('editModal');
   if (!modal) {
     modal = document.createElement('div');
@@ -4161,6 +4435,15 @@ function openEditModal(id) {
     modal.id = 'editModal';
     document.body.appendChild(modal);
   }
+  const combined = [_editAibanParts.tanto, _editAibanParts.name].filter(Boolean).join(' ');
+  const aibanHtml = aibanEditorHTML(
+    combined, _editAibanFormOpen, _editAibanParts,
+    `_editAibanFormOpen=true;renderEditModalContent(${id});`,
+    `_editAibanFormOpen=false;renderEditModalContent(${id});`,
+    `_editAibanParts={tanto:'',name:''};renderEditModalContent(${id});`,
+    `_editAibanParts.tanto=this.value;`,
+    `_editAibanParts.name=this.value;`
+  );
   modal.innerHTML = `
     <div class="modal" style="max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
@@ -4182,11 +4465,8 @@ function openEditModal(id) {
           <input class="form-input-compact" id="e-sharenote" value="${g.shareNote || ''}" style="border-color:#e74c3c;color:#e74c3c;" placeholder="みんなへのお土産もらったので席着くとにお礼をお願いします！">
         </div>
         <div class="form-row-compact">
-          <label class="form-label-compact">アイバン（担当名 / お客様名）</label>
-          <div style="display:flex;gap:6px;">
-            <input class="aiban-input" id="e-aiban-tanto" placeholder="担当名" value="${aibanSplit.tanto}">
-            <input class="aiban-input" id="e-aiban-name" placeholder="お客様名" value="${aibanSplit.name}">
-          </div>
+          <label class="form-label-compact">アイバン</label>
+          ${aibanHtml}
         </div>
       </div>
       <div class="modal-footer">
@@ -4211,9 +4491,9 @@ function saveEdit(id) {
   g.note = document.getElementById('e-note').value;
   g.shareNote = document.getElementById('e-sharenote').value;
   {
-    const aibanTanto = document.getElementById('e-aiban-tanto').value.trim();
-    const aibanName = document.getElementById('e-aiban-name').value.trim();
-    g.aiban = [aibanTanto, aibanName].filter(Boolean).join(' ');
+    g.aiban = [_editAibanParts.tanto, _editAibanParts.name].filter(Boolean).join(' ');
+    g.aibanTanto = _editAibanParts.tanto;
+    g.aibanName = _editAibanParts.name;
   }
   saveToStorage();
   document.getElementById('editModal').classList.remove('show');
@@ -4300,6 +4580,33 @@ function updateFixedTop() {
 
 // 画面サイズが変わった時（回転など）も再計算
 window.addEventListener('resize', () => setTimeout(updateFixedTop, 50));
+
+// ===== 汎用の「元に戻す」通知バー（削除・全クリアなどで使い回す） =====
+let _lastUndo = null;
+
+function offerUndo(label, undoFn) {
+  _lastUndo = undoFn;
+  let el = document.getElementById('undoBar');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'undoBar';
+    el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#242424;border:1px solid var(--accent-dim);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:1000;box-shadow:0 4px 16px rgba(0,0,0,0.5);max-width:90vw;';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<span style="font-size:13px;color:var(--text);white-space:nowrap;">${label}</span><button onclick="runUndo()" style="background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:12px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);font-weight:700;white-space:nowrap;">元に戻す</button>`;
+  el.style.display = 'flex';
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => { el.style.display = 'none'; _lastUndo = null; }, 8000);
+}
+
+function runUndo() {
+  if (!_lastUndo) return;
+  _lastUndo();
+  const el = document.getElementById('undoBar');
+  if (el) el.style.display = 'none';
+  _lastUndo = null;
+  showToast('元に戻しました');
+}
 
 // ===== TOAST =====
 function showToast(msg) {
