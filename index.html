@@ -309,6 +309,7 @@
     #firstTable th:nth-child(7) { width: 36px !important; }
     #firstTable th:nth-child(8) { width: 36px !important; }
     #firstTable th:nth-child(9) { width: 42px !important; }
+    #firstTable th:nth-child(10) { width: 26px !important; }
   }
 
   .table-num-input {
@@ -1061,6 +1062,7 @@
           <th style="width:50px;">送り</th>
           <th style="width:50px;">飲直</th>
           <th style="width:60px;">プラン</th>
+          <th style="width:36px;">終了</th>
         </tr>
       </thead>
       <tbody id="firstTableBody"></tbody>
@@ -2134,7 +2136,7 @@ function renderFloorStatus() {
   const infoMap = {}; // { "V1": { tanto, name, help, specials, isFirst } }
   (firstGroups || []).filter(g => g.tableNum).forEach(g => {
     // 全員が飲直に転換済みなら、もう「初回」ではなく実際のお客様として扱う（優先表示の対象から外す）
-    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => r.nominaoshi && r.nominaoshi.trim() !== '');
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     if (allDone) return;
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!infoMap[key]) {
@@ -2489,6 +2491,11 @@ function doClearFirstData() {
   });
 }
 
+// 初回の1行が「対応完了」扱いかどうか判定する（飲直になった、または終了フラグが立っている）
+function isFirstRowDone(r) {
+  return !!((r.nominaoshi && r.nominaoshi.trim() !== '') || r.ended);
+}
+
 function renderFirstTab() {
   const tbody = document.getElementById('firstTableBody');
   if (!tbody) return;
@@ -2501,9 +2508,9 @@ function renderFirstTab() {
   firstGroups.forEach(g => {
     const count = parseInt(g.count) || 1;
     const rowspan = count > 1 ? ` rowspan="${count}"` : '';
-    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => r.nominaoshi && r.nominaoshi.trim() !== '');
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     g.rows.forEach((r, ri) => {
-      const isDone = r.nominaoshi && r.nominaoshi.trim() !== '';
+      const isDone = isFirstRowDone(r);
       const doneStyle = isDone ? 'background:#d4edda;color:#555;' : '';
       rows += `<tr id="fr-${r.id}" oncontextmenu="event.preventDefault();deleteFirstGroup(${g.id})"
           ontouchstart="startHold2(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">`;
@@ -2524,9 +2531,12 @@ function renderFirstTab() {
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo1',this)" style="${doneStyle}">${r.photo1||''}</td>`;
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo2',this)" style="${doneStyle}">${r.photo2||''}</td>`;
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'okuri',this)" style="${isDone?'background:#d4edda;color:#555;':''}">${r.okuri||''}</td>`;
-      const nomiDone = r.nominaoshi && r.nominaoshi.trim() !== '';
+      const nomiDone = isFirstRowDone(r);
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'nominaoshi',this)" style="${nomiDone?'background:#d4edda;color:#000;':''}">${r.nominaoshi||''}</td>`;
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'plan',this)" style="${nomiDone?'background:#d4edda;color:#555;':''}">${r.plan||''}</td>`;
+      rows += `<td style="text-align:center;${doneStyle}">
+        <span onclick="event.stopPropagation();toggleFirstRowEnded(${g.id},${r.id})" style="cursor:pointer;font-size:16px;color:${r.ended?'#c0392b':'#ccc'};user-select:none;">${r.ended ? '✕' : '○'}</span>
+      </td>`;
       rows += '</tr>';
     });
     noCounter++;
@@ -2535,7 +2545,7 @@ function renderFirstTab() {
   // 空行を20まで埋める
   const remaining = MAX_GROUPS - firstGroups.length;
   for (let i = 0; i < remaining; i++) {
-    rows += `<tr><td style="text-align:center;color:#555;font-size:11px;">${noCounter++}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    rows += `<tr><td style="text-align:center;color:#555;font-size:11px;">${noCounter++}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   }
 
   tbody.innerHTML = rows;
@@ -2547,7 +2557,7 @@ function renderFirstTab() {
     const current = firstGroups.reduce((s,g) => {
       const cnt = parseInt(g.count)||0;
       const rowCnt = (g.rows||[]).length || 1;
-      const doneRows = (g.rows||[]).filter(r => r.nominaoshi && r.nominaoshi.trim()).length;
+      const doneRows = (g.rows||[]).filter(r => isFirstRowDone(r)).length;
       return s + Math.round(cnt * (rowCnt - doneRows) / rowCnt);
     }, 0);
     statsEl.innerHTML = total > 0
@@ -2769,6 +2779,22 @@ function editFirstGroup(gid, field, td) {
   input.addEventListener('keydown', e => { if (e.key==='Enter') input.blur(); if (e.key==='Escape') { td.textContent=current; } });
 }
 
+// 飲直にならなかった初回1人分を「終了」として、対応中カウント・卓状況/全体タブから外す
+// （削除とは違い、写真指名・送りなどの実績データは消さずに残す）
+function toggleFirstRowEnded(gid, rid) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  const r = (g.rows || []).find(x => x.id === rid);
+  if (!r) return;
+  r.ended = !r.ended;
+  saveFirstData();
+  renderFirstTab();
+  renderFloorStatus();
+  if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
+  showToast(r.ended ? '終了にしました' : '終了を取り消しました');
+}
+
 function editFirstRow(gid, rid, field, td) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   cancelHold(); // タップ編集時は長押し削除タイマーをキャンセル
@@ -2956,7 +2982,7 @@ function renderView() {
   // 初回グループも追加（全員が飲直に転換済みのグループは、もう実際のゲストとして別枠で表示されるので除外）
   (firstGroups||[]).forEach(g => {
     if (!g.tableNum) return;
-    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => r.nominaoshi && r.nominaoshi.trim() !== '');
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     if (allDone) return;
     const key = g.tableNum.toUpperCase();
     if (!tableMapMulti[key]) tableMapMulti[key] = [];
@@ -3424,7 +3450,7 @@ function updateTableStats() {
   const allRows = firstGroups.reduce((arr, g) => arr.concat(g.rows||[]), []);
   const firstTotal = firstGroups.reduce((sum, g) => sum + (parseInt(g.count)||0), 0);
   const firstCurrent = firstGroups.reduce((sum, g) => {
-    return sum + (g.rows||[]).reduce((s, r) => s + (r.nominaoshi && r.nominaoshi.trim() ? 0 : (parseInt(g.count)||0) / (g.rows||[1]).length), 0);
+    return sum + (g.rows||[]).reduce((s, r) => s + (isFirstRowDone(r) ? 0 : (parseInt(g.count)||0) / (g.rows||[1]).length), 0);
   }, 0);
   const firstCurrentInt = Math.round(firstCurrent);
 
@@ -3597,6 +3623,7 @@ function openMyReportsModal() {
         <div style="font-size:11px;color:var(--text-dim);">来店: ${g.arrive || '未定'}${g.arrived ? '　（来店済み）' : ''}</div>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="closeMyReportsModal();openLeaveTimeQuickEdit('guest', ${g.id})">編集</button>
+      <button class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#c0392b;" onclick="confirmDeleteMyReservation(${g.id})">削除</button>
     </div>
   `).join('');
   modal.innerHTML = `
@@ -3614,6 +3641,51 @@ function openMyReportsModal() {
 
 function closeMyReportsModal() {
   document.getElementById('myReportsModal')?.classList.remove('show');
+}
+
+// キャスト本人が「自分の予約一覧」から、自分の担当分だけを削除できる特例ルート
+// （お客様都合のキャンセルなど、内勤を介さずその場で消したいケース向け。確認ダイアログ・元に戻すは他の削除操作と同様に用意する）
+function confirmDeleteMyReservation(id) {
+  const g = guests.find(x => x.id === id);
+  if (!g) { showToast('対象の予約が見つかりませんでした'); return; }
+  if (!canEditTable(g)) { showToast('自分の担当分のみ削除できます'); return; }
+  const label = formatGuestDisplayName(g.name);
+
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">この予約を削除しますか？</div>
+    <div style="font-size:16px;font-weight:700;color:#c9a84c;margin-bottom:20px;">「${label}」</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';doDeleteMyReservation(${id})" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button>
+    </div>
+  </div>`;
+  overlay.style.display = 'flex';
+}
+
+function doDeleteMyReservation(id) {
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
+  if (!canEditTable(g)) { showToast('自分の担当分のみ削除できます'); return; }
+  const backup = JSON.parse(JSON.stringify(g));
+  const label = formatGuestDisplayName(g.name);
+  guests = guests.filter(x => x.id !== id);
+  repackRowNums();
+  saveToStorage();
+  renderTables();
+  renderFloorStatus();
+  renderMyTodaySummary();
+  openMyReportsModal();
+  showToast('削除しました');
+  offerUndo(`「${label}」を削除しました`, () => {
+    guests.push(backup);
+    repackRowNums();
+    saveToStorage();
+    renderTables();
+    renderFloorStatus();
+    renderMyTodaySummary();
+  });
 }
 
 function promptIdentityModal(onDone) {
@@ -4456,7 +4528,7 @@ function openManageModal() {
     document.body.appendChild(modal);
   }
 
-  const rows = guests.filter(g => g.name || g.tanto).map(g => {
+  const rows = guests.filter(g => g.name || g.tanto || g.tableNum).map(g => {
     const aibanInfo = getAibanLinkInfo(g);
     const aibanMark = aibanInfo.linked ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" style="color:${aibanInfo.color};margin-right:4px;">🔗</span>` : '';
     return `
