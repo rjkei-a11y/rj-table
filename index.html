@@ -999,10 +999,11 @@
           <span id="queueStatusCount" style="font-size:12px;color:var(--text-dim);"></span>
           <button onclick="openQueuePopup()" style="background:none;border:1px solid var(--accent-dim);border-radius:6px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-family:var(--font-main);font-weight:700;">確定する →</button>
         </div>
-        <button class="btn btn-primary" onclick="addToReportQueue()" style="width:100%;margin-top:4px;">報告内容を確認</button>
+        <button class="btn btn-primary" id="mrSubmitBtn" onclick="addToReportQueue()" style="width:100%;margin-top:4px;">報告内容を確認</button>
       </div>
 
       <button id="myReportsBtn" onclick="openReportsListForRole()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:12px;padding:8px;cursor:pointer;font-family:var(--font-main);">📋 予約の確認・編集</button>
+      <div id="myTodaySummary" style="margin-top:10px;"></div>
     </div>
 
     <!-- 右：報告状況 -->
@@ -1044,8 +1045,8 @@
 <div class="panel" id="panel-first">
   <div style="font-size:14px;color:var(--text-dim);margin-bottom:8px;" id="firstStats"></div>
   <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
-    <button class="btn btn-ghost btn-sm" onclick="addFirstRow()">＋ 追加</button>
-    <button class="btn btn-ghost btn-sm" onclick="clearFirstData()" style="margin-left:auto;color:#c0392b;border-color:#c0392b;">🗑 全クリア</button>
+    <button class="btn btn-ghost btn-sm" id="firstAddBtn" onclick="addFirstRow()">＋ 追加</button>
+    <button class="btn btn-ghost btn-sm" id="firstClearBtn" onclick="clearFirstData()" style="margin-left:auto;color:#c0392b;border-color:#c0392b;">🗑 全クリア</button>
   </div>
   <div style="overflow-x:auto;">
     <table class="paper-table" id="firstTable">
@@ -1192,6 +1193,11 @@ function applyRole(role) {
     // 集計も内勤（admin）のみ閲覧可能
     const summaryBtn = document.getElementById('summaryBtn');
     if (summaryBtn) summaryBtn.style.display = 'none';
+    // 初回タブはキャストロールでは閲覧専用（追加・全クリアボタンを非表示）
+    const firstAddBtn = document.getElementById('firstAddBtn');
+    if (firstAddBtn) firstAddBtn.style.display = 'none';
+    const firstClearBtn = document.getElementById('firstClearBtn');
+    if (firstClearBtn) firstClearBtn.style.display = 'none';
   }
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
   if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
@@ -1256,6 +1262,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderMrAibanArea();
   prefillMrTanto();
   updateQueueStatusBar();
+  updateMrSubmitBtnState();
   updateFixedTop();
   setTimeout(updateFixedTop, 100);
   // 来店予定・退店予定の時刻経過ハイライトを1分ごとに再評価する
@@ -1389,6 +1396,11 @@ function updateQueueStatusBar() {
 }
 
 function addToReportQueue() {
+  const role = localStorage.getItem('rj_role');
+  if (role === 'admin' && !proxyMode) {
+    showToast('代理入力モードをONにしてから報告してください');
+    return;
+  }
   const tanto = document.getElementById('mr-tanto').value.trim();
   const name = document.getElementById('mr-name').value.trim();
   if (!tanto) { showToast('担当名を入力してください'); return; }
@@ -2113,6 +2125,7 @@ function saveFloorData() {
 }
 
 function renderFloorStatus() {
+  renderMyTodaySummary();
   const area = document.getElementById('floorStatusArea');
   if (!area) return;
   // 卓番→表示情報のマップを作成（通常ゲスト・初回グループ両対応）
@@ -2438,6 +2451,7 @@ function saveFirstData() {
 }
 
 function addFirstRow() {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   firstGroups.push({ id: firstGid++, count:'', tableNum:'', rows:[{id:firstRid++,seat:'',photo1:'',photo2:'',okuri:'',nominaoshi:'',plan:''}] });
   saveFirstData();
   renderFirstTab();
@@ -2546,6 +2560,7 @@ function renderFirstTab() {
 let _inlinePickerCallback = null;
 
 function openCountPicker(gid, anchorEl) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const g = firstGroups.find(x => x.id === gid);
   if (!g) return;
   const options = [
@@ -2562,6 +2577,7 @@ function openCountPicker(gid, anchorEl) {
 }
 
 function openSeatPicker(gid, rid, anchorEl) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const g = firstGroups.find(x => x.id === gid);
   const r = g ? (g.rows || []).find(x => x.id === rid) : null;
   const options = [
@@ -2616,6 +2632,7 @@ function closeInlinePicker() {
 }
 
 function onCountChange(gid, val) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const g = firstGroups.find(x => x.id === gid);
   if (!g) return;
   const isEda = val.startsWith('eda-');
@@ -2725,6 +2742,7 @@ function checkFirstGroupTableConflict(g) {
 }
 
 function editFirstGroup(gid, field, td) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   cancelHold(); // タップ編集時は長押し削除タイマーをキャンセル
   const g = firstGroups.find(x => x.id === gid);
   if (!g) return;
@@ -2752,6 +2770,7 @@ function editFirstGroup(gid, field, td) {
 }
 
 function editFirstRow(gid, rid, field, td) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   cancelHold(); // タップ編集時は長押し削除タイマーをキャンセル
   const g = firstGroups.find(x => x.id === gid);
   if (!g) return;
@@ -2785,6 +2804,7 @@ function editFirstRow(gid, rid, field, td) {
 }
 
 function deleteFirstGroup(gid) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   let overlay = document.getElementById('deleteOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;"><div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">この組を削除しますか？</div><div style="display:flex;gap:10px;"><button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button><button onclick="document.getElementById('deleteOverlay').style.display='none';firstGroups=firstGroups.filter(x=>x.id!==${gid});saveFirstData();renderFirstTab();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button></div></div>`;
@@ -3490,6 +3510,7 @@ function getMyIdentity() {
 function setMyIdentity(name) {
   try { localStorage.setItem('rj_myIdentity', name); } catch(e) {}
   prefillMrTanto();
+  renderMyTodaySummary();
 }
 
 // 今の入力が「本人」か「代理」かを判定する
@@ -3509,6 +3530,40 @@ function openReportsListForRole() {
   } else {
     openMyReportsModal();
   }
+}
+
+// 予定報告タブの空きスペースに、ログイン中のキャスト本人の本日の予定を一覧表示する
+function renderMyTodaySummary() {
+  const el = document.getElementById('myTodaySummary');
+  if (!el) return;
+  const role = localStorage.getItem('rj_role');
+  if (role !== 'host') { el.innerHTML = ''; return; }
+  const me = getMyIdentity();
+  if (!me) { el.innerHTML = ''; return; }
+  const myNorm = toHiragana(me.trim());
+  const myGuests = guests
+    .filter(g => {
+      if (g.left || !g.tanto) return false;
+      const tantoNorm = toHiragana(g.tanto.trim());
+      return tantoNorm === myNorm || tantoNorm.includes(myNorm) || myNorm.includes(tantoNorm);
+    })
+    .sort((a, b) => Number(a.rowNum || 0) - Number(b.rowNum || 0));
+
+  if (!myGuests.length) {
+    el.innerHTML = `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text-dim);font-size:12px;text-align:center;">本日の予定はまだありません</div>`;
+    return;
+  }
+  const rows = myGuests.map(g => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <span style="color:var(--accent);font-weight:700;min-width:34px;font-size:12px;">${g.tableNum || (g.rowNum ? 'No.'+g.rowNum : '未')}</span>
+      <span style="flex:1;font-size:13px;">${formatGuestDisplayName(g.name)}</span>
+      ${g.arrived ? `<span style="font-size:10px;color:#2ecc71;">来店済み</span>` : ''}
+    </div>`).join('');
+  el.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;">
+      <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:6px;">あなたの本日の予定：${myGuests.length}件</div>
+      ${rows}
+    </div>`;
 }
 
 // キャストが自分自身の報告済み予約を確認・編集するための一覧
@@ -3612,7 +3667,20 @@ function renderIdentityIndicator() {
 function toggleProxyMode() {
   proxyMode = !proxyMode;
   renderIdentityIndicator();
+  updateMrSubmitBtnState();
   showToast(proxyMode ? '代理入力モードをONにしました' : '代理入力モードをOFFにしました');
+}
+
+// 内勤で代理入力モードがOFFの時は、報告ボタンを薄く見せて押せない雰囲気を出す
+function updateMrSubmitBtnState() {
+  const btn = document.getElementById('mrSubmitBtn');
+  if (!btn) return;
+  const role = localStorage.getItem('rj_role');
+  if (role === 'admin' && !proxyMode) {
+    btn.style.opacity = '0.4';
+  } else {
+    btn.style.opacity = '1';
+  }
 }
 
 function confirmLogout() {
@@ -4353,15 +4421,19 @@ function renderStaffStatus() {
   container.innerHTML = staffList.map(name => {
     const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
     const dayStatus = staffDayStatus[name] ? staffDayStatus[name].status : null;
-    // 優先順位: 報告済み・予定未定(緑) > 休み/有休(赤) > 半休(オレンジ) > 未報告(グレー)
-    // ※予定未定も報告済みと同じ緑にすることで、「未定と報告すると目立ってしまう」ことへの心理的ハードルをなくす
+    // 優先順位: 報告済み(緑) > 休み/有休(赤) > 半休(オレンジ) > 未報告(グレー)
+    // ※予定未定は、キャスト自身が見る時は報告済みと同じ緑にして心理的ハードルをなくす一方、
+    // 内勤が見る時だけ青にして「誰が未定報告か」を業務上把握できるようにする
+    const isAdminView = localStorage.getItem('rj_role') === 'admin';
     let color, textColor;
-    if (done || dayStatus === 'pending') {
+    if (done) {
       color = textColor = '#2ecc71';
     } else if (dayStatus === 'off' || dayStatus === 'paid_off') {
       color = textColor = '#e74c3c';
     } else if (dayStatus === 'half_off') {
       color = textColor = '#e67e22';
+    } else if (dayStatus === 'pending') {
+      color = textColor = isAdminView ? '#3498db' : '#2ecc71';
     } else {
       color = 'var(--border)';
       textColor = 'var(--text-dim)';
