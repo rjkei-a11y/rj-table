@@ -4519,6 +4519,30 @@ function renderStaffStatus() {
 }
 
 // ===== MANAGE MODAL (編集・削除一覧) =====
+// ===== デバッグ用：guests配列の生データをそのまま確認する（原因調査のための一時的な機能） =====
+function openDebugDataView() {
+  let modal = document.getElementById('debugDataModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'debugDataModal';
+    document.body.appendChild(modal);
+  }
+  const json = JSON.stringify(guests, null, 2);
+  modal.innerHTML = `
+    <div class="modal" style="max-width:95vw;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>生データ確認（全${guests.length}件）</span>
+        <button onclick="document.getElementById('debugDataModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">この中身を選択・コピーして共有してください</div>
+        <textarea readonly style="width:100%;height:400px;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:monospace;font-size:11px;padding:8px;white-space:pre;" onclick="this.select()">${json.replace(/</g,'&lt;')}</textarea>
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
 function openManageModal() {
   let modal = document.getElementById('manageModal');
   if (!modal) {
@@ -4548,10 +4572,11 @@ function openManageModal() {
     <div class="modal" style="max-height:80vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <span>予約の編集・削除</span>
+        <button onclick="openDebugDataView()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">生データ確認</button>
         <button onclick="closeManageModal()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
-        ${guests.filter(g => g.name || g.tanto).length ? rows : '<p style="color:var(--text-dim);text-align:center;padding:20px;">予約がありません</p>'}
+        ${guests.filter(g => g.name || g.tanto || g.tableNum).length ? rows : '<p style="color:var(--text-dim);text-align:center;padding:20px;">予約がありません</p>'}
       </div>
     </div>`;
   modal.classList.add('show');
