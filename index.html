@@ -4085,6 +4085,7 @@ function doResetReports() {
   saveFirstData();
   // 場内メモ
   try { localStorage.setItem('rj_baanai', ''); } catch(e) {}
+  if (window.fbSaveBaanai) window.fbSaveBaanai(''); // ローカルだけでなくFirebaseにも反映する（他端末に残り続けるのを防ぐ）
   const baanaiInput = document.getElementById('baanaiInput');
   if (baanaiInput) baanaiInput.value = '';
   updateBaanaiBar('');
@@ -4184,6 +4185,7 @@ function doUndoReset() {
   saveDayStatus();
 
   try { localStorage.setItem('rj_baanai', backup.baanai || ''); } catch(e) {}
+  if (window.fbSaveBaanai) window.fbSaveBaanai(backup.baanai || ''); // ローカルだけでなくFirebaseにも反映する
   const baanaiInput = document.getElementById('baanaiInput');
   if (baanaiInput) baanaiInput.value = backup.baanai || '';
   updateBaanaiBar(backup.baanai || '');
