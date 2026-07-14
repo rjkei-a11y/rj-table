@@ -1020,7 +1020,7 @@
         <button class="btn btn-primary" id="mrSubmitBtn" onclick="addToReportQueue()" style="width:100%;margin-top:4px;">報告内容を確認</button>
       </div>
 
-      <button id="myReportsBtn" onclick="openReportsListForRole()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:12px;padding:8px;cursor:pointer;font-family:var(--font-main);">📋 予約の確認・編集</button>
+      <button id="myReportsBtn" onclick="openReportsListForRole()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:12px;padding:8px;cursor:pointer;font-family:var(--font-main);">📋 予定の確認・編集</button>
       <div id="myTodaySummary" style="margin-top:10px;"></div>
     </div>
 
@@ -1438,9 +1438,9 @@ function addToReportQueue() {
     const aiban = [_mrAiban.tanto, _mrAiban.name].filter(Boolean).join(' ');
     _multiReportQueue.push({
       tanto, name,
-      arrive: document.getElementById('mr-arrive').value.trim(),
-      leave:  document.getElementById('mr-leave').value.trim(),
-      budget: document.getElementById('mr-budget').value.trim(),
+      arrive: toHalfWidthTimeText(document.getElementById('mr-arrive').value.trim()),
+      leave:  toHalfWidthTimeText(document.getElementById('mr-leave').value.trim()),
+      budget: formatBudgetText(document.getElementById('mr-budget').value.trim()),
       help:   document.getElementById('mr-help').value.trim(),
       note:   document.getElementById('mr-note').value.trim(),
       aiban,
@@ -1582,6 +1582,12 @@ function closeQueuePopup() {
 
 function confirmQueueSubmit() {
   if (!_multiReportQueue.length) { showToast('予定がありません'); return; }
+  // 確定時にまとめて、全角数字→半角・予算の桁区切りを正規化する（入力中のカーソル位置が乱れないように）
+  _multiReportQueue.forEach(p => {
+    p.arrive = toHalfWidthTimeText(p.arrive || '');
+    p.leave = toHalfWidthTimeText(p.leave || '');
+    p.budget = formatBudgetText(p.budget || '');
+  });
   closeQueuePopup();
   importTextParsed(_multiReportQueue);
   showToast(`${_multiReportQueue.length}件の予定を報告しました`);
@@ -1751,6 +1757,26 @@ function confirmReportPreview() {
   // 送信済みのキューもクリアする
   _multiReportQueue = [];
   renderReportQueueArea();
+}
+
+// 全角数字を半角に変換する（他の文字はそのまま）
+function toHalfWidthDigits(text) {
+  if (!text) return text;
+  return text.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+}
+
+// 来店時間・退店時間向け：全角数字に加え、全角コロンも半角に統一する
+function toHalfWidthTimeText(text) {
+  return toHalfWidthDigits(text).replace(/：/g, ':');
+}
+
+// 予算欄向け：全角→半角変換した上で、完全に数字だけなら3桁区切りにする（「５万」等はそのまま、「50000」→「50,000」）
+function formatBudgetText(text) {
+  const normalized = toHalfWidthDigits(text || '').trim();
+  if (/^\d+$/.test(normalized)) {
+    return Number(normalized).toLocaleString('en-US');
+  }
+  return normalized;
 }
 
 // 予算欄に「上げ」（単価上げ・爆上げ等）が含まれていたら、自動で🔺特記事項を付ける
@@ -3381,7 +3407,7 @@ function renderLeaveTimeEditModal(guestId) {
         <div class="mr-row-top"><label class="mr-label" style="padding-top:4px;">備考</label><textarea class="mr-textarea" id="qe-note" rows="2">${guest.note || ''}</textarea></div>
         <div class="mr-row-top">
           <label class="mr-label" style="color:#e74c3c;padding-top:4px;">📢共有</label>
-          <textarea class="mr-textarea" id="qe-sharenote" rows="2" style="border-color:#e74c3c;color:#e74c3c;" placeholder="みんなへのお土産もらったので席着くとにお礼をお願いします！">${guest.shareNote || ''}</textarea>
+          <textarea class="mr-textarea" id="qe-sharenote" rows="2" style="border-color:#e74c3c;color:#e74c3c;" placeholder="例：みんなへのお土産をもらったので席着くときにお礼をお願いします！">${guest.shareNote || ''}</textarea>
         </div>
       </div>
       <div class="modal-footer">
@@ -3397,9 +3423,9 @@ function saveQuickLeaveTime(guestId) {
   if (!g) return;
   g.tanto = document.getElementById('qe-tanto').value.trim();
   g.name = document.getElementById('qe-name').value.trim();
-  g.arrive = document.getElementById('qe-arrive').value.trim();
-  g.leave = document.getElementById('qe-leave').value.trim();
-  g.budget = document.getElementById('qe-budget').value.trim();
+  g.arrive = toHalfWidthTimeText(document.getElementById('qe-arrive').value.trim());
+  g.leave = toHalfWidthTimeText(document.getElementById('qe-leave').value.trim());
+  g.budget = formatBudgetText(document.getElementById('qe-budget').value.trim());
   syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('qe-help').value.trim();
   g.note = document.getElementById('qe-note').value.trim();
@@ -3635,9 +3661,9 @@ function renderMyTodaySummary() {
     el.innerHTML = `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text-dim);font-size:12px;text-align:center;">本日の予定はまだありません</div>`;
     return;
   }
-  const rows = myGuests.map(g => `
+  const rows = myGuests.map((g, i) => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
-      <span style="color:var(--accent);font-weight:700;min-width:34px;font-size:12px;">${g.tableNum || (g.rowNum ? 'No.'+g.rowNum : '未')}</span>
+      <span style="color:var(--accent);font-weight:700;min-width:44px;font-size:12px;">${g.tableNum || (i + 1) + '件目'}</span>
       <span style="flex:1;font-size:13px;">${formatGuestDisplayName(g.name)}</span>
       ${g.arrived ? `<span style="font-size:10px;color:#2ecc71;">来店済み</span>` : ''}
     </div>`).join('');
@@ -3671,9 +3697,9 @@ function openMyReportsModal() {
     modal.id = 'myReportsModal';
     document.body.appendChild(modal);
   }
-  const rows = myGuests.map(g => `
+  const rows = myGuests.map((g, i) => `
     <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
-      <span style="color:var(--accent);font-weight:700;min-width:36px;font-size:13px;">${g.tableNum || (g.rowNum ? 'No.'+g.rowNum : '未')}</span>
+      <span style="color:var(--accent);font-weight:700;min-width:44px;font-size:13px;">${g.tableNum || (i + 1) + '件目'}</span>
       <div style="flex:1;">
         <div style="font-size:13px;font-weight:700;">${formatGuestDisplayName(g.name)}</div>
         <div style="font-size:11px;color:var(--text-dim);">来店: ${g.arrive || '未定'}${g.arrived ? '　（来店済み）' : ''}</div>
@@ -4688,7 +4714,7 @@ function renderEditModalContent(id) {
         <div class="mr-row-top"><label class="mr-label" style="padding-top:4px;">備考</label><textarea class="mr-textarea" id="e-note" rows="2">${g.note || ''}</textarea></div>
         <div class="mr-row-top">
           <label class="mr-label" style="color:#e74c3c;padding-top:4px;">📢共有</label>
-          <textarea class="mr-textarea" id="e-sharenote" rows="2" style="border-color:#e74c3c;color:#e74c3c;" placeholder="みんなへのお土産もらったので席着くとにお礼をお願いします！">${g.shareNote || ''}</textarea>
+          <textarea class="mr-textarea" id="e-sharenote" rows="2" style="border-color:#e74c3c;color:#e74c3c;" placeholder="例：みんなへのお土産をもらったので席着くときにお礼をお願いします！">${g.shareNote || ''}</textarea>
         </div>
         <div class="mr-row">
           <label class="mr-label">アイバン</label>
@@ -4709,10 +4735,10 @@ function saveEdit(id) {
   g.rowNum = document.getElementById('e-rownum').value || null;
   g.tableNum = document.getElementById('e-table').value;
   g.name = document.getElementById('e-name').value;
-  g.arrive = document.getElementById('e-arrive').value;
-  g.leave = document.getElementById('e-leave').value;
+  g.arrive = toHalfWidthTimeText(document.getElementById('e-arrive').value);
+  g.leave = toHalfWidthTimeText(document.getElementById('e-leave').value);
   g.tanto = document.getElementById('e-tanto').value;
-  g.budget = document.getElementById('e-budget').value;
+  g.budget = formatBudgetText(document.getElementById('e-budget').value);
   syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('e-help').value;
   g.note = document.getElementById('e-note').value;
