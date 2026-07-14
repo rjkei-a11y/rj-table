@@ -36,6 +36,7 @@
     -webkit-touch-callout: default;
     -webkit-user-select: text;
     user-select: text;
+    caret-color: #3498db;
   }
 
   /* ===== HEADER ===== */
@@ -563,8 +564,8 @@
   .form-input:focus { border-color: var(--accent); }
 
   /* 項目数の多いモーダル用のコンパクト表示 */
-  .form-row-compact { margin-bottom: 7px; }
-  .form-label-compact { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; display: block; }
+  .form-row-compact { margin-bottom: 4px; }
+  .form-label-compact { font-size: 9px; color: var(--text-dim); margin-bottom: 1px; display: block; }
   /* 予定報告フォーム：ラベルを左、入力欄を右に並べる横並びレイアウト */
   .mr-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
   .mr-label { width: 50px; flex-shrink: 0; font-size: 10px; color: var(--text-dim); }
@@ -582,6 +583,25 @@
     outline: none;
   }
   .mr-input:focus { border-color: var(--accent); }
+  .mr-row-top { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 4px; }
+  .mr-textarea {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-main);
+    font-size: 12px;
+    padding: 4px 6px;
+    outline: none;
+    resize: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+  .mr-textarea:focus { border-color: var(--accent); }
   .form-input-compact {
     width: 100%;
     background: var(--surface2);
@@ -589,8 +609,8 @@
     border-radius: 4px;
     color: var(--text);
     font-family: var(--font-main);
-    font-size: 13px;
-    padding: 6px 8px;
+    font-size: 12px;
+    padding: 4px 7px;
     outline: none;
   }
   .form-input-compact:focus { border-color: var(--accent); }
@@ -996,6 +1016,7 @@
         <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="mr-budget"></div>
         <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="mr-help"></div>
         <div class="mr-row"><label class="mr-label">備考</label><input class="mr-input" id="mr-note"></div>
+        <div id="queuePreviewArea"></div>
         <button class="btn btn-primary" id="mrSubmitBtn" onclick="addToReportQueue()" style="width:100%;margin-top:4px;">報告内容を確認</button>
       </div>
 
@@ -1380,17 +1401,27 @@ function clearMrForm() {
   updateQueueStatusBar();
 }
 
-// 入力欄の下に「現在○件／確定する」バーを表示する（すでに追加済みの予定がある時だけ表示）
+// 入力欄の下に、報告前のキューの中身をボタンなしで一覧表示する
 function updateQueueStatusBar() {
-  const bar = document.getElementById('queueStatusBar');
-  const countEl = document.getElementById('queueStatusCount');
-  if (!bar || !countEl) return;
-  if (_multiReportQueue.length > 0) {
-    bar.style.display = 'flex';
-    countEl.textContent = `現在の予定：${_multiReportQueue.length}件`;
-  } else {
-    bar.style.display = 'none';
+  renderQueuePreview();
+}
+
+function renderQueuePreview() {
+  const el = document.getElementById('queuePreviewArea');
+  if (!el) return;
+  if (!_multiReportQueue.length) {
+    el.innerHTML = '';
+    return;
   }
+  const items = _multiReportQueue.map(p => `
+    <div style="font-size:12px;color:var(--text);padding:3px 0;">
+      <span style="color:#f0c040;">${p.tanto || '(担当未入力)'}</span> ${p.name || '(お客様名未入力)'}様
+    </div>`).join('');
+  el.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-top:6px;margin-bottom:2px;">
+      <div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:2px;">報告前の予定：${_multiReportQueue.length}件</div>
+      ${items}
+    </div>`;
 }
 
 function addToReportQueue() {
@@ -1539,7 +1570,7 @@ function openQueuePopup() {
       </div>
       <div class="modal-footer" style="flex-direction:column;gap:8px;">
         <button class="btn btn-ghost" style="width:100%;" onclick="closeQueuePopup()">＋ 予定を追加</button>
-        <button class="btn btn-primary" style="width:100%;" onclick="confirmQueueSubmit()">この内容で確定する</button>
+        <button class="btn btn-primary" style="width:100%;" onclick="confirmQueueSubmit()">この内容で報告する</button>
       </div>
     </div>`;
   modal.classList.add('show');
@@ -1722,6 +1753,20 @@ function confirmReportPreview() {
   renderReportQueueArea();
 }
 
+// 予算欄に「上げ」（単価上げ・爆上げ等）が含まれていたら、自動で🔺特記事項を付ける
+function detectBudgetRaiseKeyword(text) {
+  return !!(text && text.includes('上げ'));
+}
+
+// 既存の特記事項を崩さず、予算欄の内容に応じて🔺(raise)の有無だけを同期する
+function syncBudgetRaiseSpecial(g) {
+  if (!g.specials) g.specials = [];
+  const shouldHave = detectBudgetRaiseKeyword(g.budget);
+  const has = g.specials.includes('raise');
+  if (shouldHave && !has) g.specials.push('raise');
+  if (!shouldHave && has) g.specials = g.specials.filter(k => k !== 'raise');
+}
+
 function importTextParsed(parsed) {
   if (!parsed || !parsed.length) {
     showToast('該当する報告が見つかりませんでした');
@@ -1739,7 +1784,8 @@ function importTextParsed(parsed) {
     if (isDuplicate) { skipped++; return; }
     while (usedRows.has(rc)) rc++;
     usedRows.add(rc);
-    guests.push({ id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType() });
+    const specials = detectBudgetRaiseKeyword(g.budget) ? ['raise'] : [];
+    guests.push({ id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType(), specials });
   });
   saveToStorage();
   updateStats();
@@ -3127,6 +3173,7 @@ const SPECIALS = [
   { key: 'event',  icon: '👑', label: 'イベント主役' },
   { key: 'nohelp', icon: '🚫', label: 'ヘルプなし' },
   { key: 'stop',   icon: '🛑', label: '単価ストップ' },
+  { key: 'raise',  icon: '🔺', label: '単価上げ' },
   { key: 'new',    icon: '🔰', label: '新規・飲直' },
   { key: 'out',    icon: '🚶', label: '中抜け' },
 ];
@@ -3321,20 +3368,20 @@ function renderLeaveTimeEditModal(guestId) {
         <button onclick="document.getElementById('leaveTimeEditModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
-        <div class="form-row-compact"><label class="form-label-compact">担当</label><input class="form-input-compact" id="qe-tanto" value="${guest.tanto || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">お客様名</label><input class="form-input-compact" id="qe-name" value="${guest.name || ''}"></div>
-        <div class="form-row-compact">
-          <label class="form-label-compact">アイバン</label>
+        <div class="mr-row"><label class="mr-label">担当</label><input class="mr-input" id="qe-tanto" value="${guest.tanto || ''}"></div>
+        <div class="mr-row"><label class="mr-label">お客様名</label><input class="mr-input" id="qe-name" value="${guest.name || ''}"></div>
+        <div class="mr-row">
+          <label class="mr-label">アイバン</label>
           ${aibanHtml}
         </div>
-        <div class="form-row-compact"><label class="form-label-compact">来店時間</label><input class="form-input-compact" id="qe-arrive" value="${guest.arrive || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">退店予定時間</label><input class="form-input-compact" id="qe-leave" value="${guest.leave || ''}" placeholder="例: 24時 / ラスト"></div>
-        <div class="form-row-compact"><label class="form-label-compact">予算</label><input class="form-input-compact" id="qe-budget" value="${guest.budget || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">ヘルプ</label><input class="form-input-compact" id="qe-help" value="${guest.help || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">備考</label><input class="form-input-compact" id="qe-note" value="${guest.note || ''}"></div>
-        <div class="form-row-compact">
-          <label class="form-label-compact" style="color:#e74c3c;">📢 共有事項（記入すると卓状況が光って強調表示されます）</label>
-          <input class="form-input-compact" id="qe-sharenote" value="${guest.shareNote || ''}" style="border-color:#e74c3c;color:#e74c3c;" placeholder="みんなへのお土産もらったので席着くとにお礼をお願いします！">
+        <div class="mr-row"><label class="mr-label">来店</label><input class="mr-input" id="qe-arrive" value="${guest.arrive || ''}"></div>
+        <div class="mr-row"><label class="mr-label">退店</label><input class="mr-input" id="qe-leave" value="${guest.leave || ''}" placeholder="例: 24時 / ラスト"></div>
+        <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="qe-budget" value="${guest.budget || ''}"></div>
+        <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="qe-help" value="${guest.help || ''}"></div>
+        <div class="mr-row-top"><label class="mr-label" style="padding-top:4px;">備考</label><textarea class="mr-textarea" id="qe-note" rows="2">${guest.note || ''}</textarea></div>
+        <div class="mr-row-top">
+          <label class="mr-label" style="color:#e74c3c;padding-top:4px;">📢共有</label>
+          <textarea class="mr-textarea" id="qe-sharenote" rows="2" style="border-color:#e74c3c;color:#e74c3c;" placeholder="みんなへのお土産もらったので席着くとにお礼をお願いします！">${guest.shareNote || ''}</textarea>
         </div>
       </div>
       <div class="modal-footer">
@@ -3353,6 +3400,7 @@ function saveQuickLeaveTime(guestId) {
   g.arrive = document.getElementById('qe-arrive').value.trim();
   g.leave = document.getElementById('qe-leave').value.trim();
   g.budget = document.getElementById('qe-budget').value.trim();
+  syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('qe-help').value.trim();
   g.note = document.getElementById('qe-note').value.trim();
   g.shareNote = document.getElementById('qe-sharenote').value.trim();
@@ -4629,21 +4677,21 @@ function renderEditModalContent(id) {
         <button onclick="document.getElementById('editModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
-        <div class="form-row-compact"><label class="form-label-compact">No.（行番号）</label><input class="form-input-compact" id="e-rownum" type="number" min="1" max="30" value="${g.rowNum || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">卓番</label><input class="form-input-compact" id="e-table" value="${g.tableNum || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">お客様名</label><input class="form-input-compact" id="e-name" value="${g.name || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">来店時間</label><input class="form-input-compact" id="e-arrive" value="${g.arrive || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">退店時間</label><input class="form-input-compact" id="e-leave" value="${g.leave || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">担当者</label><input class="form-input-compact" id="e-tanto" value="${g.tanto || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">予算</label><input class="form-input-compact" id="e-budget" value="${g.budget || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">ヘルプ</label><input class="form-input-compact" id="e-help" value="${g.help || ''}"></div>
-        <div class="form-row-compact"><label class="form-label-compact">備考</label><input class="form-input-compact" id="e-note" value="${g.note || ''}"></div>
-        <div class="form-row-compact">
-          <label class="form-label-compact" style="color:#e74c3c;">📢 共有事項（記入すると卓状況が光って強調表示されます）</label>
-          <input class="form-input-compact" id="e-sharenote" value="${g.shareNote || ''}" style="border-color:#e74c3c;color:#e74c3c;" placeholder="みんなへのお土産もらったので席着くとにお礼をお願いします！">
+        <div class="mr-row"><label class="mr-label">No.</label><input class="mr-input" id="e-rownum" type="number" min="1" max="30" value="${g.rowNum || ''}"></div>
+        <div class="mr-row"><label class="mr-label">卓番</label><input class="mr-input" id="e-table" value="${g.tableNum || ''}"></div>
+        <div class="mr-row"><label class="mr-label">お客様名</label><input class="mr-input" id="e-name" value="${g.name || ''}"></div>
+        <div class="mr-row"><label class="mr-label">来店時間</label><input class="mr-input" id="e-arrive" value="${g.arrive || ''}"></div>
+        <div class="mr-row"><label class="mr-label">退店時間</label><input class="mr-input" id="e-leave" value="${g.leave || ''}"></div>
+        <div class="mr-row"><label class="mr-label">担当者</label><input class="mr-input" id="e-tanto" value="${g.tanto || ''}"></div>
+        <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="e-budget" value="${g.budget || ''}"></div>
+        <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="e-help" value="${g.help || ''}"></div>
+        <div class="mr-row-top"><label class="mr-label" style="padding-top:4px;">備考</label><textarea class="mr-textarea" id="e-note" rows="2">${g.note || ''}</textarea></div>
+        <div class="mr-row-top">
+          <label class="mr-label" style="color:#e74c3c;padding-top:4px;">📢共有</label>
+          <textarea class="mr-textarea" id="e-sharenote" rows="2" style="border-color:#e74c3c;color:#e74c3c;" placeholder="みんなへのお土産もらったので席着くとにお礼をお願いします！">${g.shareNote || ''}</textarea>
         </div>
-        <div class="form-row-compact">
-          <label class="form-label-compact">アイバン</label>
+        <div class="mr-row">
+          <label class="mr-label">アイバン</label>
           ${aibanHtml}
         </div>
       </div>
@@ -4665,6 +4713,7 @@ function saveEdit(id) {
   g.leave = document.getElementById('e-leave').value;
   g.tanto = document.getElementById('e-tanto').value;
   g.budget = document.getElementById('e-budget').value;
+  syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('e-help').value;
   g.note = document.getElementById('e-note').value;
   g.shareNote = document.getElementById('e-sharenote').value;
