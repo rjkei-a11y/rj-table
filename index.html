@@ -2204,6 +2204,52 @@ function saveFloorData() {
   if (window.fbSaveFloor) window.fbSaveFloor(floorData);
 }
 
+// 卓状況の1ボックス分を生成する（同じ卓番に複数ゲストがいる場合は、この関数を人数分呼び出して並べる）
+function renderFloorBox(t, key, info, baanaiName) {
+  const iconsHtml = (info && info.specials && info.specials.length)
+    ? info.specials.map(k => { const s = SPECIALS.find(x => x.key === k); return s ? s.icon : ''; }).join('')
+    : '';
+  const arrived = !!(info && info.arrived);
+  const boxBg = arrived ? '#c9a84c' : 'transparent';
+  const boxText = arrived ? '#000' : 'var(--text)';
+  const boxDim = arrived ? '#5a4a1a' : '#a68a4a';
+  let line1, line2, line3;
+  if (info && info.isFirst) {
+    line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}`;
+    line2 = info.help
+      ? `<span style="color:${boxText};">${info.name}</span> <span style="color:${boxDim};">${info.help}</span>`
+      : `<span style="color:${boxText};">${info.name}</span>`;
+    line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
+  } else {
+    const tanto = (info && info.tanto) || '';
+    const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
+    line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
+    const subBits = [];
+    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
+    if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
+    line2 = subBits.join(' ');
+    line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
+  }
+  const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
+  const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
+  const finalBoxText = isLeaveSoon ? '#fff' : boxText;
+  const interactiveAttrs = arrived
+    ? `onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTableDetailModal('${key}',${info && info.guestId != null ? info.guestId : 'null'})"
+       oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('table','${key}',${info && info.guestId != null ? info.guestId : 'null'})"
+       ontouchstart="startLeaveEditHold('table','${key}',${info && info.guestId != null ? info.guestId : 'null'})" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"`
+    : '';
+  const hasShareNote = arrived && info && info.shareNote;
+  const line4 = hasShareNote ? `<div style="font-size:8.5px;line-height:1.3;font-weight:700;color:#ffd8c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📢${info.shareNote}</div>` : '';
+  return `<div ${interactiveAttrs}
+    class="${hasShareNote ? 'share-note-glow' : ''}"
+    style="cursor:${arrived?'pointer':'default'};padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':'#c9a84c'};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
+    <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
+    <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
+    ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
+    ${line4}
+  </div>`;
+}
+
 function renderFloorStatus() {
   renderMyTodaySummary();
   const area = document.getElementById('floorStatusArea');
@@ -2234,7 +2280,8 @@ function renderFloorStatus() {
       shareNote: g.shareNote || '',
       specials: g.specials || [],
       isFirst: false,
-      arrived: true
+      arrived: true,
+      guestId: g.id
     });
   });
   // 未来店の予定は、まだその卓に来店済み・初回の実績が何もない場合だけ表示する（実質空いてる卓として扱う）
@@ -2248,7 +2295,8 @@ function renderFloorStatus() {
         leave: g.leave || '',
         specials: g.specials || [],
         isFirst: false,
-        arrived: false
+        arrived: false,
+        guestId: g.id
       }];
     }
   });
@@ -2283,68 +2331,15 @@ function renderFloorStatus() {
           ${tables.map(t => {
             const key = t.toUpperCase();
             const entries = infoMap[key] || [];
-            const info = entries[0] || null;
-            const extraEntries = entries.slice(1); // 同じ卓に複数ゲストがいる場合の2件目以降
             const baanaiName = baanaiMap[key];
-            const used = !!info || !!baanaiName;
-            if (!used) {
+            if (!entries.length && !baanaiName) {
               return `<div style="display:flex;align-items:center;font-size:10px;padding:3px 5px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);">
                 <span style="font-weight:700;">${t}</span>
               </div>`;
             }
-            // 1行目: 卓番 → アイコン → キャスト　/　2行目: お客様名(キャストと同色) → ヘルプ → 場内指名(薄色)
-            const iconsHtml = (info && info.specials && info.specials.length)
-              ? info.specials.map(k => { const s = SPECIALS.find(x => x.key === k); return s ? s.icon : ''; }).join('')
-              : '';
-            const arrived = !!(info && info.arrived);
-            // 来店済み: ゴールド塗りつぶし（今まで通り） / 未来店: ゴールド枠線のみで控えめに
-            const boxBg = arrived ? '#c9a84c' : 'transparent';
-            const boxText = arrived ? '#000' : 'var(--text)';
-            const boxDim = arrived ? '#5a4a1a' : '#a68a4a';
-            let line1, line2, line3;
-            if (info && info.isFirst) {
-              line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}`;
-              line2 = info.help
-                ? `<span style="color:${boxText};">${info.name}</span> <span style="color:${boxDim};">${info.help}</span>`
-                : `<span style="color:${boxText};">${info.name}</span>`;
-              line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
-            } else {
-              const tanto = (info && info.tanto) || '';
-              const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
-              line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
-              const subBits = [];
-              if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
-              if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
-              line2 = subBits.join(' ');
-              line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
-            }
-            // 来店済みの卓で、退店予定10分前を過ぎたら赤くハイライトする
-            const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
-            const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
-            const finalBoxText = isLeaveSoon ? '#fff' : boxText;
-            // タップでの詳細表示・長押しでの編集は「来店済み（現状）」の卓だけ。予定段階(未来店)は対象外
-            const interactiveAttrs = arrived
-              ? `onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTableDetailModal('${key}')"
-                 oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('table','${key}')"
-                 ontouchstart="startLeaveEditHold('table','${key}')" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"`
-              : '';
-            const hasShareNote = arrived && info && info.shareNote;
-            const line4 = hasShareNote ? `<div style="font-size:8.5px;line-height:1.3;font-weight:700;color:#ffd8c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📢${info.shareNote}</div>` : '';
-            // 同じ卓に複数ゲストがいる場合、2件目以降は「担当 お客様名」の簡易表示で追加する
-            const extraLines = extraEntries.map(e => {
-              const eName = e.isFirst ? e.name : formatGuestDisplayName(e.name);
-              const eTanto = e.tanto ? e.tanto + ' ' : '';
-              return `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px dashed ${arrived?'#5a4a1a':'var(--border)'};padding-top:1px;margin-top:1px;"><span style="color:${boxDim};">＋</span><span style="color:${boxText};">${eTanto}${eName}</span></div>`;
-            }).join('');
-            return `<div ${interactiveAttrs}
-              class="${hasShareNote ? 'share-note-glow' : ''}"
-              style="cursor:${arrived?'pointer':'default'};padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':'#c9a84c'};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
-              <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
-              <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
-              ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
-              ${line4}
-              ${extraLines}
-            </div>`;
+            // 卓番が被って複数ゲストがいる場合は、その人数分だけBOXを並べる（卓一覧タブと同じ考え方）
+            const list = entries.length ? entries : [null];
+            return list.map(info => renderFloorBox(t, key, info, baanaiName)).join('');
           }).join('')}
         </div>
       </div>`;
@@ -2352,9 +2347,10 @@ function renderFloorStatus() {
 }
 
 // 卓状況の卓をタップした時に、全体タブ相当の詳細情報をポップアップ表示する
-function openTableDetailModal(tableKey) {
+function openTableDetailModal(tableKey, guestId) {
   const active = guests.filter(g => !g.left);
-  const guest = active.find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey);
+  const guest = (guestId != null ? active.find(g => g.id === guestId) : null)
+    || active.find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey);
   const firstGroup = (firstGroups || []).find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey);
 
   let baanaiText = '';
@@ -3336,11 +3332,11 @@ function startHold(id) {
 let _leaveEditHoldTimer = null;
 let _leaveEditHoldFired = false;
 
-function startLeaveEditHold(type, idOrKey) {
+function startLeaveEditHold(type, idOrKey, extraGuestId) {
   _leaveEditHoldFired = false;
   _leaveEditHoldTimer = setTimeout(() => {
     _leaveEditHoldFired = true;
-    openLeaveTimeQuickEdit(type, idOrKey);
+    openLeaveTimeQuickEdit(type, idOrKey, extraGuestId);
   }, 600);
 }
 function cancelLeaveEditHold() {
@@ -3359,13 +3355,14 @@ function canEditTable(guest) {
   return tantoNorm === meNorm || tantoNorm.includes(meNorm) || meNorm.includes(tantoNorm);
 }
 
-function openLeaveTimeQuickEdit(type, idOrKey) {
+function openLeaveTimeQuickEdit(type, idOrKey, extraGuestId) {
   let guest = null;
   if (type === 'guest') {
     guest = guests.find(x => x.id === idOrKey);
   } else if (type === 'table') {
     const active = guests.filter(x => !x.left);
-    guest = active.find(x => x.tableNum && x.tableNum.toUpperCase().replace(/^P/, 'V') === idOrKey && x.arrived);
+    guest = (extraGuestId != null ? active.find(x => x.id === extraGuestId) : null)
+      || active.find(x => x.tableNum && x.tableNum.toUpperCase().replace(/^P/, 'V') === idOrKey && x.arrived);
   }
   if (!guest) { showToast('編集対象の予約が見つかりませんでした'); return; }
   if (!canEditTable(guest)) { showToast('この卓はあなたの担当ではないため編集できません'); return; }
