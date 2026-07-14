@@ -996,10 +996,6 @@
         <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="mr-budget"></div>
         <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="mr-help"></div>
         <div class="mr-row"><label class="mr-label">備考</label><input class="mr-input" id="mr-note"></div>
-        <div id="queueStatusBar" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding:6px 2px;border-top:1px solid var(--border);">
-          <span id="queueStatusCount" style="font-size:12px;color:var(--text-dim);"></span>
-          <button onclick="openQueuePopup()" style="background:none;border:1px solid var(--accent-dim);border-radius:6px;color:var(--accent);font-size:12px;padding:5px 12px;cursor:pointer;font-family:var(--font-main);font-weight:700;">確定する →</button>
-        </div>
         <button class="btn btn-primary" id="mrSubmitBtn" onclick="addToReportQueue()" style="width:100%;margin-top:4px;">報告内容を確認</button>
       </div>
 
@@ -1405,21 +1401,31 @@ function addToReportQueue() {
   }
   const tanto = document.getElementById('mr-tanto').value.trim();
   const name = document.getElementById('mr-name').value.trim();
-  if (!tanto) { showToast('担当名を入力してください'); return; }
-  if (!name) { showToast('お客様名を入力してください'); return; }
-  const aiban = [_mrAiban.tanto, _mrAiban.name].filter(Boolean).join(' ');
-  _multiReportQueue.push({
-    tanto, name,
-    arrive: document.getElementById('mr-arrive').value.trim(),
-    leave:  document.getElementById('mr-leave').value.trim(),
-    budget: document.getElementById('mr-budget').value.trim(),
-    help:   document.getElementById('mr-help').value.trim(),
-    note:   document.getElementById('mr-note').value.trim(),
-    aiban,
-    aibanTanto: _mrAiban.tanto,
-    aibanName: _mrAiban.name,
-  });
-  clearMrForm();
+
+  // 担当名・お客様名どちらも入っていれば、新しい1件としてキューに追加する
+  if (tanto && name) {
+    const aiban = [_mrAiban.tanto, _mrAiban.name].filter(Boolean).join(' ');
+    _multiReportQueue.push({
+      tanto, name,
+      arrive: document.getElementById('mr-arrive').value.trim(),
+      leave:  document.getElementById('mr-leave').value.trim(),
+      budget: document.getElementById('mr-budget').value.trim(),
+      help:   document.getElementById('mr-help').value.trim(),
+      note:   document.getElementById('mr-note').value.trim(),
+      aiban,
+      aibanTanto: _mrAiban.tanto,
+      aibanName: _mrAiban.name,
+    });
+    clearMrForm();
+  }
+
+  // 入力欄が空でも、既にキューに1件以上あればそのまま確認画面を開く
+  if (!_multiReportQueue.length) {
+    if (!tanto) { showToast('担当名を入力してください'); return; }
+    if (!name) { showToast('お客様名を入力してください'); return; }
+    showToast('報告内容を入力してください');
+    return;
+  }
   openQueuePopup();
 }
 
