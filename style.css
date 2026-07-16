@@ -258,6 +258,9 @@
     border: 1.5px solid #555;
     text-align: center;
     white-space: nowrap;
+    position: sticky;
+    top: var(--table-sticky-top, 0px);
+    z-index: 5;
   }
   .paper-table td {
     padding: 5px 4px;
@@ -268,11 +271,6 @@
     line-height: 1.4;
     min-height: 28px;
     height: 28px;
-  }
-  .paper-table tr.arrived td {
-    background: #b0c4b0;
-    text-decoration: line-through;
-    color: #444;
   }
   .paper-table tr:not(.arrived):nth-child(even) td { background: #fafafa; }
   .paper-table tr:not(.arrived) td { background: #fff; }
