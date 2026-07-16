@@ -462,6 +462,7 @@ let staffList = [];
 let staffAliases = {}; // { "本名": ["呼び名1","呼び名2", ...] }
 let staffDayStatus = {}; // { "本名": { status: 'pending'|'off'|'paid_off'|'half_off', reportType: 'self'|'proxy'|null, timestamp } }
 let proxyMode = false; // 内勤端末での「代理入力モード」。ページを開くたびOFFにリセットされる（意図的に永続化しない）
+let _resetToken = 0; // 本日分リセット/復元のたびに更新。保険の遅延処理が古い操作を巻き戻さないようにするため
 
 // ===== LOGIN =====
 const PASS_ADMIN = 'rj0123';
@@ -3445,6 +3446,24 @@ function doResetReports() {
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   updateUndoButtonState();
   showToast('本日分をリセットしました（復元ボタンから元に戻せます）');
+
+  // 保険：リセット直前の書き込みがFirebaseに反映されるタイミングとズレて、
+  // 一瞬だけ古いデータが復活して見えることがあるため、少し時間を置いてもう一度確実に空にする
+  // （この間に「元に戻す」が押された場合は、トークンが変わるのでこの保険処理は実行しない）
+  _resetToken++;
+  const myToken = _resetToken;
+  setTimeout(() => {
+    if (_resetToken !== myToken) return; // その間に別の操作(復元など)が行われていたら何もしない
+    guests = [];
+    firstGroups = [];
+    if (window.fbClearAllGuests) window.fbClearAllGuests();
+    if (window.fbClearAllFirstGroups) window.fbClearAllFirstGroups();
+    renderTables();
+    renderStaffStatus();
+    renderFirstTab();
+    renderFloorStatus();
+    if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
+  }, 1500);
 }
 
 // 今日の日付キー（YYYY-MM-DD、ローカル時刻基準）
@@ -3465,13 +3484,15 @@ function getTodayKey() {
 // 本日の集計結果を月次ログとして保存する（リセット直前に呼ばれる）
 // 指定日付の保存済みログ（本日分リセット時に保存されたもの）を取得する。無ければnull
 function getSavedDailyLog(dateKey) {
-  let logs = {};
+  let localLogs = {};
   try {
     const raw = localStorage.getItem('rj_monthlyLogs');
-    if (raw) logs = JSON.parse(raw);
+    if (raw) localLogs = JSON.parse(raw);
   } catch(e) {}
-  if (window._fbMonthlyLogs) logs = window._fbMonthlyLogs;
-  return logs[dateKey] || null;
+  // ローカル（保存直後で確実に最新）を優先し、無ければFirebase側のキャッシュ（他端末分・反映遅延あり）を見る
+  if (localLogs[dateKey]) return localLogs[dateKey];
+  if (window._fbMonthlyLogs && window._fbMonthlyLogs[dateKey]) return window._fbMonthlyLogs[dateKey];
+  return null;
 }
 
 function saveTodayToMonthlyLog() {
@@ -3527,6 +3548,7 @@ function confirmUndoReset() {
 function doUndoReset() {
   const backup = getResetBackup();
   if (!backup) { showToast('復元できるデータがありません'); return; }
+  _resetToken++; // 復元操作が行われたので、直前のリセットの保険処理は実行させない
 
   // リセット時に保存された「本日分」のログは、復元後は不要（ライブデータに戻すため）なので削除する
   try {
@@ -3746,12 +3768,13 @@ function computeDailySummary() {
 
 // 月次ログを合算する（当月かつliveなら本日のcomputeDailySummary()も加算）
 function aggregateMonthlyLogs(monthKey) {
-  let logs = {};
+  let localLogs = {};
   try {
     const raw = localStorage.getItem('rj_monthlyLogs');
-    if (raw) logs = JSON.parse(raw);
+    if (raw) localLogs = JSON.parse(raw);
   } catch(e) {}
-  if (window._fbMonthlyLogs) logs = window._fbMonthlyLogs;
+  // Firebase側のキャッシュをベースに、ローカル（保存直後で確実に最新）で上書きマージする
+  const logs = { ...(window._fbMonthlyLogs || {}), ...localLogs };
 
   const keys = ['photoCount','okuriCount','nomiCount','helpCount','shinkiCount','rpCount','selfCount','proxyCount','offCount','paidOffCount','halfOffCount','pendingCount'];
   const merged = {};
@@ -3781,12 +3804,12 @@ function aggregateMonthlyLogs(monthKey) {
 
 // 保存済みログから利用可能な月一覧（降順）を取得
 function getAvailableMonths() {
-  let logs = {};
+  let localLogs = {};
   try {
     const raw = localStorage.getItem('rj_monthlyLogs');
-    if (raw) logs = JSON.parse(raw);
+    if (raw) localLogs = JSON.parse(raw);
   } catch(e) {}
-  if (window._fbMonthlyLogs) logs = window._fbMonthlyLogs;
+  const logs = { ...(window._fbMonthlyLogs || {}), ...localLogs };
   const months = new Set(Object.keys(logs).map(d => d.slice(0, 7)));
   months.add(getTodayKey().slice(0, 7)); // 当月は常に選べるようにする
   return [...months].sort().reverse();
