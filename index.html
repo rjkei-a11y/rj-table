@@ -31,6 +31,7 @@
   const floorRef = ref(db, 'floorData');
   const dayStatusRef = ref(db, 'staffDayStatus');
   const monthlyLogsRef = ref(db, 'monthlyLogs');
+  const tableListVisibleRef = ref(db, 'tableListVisible');
 
   // Firebaseにゲストデータを保存
   // Firebaseにゲスト1件を保存（衝突回避：全体を上書きせず該当IDのみ書き込む）
@@ -87,6 +88,11 @@
   // Firebaseに場内メモを保存
   window.fbSaveBaanai = function(text) {
     set(baanaiRef, text || '').catch(e => console.error('FB baanai save error:', e));
+  };
+
+  // 卓一覧タブをキャストに公開するかどうか（内勤が締日などにOFFにできる）。デフォルトは公開(true)
+  window.fbSaveTableListVisible = function(visible) {
+    set(tableListVisibleRef, !!visible).catch(e => console.error('FB tableListVisible save error:', e));
   };
 
   // Firebaseに卓状況（フロア構成）を保存
@@ -203,6 +209,13 @@
     if (window.renderFloorStatus) window.renderFloorStatus();
   });
 
+  // Firebaseから「卓一覧タブの公開設定」をリアルタイム受信（値が無ければデフォルトで公開扱い）
+  onValue(tableListVisibleRef, (snapshot) => {
+    const data = snapshot.val();
+    window._fbTableListVisible = data === false ? false : true;
+    if (window.applyTableListVisibility) window.applyTableListVisibility();
+  });
+
   // Firebaseから卓状況（フロア構成）をリアルタイム受信
   onValue(floorRef, (snapshot) => {
     const data = snapshot.val();
@@ -262,6 +275,7 @@
   <div class="header-stats">
     <span id="statTotal" style="display:none"></span>
     <span id="statArrived" style="display:none"></span>
+    <button id="tableListVisibleBtn" onclick="toggleTableListVisible()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">👁 卓一覧を公開中</button>
     <button id="summaryBtn" onclick="openSummaryModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">📊 集計</button>
     <button id="undoResetBtn" onclick="confirmUndoReset()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">↩ 復元</button>
     <button id="resetReportsBtn" onclick="confirmResetReports()" style="background:none;border:1px solid #c0392b;border-radius:4px;color:#c0392b;font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">🔄 本日分リセット</button>
@@ -484,14 +498,27 @@ function doLogin() {
   }
 }
 
+// 卓一覧タブをキャストに見せるかどうかを、現在の公開設定に合わせて反映する
+// （内勤が締日などに一時的にOFFにできる。デフォルトは公開）
+function applyTableListVisibility() {
+  if (localStorage.getItem('rj_role') !== 'host') return; // 内勤には常に表示するので対象外
+  const visible = window._fbTableListVisible !== false;
+  const tabs = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('.panel');
+  if (tabs[1]) tabs[1].style.display = visible ? '' : 'none';
+  if (panels[1]) panels[1].style.display = visible ? '' : 'none';
+  // 非公開に切り替わった時、卓一覧を見ていたら予定報告タブに戻す
+  if (!visible && panels[1] && panels[1].classList.contains('active')) {
+    switchTab('input');
+  }
+}
+
 function applyRole(role) {
   if (role === 'host') {
-    // ホストは卓一覧タブを非表示
+    // 卓一覧タブの表示・非表示は、内勤が設定した公開設定に従う（デフォルトは公開）
+    applyTableListVisibility();
     const tabs = document.querySelectorAll('.tab');
     const panels = document.querySelectorAll('.panel');
-    // 卓一覧タブ（index 1）を非表示
-    if (tabs[1]) tabs[1].style.display = 'none';
-    if (panels[1]) panels[1].style.display = 'none';
     // アクティブを予定報告に
     tabs[0].classList.add('active');
     panels[0].classList.add('active');
@@ -507,15 +534,39 @@ function applyRole(role) {
     const firstClearBtn = document.getElementById('firstClearBtn');
     if (firstClearBtn) firstClearBtn.style.display = 'none';
   }
+  updateTableListVisibleBtn();
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
   if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
   setTimeout(updateFixedTop, 50);
+}
+
+// 卓一覧の公開設定トグルボタンは内勤（admin）だけに見せ、今の状態を反映する
+function updateTableListVisibleBtn() {
+  const btn = document.getElementById('tableListVisibleBtn');
+  if (!btn) return;
+  if (localStorage.getItem('rj_role') !== 'admin') { btn.style.display = 'none'; return; }
+  const visible = window._fbTableListVisible !== false;
+  btn.style.display = 'inline-block';
+  btn.textContent = visible ? '👁 卓一覧を公開中' : '🚫 卓一覧を非公開中';
+  btn.style.color = visible ? 'var(--text-dim)' : '#c0392b';
+  btn.style.borderColor = visible ? 'var(--border)' : '#c0392b';
+}
+
+// 内勤が卓一覧タブの公開/非公開を切り替える（締日など、キャストに見せたくない時にOFFにする）
+function toggleTableListVisible() {
+  if (localStorage.getItem('rj_role') !== 'admin') return;
+  const next = !(window._fbTableListVisible !== false);
+  window._fbTableListVisible = next;
+  if (window.fbSaveTableListVisible) window.fbSaveTableListVisible(next);
+  updateTableListVisibleBtn();
+  showToast(next ? '卓一覧をキャストに公開しました' : '卓一覧をキャストから非公開にしました');
 }
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   // Firebase module scriptからアクセスできるようにwindowに登録
   window.renderStaffStatus = renderStaffStatus;
+  window.applyTableListVisibility = applyTableListVisibility;
   window.renderTables = renderTables;
   window.renderFloorStatus = renderFloorStatus;
   window.updateBaanaiBar = updateBaanaiBar;
@@ -3817,17 +3868,17 @@ function buildSummaryTable(summary) {
       <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:620px;">
         <thead>
           <tr style="color:var(--accent);">
-            <th style="padding:6px 8px 6px 4px;text-align:left;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">キャスト</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">写真指名</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">送り</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">飲直</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">ヘルプ指名</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">新規</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">初回RP</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">本人</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">代理</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">休/有休</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;">半休</th>
+            <th style="padding:6px 8px 6px 4px;text-align:left;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">キャスト</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">写真指名</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">送り</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">飲直</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">ヘルプ指名</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">新規</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">初回RP</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">本人</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">代理</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">休/有休</th>
+            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">半休</th>
           </tr>
         </thead>
         <tbody>${rows || '<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>'}</tbody>
@@ -4146,6 +4197,8 @@ function updateFixedTop() {
 
   // header〜baanaiBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる
   document.body.style.paddingTop = top + 'px';
+  // 卓一覧・初回タブの表ヘッダー（項目行）も、この高さの分だけ下にずらして固定表示させる
+  document.documentElement.style.setProperty('--table-sticky-top', top + 'px');
   // spacerはもう使わないが、古い呼び出しが残っていても実害が無いよう0にしておく
   if (spacer) spacer.style.height = '0px';
 }
