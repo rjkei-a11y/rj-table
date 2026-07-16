@@ -649,6 +649,8 @@ function switchTab(name) {
   if (name === 'view') renderView();
   if (name === 'first') renderFirstTab();
   if (name === 'input') renderFloorStatus();
+  // タブによって上部の固定エリアの高さが変わるため、切り替えるたびに固定位置を再計算する
+  setTimeout(updateFixedTop, 50);
 }
 
 // ===== 1件ずつ入力してキューに追加する方式 =====
