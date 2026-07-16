@@ -369,7 +369,7 @@
     <button class="btn btn-ghost btn-sm" id="firstAddBtn" onclick="addFirstRow()">＋ 追加</button>
     <button class="btn btn-ghost btn-sm" id="firstClearBtn" onclick="clearFirstData()" style="margin-left:auto;color:#c0392b;border-color:#c0392b;">🗑 全クリア</button>
   </div>
-  <div style="overflow-x:auto;">
+  <div style="overflow-x:auto;overflow-y:visible;">
     <table class="paper-table" id="firstTable">
       <thead>
         <tr>
@@ -1200,7 +1200,7 @@ function renderTables() {
     .forEach(g => { rows += rowHTML(g.rowNum, g); });
 
   container.innerHTML = `
-    <div style="overflow-x:auto;">
+    <div style="overflow-x:auto;overflow-y:visible;">
       <table class="paper-table">
         <thead>
           <tr>
@@ -3844,16 +3844,28 @@ function changeSummaryMonth(monthKey) {
 }
 
 function buildSummaryTable(summary) {
+  summary = summary || {};
+  const photoCount = summary.photoCount || {};
+  const okuriCount = summary.okuriCount || {};
+  const nomiCount = summary.nomiCount || {};
+  const helpCount = summary.helpCount || {};
+  const shinkiCount = summary.shinkiCount || {};
+  const rpCount = summary.rpCount || {};
+  const selfCount = summary.selfCount || {};
+  const proxyCount = summary.proxyCount || {};
+  const offCount = summary.offCount || {};
+  const paidOffCount = summary.paidOffCount || {};
+  const halfOffCount = summary.halfOffCount || {};
   const allNames = new Set([
     ...staffList,
-    ...Object.keys(summary.photoCount),
-    ...Object.keys(summary.okuriCount),
-    ...Object.keys(summary.nomiCount),
-    ...Object.keys(summary.helpCount),
-    ...Object.keys(summary.shinkiCount),
-    ...Object.keys(summary.rpCount),
-    ...Object.keys(summary.selfCount || {}),
-    ...Object.keys(summary.proxyCount || {}),
+    ...Object.keys(photoCount),
+    ...Object.keys(okuriCount),
+    ...Object.keys(nomiCount),
+    ...Object.keys(helpCount),
+    ...Object.keys(shinkiCount),
+    ...Object.keys(rpCount),
+    ...Object.keys(selfCount),
+    ...Object.keys(proxyCount),
   ]);
   const orderedNames = [
     ...staffList.filter(n => allNames.has(n)),
@@ -3861,16 +3873,16 @@ function buildSummaryTable(summary) {
   ];
 
   const rows = orderedNames.map(name => {
-    const photo = summary.photoCount[name] || 0;
-    const okuri = summary.okuriCount[name] || 0;
-    const nomi = summary.nomiCount[name] || 0;
-    const help = summary.helpCount[name] || 0;
-    const shinki = summary.shinkiCount[name] || 0;
-    const rp = summary.rpCount[name] || 0;
-    const self = (summary.selfCount || {})[name] || 0;
-    const proxy = (summary.proxyCount || {})[name] || 0;
-    const off = ((summary.offCount || {})[name] || 0) + ((summary.paidOffCount || {})[name] || 0);
-    const half = (summary.halfOffCount || {})[name] || 0;
+    const photo = photoCount[name] || 0;
+    const okuri = okuriCount[name] || 0;
+    const nomi = nomiCount[name] || 0;
+    const help = helpCount[name] || 0;
+    const shinki = shinkiCount[name] || 0;
+    const rp = rpCount[name] || 0;
+    const self = selfCount[name] || 0;
+    const proxy = proxyCount[name] || 0;
+    const off = (offCount[name] || 0) + (paidOffCount[name] || 0);
+    const half = halfOffCount[name] || 0;
     return `<tr>
       <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);font-weight:700;color:var(--accent);white-space:nowrap;">${name}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
@@ -3887,7 +3899,7 @@ function buildSummaryTable(summary) {
   }).join('');
 
   return `
-    <div style="overflow-x:auto;">
+    <div style="overflow-x:auto;overflow-y:visible;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:620px;">
         <thead>
           <tr style="color:var(--accent);">
@@ -3916,23 +3928,29 @@ function renderSummaryModalContent() {
   const tabBtn = (key, label) => `<button onclick="switchSummaryTab('${key}')" style="flex:1;padding:8px;border:none;border-bottom:2px solid ${_summaryTab===key?'var(--accent)':'transparent'};background:none;color:${_summaryTab===key?'var(--accent)':'var(--text-dim)'};font-family:var(--font-main);font-size:12px;font-weight:700;cursor:pointer;">${label}</button>`;
 
   let bodyHtml, titleSuffix;
-  if (_summaryTab === 'today') {
-    // 本日分リセット済みなら、その時点で保存されたログを優先する（ライブデータは空になっているため）
-    const savedLog = getSavedDailyLog(getTodayKey());
-    bodyHtml = buildSummaryTable(savedLog || computeDailySummary());
-    titleSuffix = '（本日）';
-  } else {
-    const months = getAvailableMonths();
-    const monthOptions = months.map(m => `<option value="${m}" ${m===_summaryMonthKey?'selected':''}>${m.replace('-','年')}月</option>`).join('');
-    const summary = aggregateMonthlyLogs(_summaryMonthKey);
-    bodyHtml = `
-      <div style="margin-bottom:10px;">
-        <select onchange="changeSummaryMonth(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:6px 8px;outline:none;">
-          ${monthOptions}
-        </select>
-      </div>
-      ${buildSummaryTable(summary)}`;
-    titleSuffix = '（月間）';
+  try {
+    if (_summaryTab === 'today') {
+      // 本日分リセット済みなら、その時点で保存されたログを優先する（ライブデータは空になっているため）
+      const savedLog = getSavedDailyLog(getTodayKey());
+      bodyHtml = buildSummaryTable(savedLog || computeDailySummary());
+      titleSuffix = '（本日）';
+    } else {
+      const months = getAvailableMonths();
+      const monthOptions = months.map(m => `<option value="${m}" ${m===_summaryMonthKey?'selected':''}>${m.replace('-','年')}月</option>`).join('');
+      const summary = aggregateMonthlyLogs(_summaryMonthKey);
+      bodyHtml = `
+        <div style="margin-bottom:10px;">
+          <select onchange="changeSummaryMonth(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:6px 8px;outline:none;">
+            ${monthOptions}
+          </select>
+        </div>
+        ${buildSummaryTable(summary)}`;
+      titleSuffix = '（月間）';
+    }
+  } catch (e) {
+    console.error('集計の描画でエラー:', e);
+    bodyHtml = `<p style="color:#e74c3c;text-align:center;padding:20px;">集計の表示中にエラーが発生しました。<br>お手数ですが開発者にこの画面を共有してください。<br><span style="font-size:10px;color:var(--text-dim);">${(e && e.message) || e}</span></p>`;
+    titleSuffix = '';
   }
 
   modal.innerHTML = `
