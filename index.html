@@ -1582,7 +1582,7 @@ function renderFloorBox(t, key, info, baanaiName) {
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
     line2 = subBits.join(' ');
     // 飲直で出来た卓は、プラン情報を3行目に表示する
-    line3 = (info && info.plan) ? `<span style="color:${boxDim};">プラン: ${info.plan}</span>` : '';
+    line3 = (info && info.plan) ? `<span style="color:${boxDim};">飲直: ${info.plan}</span>` : '';
   }
   const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
   const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
