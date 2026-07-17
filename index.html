@@ -1415,10 +1415,10 @@ function rowHTML(no, g) {
   // 未来店で、来店予定時刻を過ぎている行はハイライトする
   const isOverdue = !g.arrived && isTimeOverdue(g.arrive);
   return `
-    <tr class="${g.arrived ? 'arrived' : ''}${g.arrived && !g.tableNum ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
+    <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         oncontextmenu="event.preventDefault();confirmDelete(${g.id})"
         data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
-      <td class="p-col-no" onclick="toggleArrived(${g.id})" style="cursor:pointer;user-select:none;">${no}${isOverdue ? ' ⏰' : ''}</td>
+      <td class="p-col-no" onclick="${g.left ? `markReEntry(${g.id})` : `toggleArrived(${g.id})`}" style="cursor:pointer;user-select:none;">${no}${isOverdue ? ' ⏰' : ''}</td>
       <td class="p-col-num editable" onclick="openTableNumPopup(${g.id})">${g.tableNum||''}</td>
       <td class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)">${g.arrive||''}</td>
       <td class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)">${g.tanto||''}</td>
@@ -2671,6 +2671,19 @@ function toggleArrived(id) {
   renderFloorStatus();
   if (document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast(g.arrived ? `${g.name || ''} 来店確認 ✅` : `${g.name || ''} 来店取消`);
+}
+
+// 一度退店したお客様が同じ日に再来店した場合の処理。
+// 新しい行として追加するのではなく、同じ行のleftフラグだけ戻すので、卓数としては増えない（重複カウントを防ぐ）
+function markReEntry(id) {
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
+  g.left = false;
+  saveToStorage();
+  renderTables();
+  renderFloorStatus();
+  if (document.getElementById('panel-view').classList.contains('active')) renderView();
+  showToast(`${g.name || ''} 再来店として戻しました`);
 }
 
 // ===== LONG PRESS DELETE =====
