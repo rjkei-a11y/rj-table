@@ -1568,7 +1568,10 @@ function renderFloorBox(t, key, info, baanaiName) {
   } else {
     const tanto = (info && info.tanto) || '';
     const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
-    line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
+    // 飲直転換後に卓移動していたら「元卓→現卓」の形で表示する
+    const origTable = info && info.originalTableNum ? info.originalTableNum.toUpperCase().replace(/^P/, 'V') : '';
+    const tableLabel = (origTable && origTable !== t) ? `${origTable}→${t}` : t;
+    line1 = `<span style="font-weight:700;">${tableLabel}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
     const subBits = [];
     if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
@@ -1625,6 +1628,7 @@ function renderFloorStatus() {
       leave: g.leave || '',
       shareNote: g.shareNote || '',
       plan: g.plan || '',
+      originalTableNum: g.originalTableNum || '',
       specials: g.specials || [],
       isFirst: false,
       arrived: true,
@@ -2118,6 +2122,7 @@ function syncNominaoshiToTable(g, r) {
     guests = guests.filter(x => x.firstKey !== key);
     saveToStorage();
     renderTables();
+    renderFloorStatus();
     return;
   }
   const noteStr = ['飲直', r.plan ? r.plan.trim() : ''].filter(Boolean).join(' ');
@@ -2136,6 +2141,7 @@ function syncNominaoshiToTable(g, r) {
       id: nextId++,
       rowNum: '999', // 仮番号、repackRowNumsで整理
       tableNum: g.tableNum || '',
+      originalTableNum: g.tableNum || '', // 飲直転換時の卓番（後で卓移動しても、ここは変えない）
       tanto: r.okuri || '',
       name: nomi,
       note: noteStr,
@@ -2149,6 +2155,7 @@ function syncNominaoshiToTable(g, r) {
   repackRowNums();
   saveToStorage();
   renderTables();
+  renderFloorStatus();
   // 飲直転換で卓が確定した際、その卓に別の予約が重複していないか確認する（アイバンは正常な重複として除外）
   checkNominaoshiTableConflict(g, r, key);
 }
