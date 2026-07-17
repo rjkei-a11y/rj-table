@@ -243,17 +243,11 @@
   /* ===== TABLE LIST (紙様式) ===== */
   .paper-table {
     width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
+    border-collapse: collapse;
     font-size: 12px;
     table-layout: fixed;
     background: #fff;
     color: #000;
-  }
-  .paper-table thead {
-    position: sticky;
-    top: var(--table-sticky-top, 0px);
-    z-index: 5;
   }
   .paper-table th {
     background: #f0f0f0;
@@ -264,9 +258,6 @@
     border: 1.5px solid #555;
     text-align: center;
     white-space: nowrap;
-    position: sticky;
-    top: var(--table-sticky-top, 0px);
-    z-index: 5;
   }
   .paper-table td {
     padding: 5px 4px;
