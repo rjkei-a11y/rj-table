@@ -3886,7 +3886,7 @@ function buildSummaryTable(summary) {
     const off = (offCount[name] || 0) + (paidOffCount[name] || 0);
     const half = halfOffCount[name] || 0;
     return `<tr>
-      <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);font-weight:700;color:var(--accent);white-space:nowrap;">${name}</td>
+      <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${okuri}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${nomi}</td>
@@ -3905,7 +3905,7 @@ function buildSummaryTable(summary) {
       <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:620px;">
         <thead>
           <tr style="color:var(--accent);">
-            <th style="padding:6px 8px 6px 4px;text-align:left;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">キャスト</th>
+            <th style="padding:6px 8px 6px 4px;text-align:left;border-bottom:1px solid var(--accent-dim);border-right:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;left:0;z-index:6;">キャスト</th>
             <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">写真指名</th>
             <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">送り</th>
             <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">飲直</th>
