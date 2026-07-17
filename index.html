@@ -3974,7 +3974,7 @@ function renderSummaryModalContent() {
         ${tabBtn('today', '今日')}
         ${tabBtn('month', '月間')}
       </div>
-      <div id="summaryHeaderWrap" style="overflow-x:hidden;border-bottom:1px solid var(--accent-dim);background:var(--surface);padding-left:12px;">
+      <div id="summaryHeaderWrap" class="no-scrollbar" style="overflow-x:auto;border-bottom:1px solid var(--accent-dim);background:var(--surface);padding-left:12px;pointer-events:none;">
         ${headerHtml}
       </div>
       <div class="modal-body" style="overflow-y:auto;overflow-x:hidden;flex:1;padding:12px;">
