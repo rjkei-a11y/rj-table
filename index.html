@@ -1564,7 +1564,7 @@ function renderFloorBox(t, key, info, baanaiName) {
     line2 = info.help
       ? `<span style="color:${boxText};">${info.name}</span> <span style="color:${boxDim};">${info.help}</span>`
       : `<span style="color:${boxText};">${info.name}</span>`;
-    line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
+    line3 = '';
   } else {
     const tanto = (info && info.tanto) || '';
     const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
@@ -1573,7 +1573,8 @@ function renderFloorBox(t, key, info, baanaiName) {
     if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
     line2 = subBits.join(' ');
-    line3 = baanaiName ? `<span style="color:${boxDim};">場内: ${baanaiName}</span>` : '';
+    // 飲直で出来た卓は、プラン情報を3行目に表示する
+    line3 = (info && info.plan) ? `<span style="color:${boxDim};">プラン: ${info.plan}</span>` : '';
   }
   const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
   const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
@@ -1623,6 +1624,7 @@ function renderFloorStatus() {
       help: g.help || '',
       leave: g.leave || '',
       shareNote: g.shareNote || '',
+      plan: g.plan || '',
       specials: g.specials || [],
       isFirst: false,
       arrived: true,
@@ -2125,6 +2127,7 @@ function syncNominaoshiToTable(g, r) {
     existing.tanto = r.okuri || '';
     existing.name = nomi;
     existing.note = noteStr;
+    existing.plan = r.plan ? r.plan.trim() : '';
     existing.arrived = true;
     if (!existing.specials) existing.specials = [];
     if (!existing.specials.includes('new')) existing.specials.push('new'); // 飲直で出来た卓は自動で🔰マーク
@@ -2136,6 +2139,7 @@ function syncNominaoshiToTable(g, r) {
       tanto: r.okuri || '',
       name: nomi,
       note: noteStr,
+      plan: r.plan ? r.plan.trim() : '',
       arrive: '', leave: '', budget: '', help: '',
       arrived: true,
       specials: ['new'], // 飲直で出来た卓は自動で🔰マーク
