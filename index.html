@@ -369,7 +369,7 @@
     <button class="btn btn-ghost btn-sm" id="firstAddBtn" onclick="addFirstRow()">＋ 追加</button>
     <button class="btn btn-ghost btn-sm" id="firstClearBtn" onclick="clearFirstData()" style="margin-left:auto;color:#c0392b;border-color:#c0392b;">🗑 全クリア</button>
   </div>
-  <div style="overflow-x:auto;overflow-y:visible;">
+  <div style="overflow-x:auto;">
     <table class="paper-table" id="firstTable">
       <thead>
         <tr>
@@ -1202,7 +1202,7 @@ function renderTables() {
     .forEach(g => { rows += rowHTML(g.rowNum, g); });
 
   container.innerHTML = `
-    <div style="overflow-x:auto;overflow-y:visible;">
+    <div style="overflow-x:auto;">
       <table class="paper-table">
         <thead>
           <tr>
@@ -4194,7 +4194,7 @@ function openStaffSettings() {
     </div>`;
   modal.classList.add('show');
 }
-  
+
 function saveStaffFromModal() {
   const raw = document.getElementById('staffInput').value;
   staffList = raw.split(/\n|\\n/).map(s => s.trim()).filter(Boolean);
@@ -4240,8 +4240,6 @@ function updateFixedTop() {
 
   // header〜baanaiBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる
   document.body.style.paddingTop = top + 'px';
-  // 卓一覧・初回タブの表ヘッダー（項目行）も、この高さの分だけ下にずらして固定表示させる
-  document.documentElement.style.setProperty('--table-sticky-top', top + 'px');
   // spacerはもう使わないが、古い呼び出しが残っていても実害が無いよう0にしておく
   if (spacer) spacer.style.height = '0px';
 }
