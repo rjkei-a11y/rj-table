@@ -1387,6 +1387,8 @@ function saveTableNumPopup(guestId) {
   saveToStorage();
   document.getElementById('tableNumPopup').classList.remove('show');
   updateSingleGuestRow(guestId);
+  renderFloorStatus();
+  if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
 }
 
 // 卓一覧の特定の1行だけを差し替える（他の行のDOMには一切触れないので、
@@ -1492,6 +1494,8 @@ function editCell(id, field, td) {
     g[field] = input.value.trim();
     saveToStorage();
     updateSingleGuestRow(id);
+    renderFloorStatus();
+    if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
@@ -1517,6 +1521,7 @@ function createAndEdit(rowNum, field, td) {
     repackRowNums();
     saveToStorage();
     withScrollPreserved(renderTables, td.closest('tr'));
+    renderFloorStatus();
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
