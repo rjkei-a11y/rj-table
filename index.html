@@ -1696,7 +1696,12 @@ function openTableDetailModal(tableKey, guestId) {
   const active = guests.filter(g => !g.left);
   const guest = (guestId != null ? active.find(g => g.id === guestId) : null)
     || active.find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey);
-  const firstGroup = (firstGroups || []).find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey);
+  const firstGroup = (firstGroups || []).find(g => {
+    if (!g.tableNum || g.tableNum.toUpperCase().replace(/^P/, 'V') !== tableKey) return false;
+    // 全員が飲直/終了済みのグループは、もう「初回」として扱わない（卓状況のBOX表示と同じ判定基準）
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
+    return !allDone;
+  });
 
   let baanaiText = '';
   try { baanaiText = localStorage.getItem('rj_baanai') || ''; } catch(e) {}
