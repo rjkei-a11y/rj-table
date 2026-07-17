@@ -3845,6 +3845,15 @@ function changeSummaryMonth(monthKey) {
   renderSummaryModalContent();
 }
 
+// 列幅を固定し、ヘッダー用テーブルと本体用テーブルで完全に揃える（横スクロールを連動させるため）
+const SUMMARY_COL_WIDTHS = [68, 54, 54, 54, 62, 50, 54, 50, 50, 58, 50];
+const SUMMARY_COL_LABELS = ['キャスト','写真指名','送り','飲直','ヘルプ指名','新規','初回RP','本人','代理','休/有休','半休'];
+function summaryColgroup() {
+  return '<colgroup>' + SUMMARY_COL_WIDTHS.map(w => `<col style="width:${w}px;">`).join('') + '</colgroup>';
+}
+
+// 集計テーブルを「固定表示するヘッダー部分」と「縦横スクロールする本体部分」に分けて返す
+// （sticky指定に頼らず、スクロール領域そのものの外にヘッダーを出すことで確実に固定する）
 function buildSummaryTable(summary) {
   summary = summary || {};
   const photoCount = summary.photoCount || {};
@@ -3886,7 +3895,7 @@ function buildSummaryTable(summary) {
     const off = (offCount[name] || 0) + (paidOffCount[name] || 0);
     const half = halfOffCount[name] || 0;
     return `<tr>
-      <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
+      <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${okuri}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${nomi}</td>
@@ -3900,27 +3909,23 @@ function buildSummaryTable(summary) {
     </tr>`;
   }).join('');
 
-  return `
-    <div style="overflow-x:auto;overflow-y:visible;">
-      <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:620px;">
-        <thead>
-          <tr style="color:var(--accent);">
-            <th style="padding:6px 8px 6px 4px;text-align:left;border-bottom:1px solid var(--accent-dim);border-right:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;left:0;z-index:6;">キャスト</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">写真指名</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">送り</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">飲直</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">ヘルプ指名</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">新規</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">初回RP</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">本人</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">代理</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">休/有休</th>
-            <th style="padding:6px 4px;border-bottom:1px solid var(--accent-dim);white-space:nowrap;background:var(--surface);position:sticky;top:0;z-index:5;">半休</th>
-          </tr>
-        </thead>
-        <tbody>${rows || '<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>'}</tbody>
-      </table>
-    </div>`;
+  const headerHtml = `
+    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:604px;table-layout:fixed;">
+      ${summaryColgroup()}
+      <thead>
+        <tr style="color:var(--accent);">
+          ${SUMMARY_COL_LABELS.map((label, i) => `<th style="padding:6px 4px;text-align:${i===0?'left':'center'};border-bottom:1px solid var(--accent-dim);${i===0?'border-right:1px solid var(--accent-dim);padding-left:4px;':''}white-space:nowrap;background:var(--surface);${i===0?'position:sticky;left:0;z-index:2;':''}">${label}</th>`).join('')}
+        </tr>
+      </thead>
+    </table>`;
+
+  const bodyHtml = `
+    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:604px;table-layout:fixed;">
+      ${summaryColgroup()}
+      <tbody>${rows || `<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>`}</tbody>
+    </table>`;
+
+  return { headerHtml, bodyHtml };
 }
 
 function renderSummaryModalContent() {
@@ -3929,29 +3934,33 @@ function renderSummaryModalContent() {
 
   const tabBtn = (key, label) => `<button onclick="switchSummaryTab('${key}')" style="flex:1;padding:8px;border:none;border-bottom:2px solid ${_summaryTab===key?'var(--accent)':'transparent'};background:none;color:${_summaryTab===key?'var(--accent)':'var(--text-dim)'};font-family:var(--font-main);font-size:12px;font-weight:700;cursor:pointer;">${label}</button>`;
 
-  let bodyHtml, titleSuffix;
+  let headerHtml = '', extraHtml = '', tableBodyHtml = '', titleSuffix;
   try {
     if (_summaryTab === 'today') {
       // 本日分リセット済みなら、その時点で保存されたログを優先する（ライブデータは空になっているため）
       const savedLog = getSavedDailyLog(getTodayKey());
-      bodyHtml = buildSummaryTable(savedLog || computeDailySummary());
+      const built = buildSummaryTable(savedLog || computeDailySummary());
+      headerHtml = built.headerHtml;
+      tableBodyHtml = built.bodyHtml;
       titleSuffix = '（本日）';
     } else {
       const months = getAvailableMonths();
       const monthOptions = months.map(m => `<option value="${m}" ${m===_summaryMonthKey?'selected':''}>${m.replace('-','年')}月</option>`).join('');
       const summary = aggregateMonthlyLogs(_summaryMonthKey);
-      bodyHtml = `
+      const built = buildSummaryTable(summary);
+      headerHtml = built.headerHtml;
+      tableBodyHtml = built.bodyHtml;
+      extraHtml = `
         <div style="margin-bottom:10px;">
           <select onchange="changeSummaryMonth(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:6px 8px;outline:none;">
             ${monthOptions}
           </select>
-        </div>
-        ${buildSummaryTable(summary)}`;
+        </div>`;
       titleSuffix = '（月間）';
     }
   } catch (e) {
     console.error('集計の描画でエラー:', e);
-    bodyHtml = `<p style="color:#e74c3c;text-align:center;padding:20px;">集計の表示中にエラーが発生しました。<br>お手数ですが開発者にこの画面を共有してください。<br><span style="font-size:10px;color:var(--text-dim);">${(e && e.message) || e}</span></p>`;
+    tableBodyHtml = `<p style="color:#e74c3c;text-align:center;padding:20px;">集計の表示中にエラーが発生しました。<br>お手数ですが開発者にこの画面を共有してください。<br><span style="font-size:10px;color:var(--text-dim);">${(e && e.message) || e}</span></p>`;
     titleSuffix = '';
   }
 
@@ -3965,8 +3974,14 @@ function renderSummaryModalContent() {
         ${tabBtn('today', '今日')}
         ${tabBtn('month', '月間')}
       </div>
-      <div class="modal-body" style="overflow:auto;flex:1;padding:12px;">
-        ${bodyHtml}
+      <div id="summaryHeaderWrap" style="overflow-x:hidden;border-bottom:1px solid var(--accent-dim);background:var(--surface);">
+        ${headerHtml}
+      </div>
+      <div class="modal-body" style="overflow-y:auto;overflow-x:hidden;flex:1;padding:12px;">
+        ${extraHtml}
+        <div id="summaryTableScroll" style="overflow-x:auto;" onscroll="document.getElementById('summaryHeaderWrap').scrollLeft = this.scrollLeft;">
+          ${tableBodyHtml}
+        </div>
         <p style="font-size:10px;color:var(--text-dim);margin-top:12px;line-height:1.6;">※ヘルプ指名の集計精度は「⚙ 呼び名」（報告状況のキャスト名タップ）で登録した呼び名の充実度に左右されます。表記ゆれに気づいたら随時追加してください。<br>※月間集計は「本日分リセット」を押した時点のデータが記録される仕組みです。リセットを忘れた日は月間集計に反映されません。</p>
       </div>
     </div>`;
