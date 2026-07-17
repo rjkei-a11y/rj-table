@@ -4194,7 +4194,7 @@ function openStaffSettings() {
     </div>`;
   modal.classList.add('show');
 }
-
+  
 function saveStaffFromModal() {
   const raw = document.getElementById('staffInput').value;
   staffList = raw.split(/\n|\\n/).map(s => s.trim()).filter(Boolean);
