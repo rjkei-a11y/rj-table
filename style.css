@@ -1,4 +1,4 @@
-  :root {
+:root {
     --bg: #0d0d0d;
     --surface: #1a1a1a;
     --surface2: #242424;
@@ -31,6 +31,10 @@
     user-select: text;
     caret-color: #3498db;
   }
+
+  /* 集計ポップアップのヘッダー用：スクロール自体は機能させつつ、見た目上のスクロールバーだけ消す */
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 
   /* ===== HEADER ===== */
   header {
