@@ -3910,7 +3910,7 @@ function buildSummaryTable(summary) {
   }).join('');
 
   const headerHtml = `
-    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:604px;table-layout:fixed;">
+    <table style="width:604px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
       ${summaryColgroup()}
       <thead>
         <tr style="color:var(--accent);">
@@ -3920,7 +3920,7 @@ function buildSummaryTable(summary) {
     </table>`;
 
   const bodyHtml = `
-    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:604px;table-layout:fixed;">
+    <table style="width:604px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
       ${summaryColgroup()}
       <tbody>${rows || `<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>`}</tbody>
     </table>`;
@@ -3974,7 +3974,7 @@ function renderSummaryModalContent() {
         ${tabBtn('today', '今日')}
         ${tabBtn('month', '月間')}
       </div>
-      <div id="summaryHeaderWrap" style="overflow-x:hidden;border-bottom:1px solid var(--accent-dim);background:var(--surface);">
+      <div id="summaryHeaderWrap" style="overflow-x:hidden;border-bottom:1px solid var(--accent-dim);background:var(--surface);padding-left:12px;">
         ${headerHtml}
       </div>
       <div class="modal-body" style="overflow-y:auto;overflow-x:hidden;flex:1;padding:12px;">
