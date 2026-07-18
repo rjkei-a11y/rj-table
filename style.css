@@ -1,4 +1,4 @@
-:root {
+  :root {
     --bg: #0d0d0d;
     --surface: #1a1a1a;
     --surface2: #242424;
@@ -375,7 +375,7 @@
   .res-table tr.arrived td { background: var(--arrived); }
   .paper-table tr.arrived td { background: #d4edda !important; color: #000; }
   /* 来店済みなのに卓番が未入力の行は薄青にして、入力忘れが分かりやすいようにする */
-  .paper-table tr.arrived.no-table td { background: #b8d4e8 !important; color: #000; }
+  .paper-table tr.arrived.no-table td { background: #f0e08a !important; color: #000; }
   /* 退店済み（再来店の可能性あり）は青。No.をタップすると再来店として緑に戻せる */
   .paper-table tr.left-guest td { background: #a8c8e8 !important; color: #000; }
   .paper-table tr.left-guest .p-col-no { cursor: pointer; text-decoration: underline; }
