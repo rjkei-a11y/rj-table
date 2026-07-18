@@ -775,9 +775,10 @@ function addToReportQueue() {
   }
   const tanto = document.getElementById('mr-tanto').value.trim();
   const name = document.getElementById('mr-name').value.trim();
+  const isTainyu = name === '体入';
 
-  // 担当名・お客様名どちらも入っていれば、新しい1件としてキューに追加する
-  if (tanto && name) {
+  // 担当名・お客様名どちらも入っていれば、新しい1件としてキューに追加する（体入は担当名が空欄でもOK）
+  if ((tanto || isTainyu) && name) {
     const aiban = [_mrAiban.tanto, _mrAiban.name].filter(Boolean).join(' ');
     _multiReportQueue.push({
       tanto, name,
@@ -795,7 +796,7 @@ function addToReportQueue() {
 
   // 入力欄が空でも、既にキューに1件以上あればそのまま確認画面を開く
   if (!_multiReportQueue.length) {
-    if (!tanto) { showToast('担当名を入力してください'); return; }
+    if (!tanto && !isTainyu) { showToast('担当名を入力してください'); return; }
     if (!name) { showToast('お客様名を入力してください'); return; }
     showToast('報告内容を入力してください');
     return;
@@ -2932,14 +2933,15 @@ function deleteGuest(id) {
 
 // ===== STATS =====
 function updateStats() {
-  const active = guests.filter(g => g.name || g.tanto || g.tableNum);
+  const active = guests.filter(g => (g.name || g.tanto || g.tableNum) && g.name !== '体入');
   document.getElementById('statTotal').textContent = active.length;
   document.getElementById('statArrived').textContent = active.filter(g => g.arrived).length;
   updateTableStats();
 }
 
 function updateTableStats() {
-  const withData = guests.filter(g => g.name || g.tanto);
+  // 体入は「予定卓数」「現状」の集計対象外（お客様ではないため）
+  const withData = guests.filter(g => (g.name || g.tanto) && g.name !== '体入');
   // 予定卓数 = 実際にデータが入っている件数（行番号に隙間があっても正確に数える）
   const maxRow = withData.length;
   // △の件数（来店済みは除外）
