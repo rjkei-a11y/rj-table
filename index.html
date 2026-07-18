@@ -3871,13 +3871,28 @@ function getAvailableMonths() {
   return [...months].sort().reverse();
 }
 
-let _summaryTab = 'today'; // 'today' | 'month'
+// 保存済みログがある日付一覧（降順）を取得する。日別タブの日付選択に使う
+function getAvailableDates() {
+  let localLogs = {};
+  try {
+    const raw = localStorage.getItem('rj_monthlyLogs');
+    if (raw) localLogs = JSON.parse(raw);
+  } catch(e) {}
+  const logs = { ...(window._fbMonthlyLogs || {}), ...localLogs };
+  const dates = new Set(Object.keys(logs));
+  dates.add(getTodayKey()); // 今日は常に選べるようにする
+  return [...dates].sort().reverse();
+}
+
+let _summaryTab = 'today'; // 'today' | 'day' | 'month'
 let _summaryMonthKey = null;
+let _summaryDayKey = null;
 
 function openSummaryModal() {
   if (localStorage.getItem('rj_role') !== 'admin') return;
   _summaryTab = 'today';
   _summaryMonthKey = getTodayKey().slice(0, 7);
+  _summaryDayKey = getTodayKey();
   let modal = document.getElementById('summaryModal');
   if (!modal) {
     modal = document.createElement('div');
@@ -3896,6 +3911,11 @@ function switchSummaryTab(tab) {
 
 function changeSummaryMonth(monthKey) {
   _summaryMonthKey = monthKey;
+  renderSummaryModalContent();
+}
+
+function changeSummaryDay(dayKey) {
+  _summaryDayKey = dayKey;
   renderSummaryModalContent();
 }
 
@@ -3997,6 +4017,21 @@ function renderSummaryModalContent() {
       headerHtml = built.headerHtml;
       tableBodyHtml = built.bodyHtml;
       titleSuffix = '（本日）';
+    } else if (_summaryTab === 'day') {
+      const dates = getAvailableDates();
+      const dateOptions = dates.map(d => `<option value="${d}" ${d===_summaryDayKey?'selected':''}>${d}</option>`).join('');
+      // 選んだ日付が今日で、まだリセット前（保存ログが無い）ならライブデータを見る
+      const summary = getSavedDailyLog(_summaryDayKey) || (_summaryDayKey === getTodayKey() ? computeDailySummary() : {});
+      const built = buildSummaryTable(summary);
+      headerHtml = built.headerHtml;
+      tableBodyHtml = built.bodyHtml;
+      extraHtml = `
+        <div style="margin-bottom:10px;">
+          <select onchange="changeSummaryDay(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:6px 8px;outline:none;">
+            ${dateOptions}
+          </select>
+        </div>`;
+      titleSuffix = '（日別）';
     } else {
       const months = getAvailableMonths();
       const monthOptions = months.map(m => `<option value="${m}" ${m===_summaryMonthKey?'selected':''}>${m.replace('-','年')}月</option>`).join('');
@@ -4026,6 +4061,7 @@ function renderSummaryModalContent() {
       </div>
       <div style="display:flex;border-bottom:1px solid var(--border);">
         ${tabBtn('today', '今日')}
+        ${tabBtn('day', '日別')}
         ${tabBtn('month', '月間')}
       </div>
       <div id="summaryHeaderWrap" class="no-scrollbar" style="overflow-x:auto;border-bottom:1px solid var(--accent-dim);background:var(--surface);padding-left:12px;pointer-events:none;">
