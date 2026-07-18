@@ -1136,6 +1136,15 @@ function syncBudgetRaiseSpecial(g) {
   if (!shouldHave && has) g.specials = g.specials.filter(k => k !== 'raise');
 }
 
+// お客様名・備考のどちらかに「新規」「初回RP」の文言が含まれていたら🔰を自動で付ける
+// （飲直による自動付与とは別ルートなので、こちらは追加のみ行い、自動での削除はしない）
+function syncNewSpecialFromText(g) {
+  if (!g.specials) g.specials = [];
+  const text = (g.name || '') + (g.note || '');
+  const shouldHave = text.includes('新規') || text.includes('初回RP');
+  if (shouldHave && !g.specials.includes('new')) g.specials.push('new');
+}
+
 function importTextParsed(parsed) {
   if (!parsed || !parsed.length) {
     showToast('該当する報告が見つかりませんでした');
@@ -1154,7 +1163,9 @@ function importTextParsed(parsed) {
     while (usedRows.has(rc)) rc++;
     usedRows.add(rc);
     const specials = detectBudgetRaiseKeyword(g.budget) ? ['raise'] : [];
-    guests.push({ id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType(), specials });
+    const newGuest = { id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType(), specials };
+    syncNewSpecialFromText(newGuest);
+    guests.push(newGuest);
   });
   saveToStorage();
   updateStats();
@@ -1492,6 +1503,7 @@ function editCell(id, field, td) {
   input.setSelectionRange(len, len);
   function save() {
     g[field] = input.value.trim();
+    if (field === 'name' || field === 'note') syncNewSpecialFromText(g);
     saveToStorage();
     updateSingleGuestRow(id);
     renderFloorStatus();
@@ -1517,6 +1529,7 @@ function createAndEdit(rowNum, field, td) {
     if (!val) { withScrollPreserved(renderTables, td.closest('tr')); return; } // 空なら何もしない
     const g = { id: nextId++, rowNum: String(rowNum), tableNum:'', arrive:'', leave:'', tanto:'', name:'', budget:'', note:'', help:'', arrived: false };
     g[field] = val;
+    syncNewSpecialFromText(g);
     guests.push(g);
     repackRowNums();
     saveToStorage();
@@ -2832,6 +2845,7 @@ function saveQuickLeaveTime(guestId) {
   syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('qe-help').value.trim();
   g.note = document.getElementById('qe-note').value.trim();
+  syncNewSpecialFromText(g);
   g.shareNote = document.getElementById('qe-sharenote').value.trim();
   g.aiban = [_qeAibanParts.tanto, _qeAibanParts.name].filter(Boolean).join(' ');
   g.aibanTanto = _qeAibanParts.tanto;
@@ -4260,6 +4274,7 @@ function saveEdit(id) {
   syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('e-help').value;
   g.note = document.getElementById('e-note').value;
+  syncNewSpecialFromText(g);
   g.shareNote = document.getElementById('e-sharenote').value;
   {
     g.aiban = [_editAibanParts.tanto, _editAibanParts.name].filter(Boolean).join(' ');
