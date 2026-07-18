@@ -1553,7 +1553,7 @@ function saveFloorData() {
 }
 
 // 卓状況の1ボックス分を生成する（同じ卓番に複数ゲストがいる場合は、この関数を人数分呼び出して並べる）
-function renderFloorBox(t, key, info, baanaiName) {
+function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const iconsHtml = (info && info.specials && info.specials.length)
     ? info.specials.map(k => { const s = SPECIALS.find(x => x.key === k); return s ? s.icon : ''; }).join('')
     : '';
@@ -1572,11 +1572,13 @@ function renderFloorBox(t, key, info, baanaiName) {
     line3 = '';
   } else {
     const tanto = (info && info.tanto) || '';
+    const isTantoConflict = tanto && multiTantoNames.has(tanto);
+    const tantoHtml = tanto ? ` <span style="${isTantoConflict ? 'color:#e74c3c;font-weight:700;' : ''}">${tanto}</span>` : '';
     const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
     // 飲直転換後に卓移動していたら「元卓→現卓」の形で表示する
     const origTable = info && info.originalTableNum ? info.originalTableNum.toUpperCase().replace(/^P/, 'V') : '';
     const tableLabel = (origTable && origTable !== t) ? `${origTable}→${t}` : t;
-    line1 = `<span style="font-weight:700;">${tableLabel}</span>${iconsHtml ? ' '+iconsHtml : ''}${tanto ? ' '+tanto : ''}${leaveHtml}`;
+    line1 = `<span style="font-weight:700;">${tableLabel}</span>${iconsHtml ? ' '+iconsHtml : ''}${tantoHtml}${leaveHtml}`;
     const subBits = [];
     if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
@@ -1606,6 +1608,8 @@ function renderFloorBox(t, key, info, baanaiName) {
 
 function renderFloorStatus() {
   renderMyTodaySummary();
+  updateTantoStats();
+  const multiTantoNames = computeMultiTantoNames();
   const area = document.getElementById('floorStatusArea');
   if (!area) return;
   // 卓番→表示情報のマップを作成（通常ゲスト・初回グループ両対応）
@@ -1695,7 +1699,7 @@ function renderFloorStatus() {
             }
             // 卓番が被って複数ゲストがいる場合は、その人数分だけBOXを並べる（卓一覧タブと同じ考え方）
             const list = entries.length ? entries : [null];
-            return list.map(info => renderFloorBox(t, key, info, baanaiName)).join('');
+            return list.map(info => renderFloorBox(t, key, info, baanaiName, multiTantoNames)).join('');
           }).join('')}
         </div>
       </div>`;
@@ -2371,16 +2375,24 @@ function tableNumSort(a, b) {
   return numA - numB;
 }
 
-function renderView() {
-  const container = document.getElementById('viewList');
+// 来店済みで2卓以上を担当している「被り」の担当者名一覧を取得する（卓状況のBOX等でも使う）
+function computeMultiTantoNames() {
   const active = guests.filter(g => !g.left);
-
-  // 担当者別卓数集計（2卓以上のみ表示）
   const tantoCount = {};
   active.filter(g => g.tanto && g.tableNum && g.arrived).forEach(g => {
     tantoCount[g.tanto] = (tantoCount[g.tanto] || 0) + 1;
   });
-  const multiTanto = Object.entries(tantoCount).filter(([,n]) => n >= 2);
+  return new Set(Object.entries(tantoCount).filter(([,n]) => n >= 2).map(([name]) => name));
+}
+
+// 担当者別の卓数集計（2卓以上の「被り」を検出する）。予定報告タブ・全体タブ両方から呼べるよう独立させる
+function updateTantoStats() {
+  const multiTantoNames = computeMultiTantoNames();
+  const multiTanto = [...multiTantoNames].map(name => {
+    const active = guests.filter(g => !g.left);
+    const count = active.filter(g => g.tanto === name && g.tableNum && g.arrived).length;
+    return [name, count];
+  });
   const tantoStatsEl = document.getElementById('tantoStats');
   if (tantoStatsEl) {
     tantoStatsEl.innerHTML = multiTanto.length
@@ -2389,6 +2401,14 @@ function renderView() {
     tantoStatsEl.style.display = multiTanto.length ? 'block' : 'none';
     updateFixedTop(); setTimeout(updateFixedTop, 50);
   }
+}
+
+function renderView() {
+  const container = document.getElementById('viewList');
+  const active = guests.filter(g => !g.left);
+
+  // 担当者別卓数集計（被り表示）
+  updateTantoStats();
 
   // 全卓をV→A→Bの順に並べて表示
   const allFloorTables = [...(floorData.V||[]), ...(floorData.A||[]), ...(floorData.B||[])];
