@@ -461,7 +461,6 @@ let firstRid = 1;
 let staffList = [];
 let staffAliases = {}; // { "本名": ["呼び名1","呼び名2", ...] }
 let staffDayStatus = {}; // { "本名": { status: 'pending'|'off'|'paid_off'|'half_off', reportType: 'self'|'proxy'|null, timestamp } }
-let proxyMode = false; // 内勤端末での「代理入力モード」。ページを開くたびOFFにリセットされる（意図的に永続化しない）
 let _resetToken = 0; // 本日分リセット/復元のたびに更新。保険の遅延処理が古い操作を巻き戻さないようにするため
 
 // ===== LOGIN =====
@@ -622,7 +621,6 @@ document.addEventListener('DOMContentLoaded', () => {
   renderMrAibanArea();
   prefillMrTanto();
   updateQueueStatusBar();
-  updateMrSubmitBtnState();
   updateFixedTop();
   setTimeout(updateFixedTop, 100);
   // 来店予定・退店予定の時刻経過ハイライトを1分ごとに再評価する
@@ -768,11 +766,6 @@ function renderQueuePreview() {
 }
 
 function addToReportQueue() {
-  const role = localStorage.getItem('rj_role');
-  if (role === 'admin' && !proxyMode) {
-    showToast('代理入力モードをONにしてから報告してください');
-    return;
-  }
   const tanto = document.getElementById('mr-tanto').value.trim();
   const name = document.getElementById('mr-name').value.trim();
   const isTainyu = name === '体入';
@@ -3045,7 +3038,7 @@ function setMyIdentity(name) {
 function getCurrentReportType() {
   const role = localStorage.getItem('rj_role');
   if (role === 'host') return 'self';
-  if (role === 'admin') return proxyMode ? 'proxy' : null;
+  if (role === 'admin') return 'proxy';
   return null;
 }
 
@@ -3229,33 +3222,12 @@ function renderIdentityIndicator() {
       : `<span style="color:var(--text-dim);font-size:11px;">未選択</span>`)
       + logoutLink;
   } else if (role === 'admin') {
-    el.innerHTML = `
-      <span style="color:var(--text-dim);">代理入力モード</span>
-      <button onclick="toggleProxyMode()" style="background:${proxyMode ? '#c0392b' : 'var(--surface2)'};border:1px solid ${proxyMode ? '#c0392b' : 'var(--border)'};border-radius:12px;color:${proxyMode ? '#fff' : 'var(--text-dim)'};font-size:11px;padding:3px 12px;cursor:pointer;font-family:var(--font-main);font-weight:700;">${proxyMode ? 'ON' : 'OFF'}</button>`
-      + logoutLink;
+    el.innerHTML = `<span style="color:var(--text-dim);font-size:11px;">内勤（代理入力）</span>` + logoutLink;
   } else {
     el.innerHTML = '';
   }
 }
 
-function toggleProxyMode() {
-  proxyMode = !proxyMode;
-  renderIdentityIndicator();
-  updateMrSubmitBtnState();
-  showToast(proxyMode ? '代理入力モードをONにしました' : '代理入力モードをOFFにしました');
-}
-
-// 内勤で代理入力モードがOFFの時は、報告ボタンを薄く見せて押せない雰囲気を出す
-function updateMrSubmitBtnState() {
-  const btn = document.getElementById('mrSubmitBtn');
-  if (!btn) return;
-  const role = localStorage.getItem('rj_role');
-  if (role === 'admin' && !proxyMode) {
-    btn.style.opacity = '0.4';
-  } else {
-    btn.style.opacity = '1';
-  }
-}
 
 function confirmLogout() {
   let overlay = document.getElementById('deleteOverlay');
