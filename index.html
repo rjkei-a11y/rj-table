@@ -3222,7 +3222,7 @@ function renderIdentityIndicator() {
       : `<span style="color:var(--text-dim);font-size:11px;">未選択</span>`)
       + logoutLink;
   } else if (role === 'admin') {
-    el.innerHTML = `<span style="color:var(--text-dim);font-size:11px;">内勤（代理入力）</span>` + logoutLink;
+    el.innerHTML = `<span style="color:var(--text-dim);font-size:11px;">内勤者専用フォーム</span>` + logoutLink;
   } else {
     el.innerHTML = '';
   }
