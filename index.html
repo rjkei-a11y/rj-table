@@ -2481,7 +2481,7 @@ function renderView() {
   const tableMapMulti = {};
   active.filter(g => g.arrived).forEach(g => {
     if (g.tableNum) {
-      const key = g.tableNum.toUpperCase();
+      const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
       if (!tableMapMulti[key]) tableMapMulti[key] = [];
       tableMapMulti[key].push({ type: 'guest', data: g });
     }
@@ -2491,7 +2491,7 @@ function renderView() {
     if (!g.tableNum) return;
     const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     if (allDone) return;
-    const key = g.tableNum.toUpperCase();
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!tableMapMulti[key]) tableMapMulti[key] = [];
     tableMapMulti[key].push({ type: 'first', data: g });
   });
