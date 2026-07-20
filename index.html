@@ -1144,13 +1144,14 @@ function formatBudgetText(text) {
 
 // 予算欄に「上げ」（単価上げ・爆上げ等）が含まれていたら、自動で🔺特記事項を付ける
 function detectBudgetRaiseKeyword(text) {
-  return !!(text && text.includes('上げ'));
+  if (!text) return false;
+  return text.includes('上げ') || text.includes('あげ');
 }
 
 // 既存の特記事項を崩さず、予算欄の内容に応じて🔺(raise)の有無だけを同期する
 function syncBudgetRaiseSpecial(g) {
   if (!g.specials) g.specials = [];
-  const shouldHave = detectBudgetRaiseKeyword(g.budget);
+  const shouldHave = detectBudgetRaiseKeyword((g.budget || '') + (g.note || ''));
   const has = g.specials.includes('raise');
   if (shouldHave && !has) g.specials.push('raise');
   if (!shouldHave && has) g.specials = g.specials.filter(k => k !== 'raise');
@@ -1182,7 +1183,7 @@ function importTextParsed(parsed) {
     if (isDuplicate) { skipped++; return; }
     while (usedRows.has(rc)) rc++;
     usedRows.add(rc);
-    const specials = detectBudgetRaiseKeyword(g.budget) ? ['raise'] : [];
+    const specials = detectBudgetRaiseKeyword((g.budget || '') + (g.note || '')) ? ['raise'] : [];
     const newGuest = { id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType(), specials };
     syncNewSpecialFromText(newGuest);
     guests.push(newGuest);
@@ -2862,9 +2863,9 @@ function saveQuickLeaveTime(guestId) {
   g.arrive = toHalfWidthTimeText(document.getElementById('qe-arrive').value.trim());
   g.leave = toHalfWidthTimeText(document.getElementById('qe-leave').value.trim());
   g.budget = formatBudgetText(document.getElementById('qe-budget').value.trim());
-  syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('qe-help').value.trim();
   g.note = document.getElementById('qe-note').value.trim();
+  syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
   g.shareNote = document.getElementById('qe-sharenote').value.trim();
   g.aiban = [_qeAibanParts.tanto, _qeAibanParts.name].filter(Boolean).join(' ');
@@ -3934,8 +3935,8 @@ function changeSummaryDay(dayKey) {
 }
 
 // 列幅を固定し、ヘッダー用テーブルと本体用テーブルで完全に揃える（横スクロールを連動させるため）
-const SUMMARY_COL_WIDTHS = [68, 54, 54, 54, 62, 50, 54, 50, 50, 58, 50];
-const SUMMARY_COL_LABELS = ['キャスト','写真指名','送り','飲直','ヘルプ指名','新規','初回RP','本人','代理','休/有休','半休'];
+const SUMMARY_COL_WIDTHS = [68, 54, 54, 50, 54, 54, 62, 50, 50, 58, 50];
+const SUMMARY_COL_LABELS = ['キャスト','送り','飲直','新規','初回RP','写真指名','ヘルプ指名','本人','代理','休/有休','半休'];
 function summaryColgroup() {
   return '<colgroup>' + SUMMARY_COL_WIDTHS.map(w => `<col style="width:${w}px;">`).join('') + '</colgroup>';
 }
@@ -3984,12 +3985,12 @@ function buildSummaryTable(summary) {
     const half = halfOffCount[name] || 0;
     return `<tr>
       <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${okuri}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${nomi}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${help}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${shinki}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${rp}</td>
+      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
+      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${help}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#2ecc71;">${self}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${proxy}</td>
       <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e74c3c;">${off}</td>
@@ -4271,9 +4272,9 @@ function saveEdit(id) {
   g.leave = toHalfWidthTimeText(document.getElementById('e-leave').value);
   g.tanto = document.getElementById('e-tanto').value;
   g.budget = formatBudgetText(document.getElementById('e-budget').value);
-  syncBudgetRaiseSpecial(g);
   g.help = document.getElementById('e-help').value;
   g.note = document.getElementById('e-note').value;
+  syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
   g.shareNote = document.getElementById('e-sharenote').value;
   {
