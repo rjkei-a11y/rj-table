@@ -77,7 +77,8 @@
 
   // Firebaseに呼び名データを保存
   window.fbSaveAliases = function(aliasData) {
-    set(aliasRef, aliasData || {}).catch(e => console.error('FB alias save error:', e));
+    const hasData = aliasData && Object.keys(aliasData).length > 0;
+    set(aliasRef, hasData ? aliasData : null).catch(e => console.error('FB alias save error:', e));
   };
   // 呼び名は1名分だけをピンポイントで更新する版（衝突回避）
   window.fbSaveAliasesFor = function(staffName, aliasList) {
@@ -97,12 +98,16 @@
 
   // Firebaseに卓状況（フロア構成）を保存
   window.fbSaveFloor = function(floorDataObj) {
-    set(floorRef, floorDataObj || {}).catch(e => console.error('FB floor save error:', e));
+    const hasData = floorDataObj && Object.keys(floorDataObj).length > 0;
+    set(floorRef, hasData ? floorDataObj : null).catch(e => console.error('FB floor save error:', e));
   };
 
   // Firebaseに本日の報告状況（休み・有休・半休・予定未定）を保存
   window.fbSaveDayStatus = function(dayStatusObj) {
-    set(dayStatusRef, dayStatusObj || {}).catch(e => console.error('FB dayStatus save error:', e));
+    // 空オブジェクト{}をそのままsetしてもFirebase側のデータは消えないため、
+    // 空の場合はnullを渡して確実にクリアする（本日分リセット時の消し漏れ対策）
+    const hasData = dayStatusObj && Object.keys(dayStatusObj).length > 0;
+    set(dayStatusRef, hasData ? dayStatusObj : null).catch(e => console.error('FB dayStatus save error:', e));
   };
   // 報告状況は1名分だけをピンポイントで更新する版（衝突回避）
   window.fbSaveDayStatusFor = function(staffName, entry) {
@@ -3527,8 +3532,10 @@ function doResetReports() {
     if (_resetToken !== myToken) return; // その間に別の操作(復元など)が行われていたら何もしない
     guests = [];
     firstGroups = [];
+    staffDayStatus = {};
     if (window.fbClearAllGuests) window.fbClearAllGuests();
     if (window.fbClearAllFirstGroups) window.fbClearAllFirstGroups();
+    saveDayStatus();
     renderTables();
     renderStaffStatus();
     renderFirstTab();
