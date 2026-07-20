@@ -1460,7 +1460,7 @@ function rowHTML(no, g) {
       <td class="p-col-no" onclick="${g.left ? `markReEntry(${g.id})` : `toggleArrived(${g.id})`}" style="cursor:pointer;user-select:none;">${no}${isOverdue ? ' ⏰' : ''}</td>
       <td class="p-col-num editable" onclick="openTableNumPopup(${g.id})">${g.tableNum||''}</td>
       <td class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)">${g.arrive||''}</td>
-      <td class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)">${g.tanto||''}</td>
+      <td class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)">${normalizeStaffNamesInText(g.tanto||'')}</td>
       <td class="p-col-guest editable" onclick="editCell(${g.id},'name',this)">${aibanIcon}${g.name||''}</td>
       <td class="p-col-keep" onclick="toggleBottle(${g.id})" style="cursor:pointer;text-align:center;font-size:16px;color:${bottleColor};user-select:none;">${bottleIcon}</td>
       <td class="p-col-note editable" onclick="editCell(${g.id},'note',this)">${g.note||''}</td>
@@ -1612,14 +1612,15 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   } else {
     const tanto = (info && info.tanto) || '';
     const isTantoConflict = tanto && multiTantoNames.has(tanto);
-    const tantoHtml = tanto ? ` <span style="${isTantoConflict ? 'color:#e74c3c;font-weight:700;' : ''}">${tanto}</span>` : '';
+    const tantoHtml = tanto ? ` <span style="${isTantoConflict ? 'color:#e74c3c;font-weight:700;' : ''}">${normalizeStaffNamesInText(tanto)}</span>` : '';
     const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
     // 飲直転換後に卓移動していたら「元卓→現卓」の形で表示する
     const origTable = info && info.originalTableNum ? info.originalTableNum.toUpperCase().replace(/^P/, 'V') : '';
     const tableLabel = (origTable && origTable !== t) ? `${origTable}→${t}` : t;
     line1 = `<span style="font-weight:700;">${tableLabel}</span>${iconsHtml ? ' '+iconsHtml : ''}${tantoHtml}${leaveHtml}`;
     const subBits = [];
-    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name)}</span>`);
+    // 卓状況のBOXでは、お客様名に混ぜて書かれた「新規」「初回RP」（🔰自動判定用の文言）は表示上取り除く
+    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name.replace(/新規|初回RP/g, '').replace(/\s+/g, ' ').trim())}</span>`);
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
     line2 = subBits.join(' ');
     // 飲直で出来た卓は、プラン情報を3行目に表示する
@@ -1662,7 +1663,7 @@ function renderFloorStatus() {
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!infoMap[key]) infoMap[key] = [];
     const count = parseInt(g.count) || 0;
-    const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean))];
+    const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
     infoMap[key].push({ tanto: '', name: `初回${count ? count+'名' : ''}`, help: photoNames.length ? '写指:'+photoNames.join('/') : '', specials: [], isFirst: true, arrived: true });
   });
   // 通常ゲストは「来店済み」を優先して登録する。同じ卓に複数の来店済みゲストがいる場合は全員分表示する
@@ -1672,7 +1673,7 @@ function renderFloorStatus() {
     infoMap[key].push({
       tanto: g.tanto || '',
       name: (g.name || '').replace('△','').trim(),
-      help: g.help || '',
+      help: normalizeStaffNamesInText(g.help || ''),
       leave: g.leave || '',
       shareNote: g.shareNote || '',
       plan: g.plan || '',
@@ -1690,7 +1691,7 @@ function renderFloorStatus() {
       infoMap[key] = [{
         tanto: g.tanto || '',
         name: (g.name || '').replace('△','').trim(),
-        help: g.help || '',
+        help: normalizeStaffNamesInText(g.help || ''),
         leave: g.leave || '',
         specials: g.specials || [],
         isFirst: false,
@@ -1777,12 +1778,12 @@ function openTableDetailModal(tableKey, guestId) {
       return s ? `<span style="font-size:20px;margin-right:4px;" title="${s.label}">${s.icon}</span>` : '';
     }).join('');
     const rows = [
-      ['担当', guest.tanto],
+      ['担当', normalizeStaffNamesInText(guest.tanto)],
       ['お客様名', formatGuestDisplayName(guest.name)],
       ['来店時間', guest.arrive],
       ['退店時間', guest.leave],
       ['予算', guest.budget],
-      ['ヘルプ', guest.help],
+      ['ヘルプ', normalizeStaffNamesInText(guest.help)],
       ['備考', guest.note],
       ['📢 共有事項', guest.shareNote],
       ['アイバン', guest.aiban],
@@ -1814,9 +1815,9 @@ function openTableDetailModal(tableKey, guestId) {
     const rowsHtml = (firstGroup.rows || []).map(r => {
       const bits = [];
       if (r.seat) bits.push('席:' + r.seat);
-      if (r.photo1) bits.push('写真①:' + r.photo1);
-      if (r.photo2) bits.push('写真②:' + r.photo2);
-      if (r.okuri) bits.push('送り:' + r.okuri);
+      if (r.photo1) bits.push('写真①:' + normalizeStaffNamesInText(r.photo1));
+      if (r.photo2) bits.push('写真②:' + normalizeStaffNamesInText(r.photo2));
+      if (r.okuri) bits.push('送り:' + normalizeStaffNamesInText(r.okuri));
       if (r.nominaoshi) bits.push('飲直:' + r.nominaoshi);
       if (r.plan) bits.push('プラン:' + r.plan);
       return `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--text);">${bits.join(' ／ ') || '（未入力）'}</div>`;
@@ -2013,9 +2014,9 @@ function renderFirstTab() {
       rows += `<td style="${doneStyle}">
         <div onclick="event.stopPropagation();openSeatPicker(${g.id},${r.id}, this)" style="width:100%;text-align:center;background:${isDone?'#d4edda':'var(--surface2)'};border:1px solid var(--border);border-radius:4px;color:${isDone?'#555':'var(--text)'};font-family:var(--font-main);font-size:12px;padding:5px 2px;cursor:pointer;">${r.seat || '-'}</div>
       </td>`;
-      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo1',this)" style="${doneStyle}">${r.photo1||''}</td>`;
-      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo2',this)" style="${doneStyle}">${r.photo2||''}</td>`;
-      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'okuri',this)" style="${isDone?'background:#d4edda;color:#555;':''}">${r.okuri||''}</td>`;
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo1',this)" style="${doneStyle}">${normalizeStaffNamesInText(r.photo1||'')}</td>`;
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'photo2',this)" style="${doneStyle}">${normalizeStaffNamesInText(r.photo2||'')}</td>`;
+      rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'okuri',this)" style="${isDone?'background:#d4edda;color:#555;':''}">${normalizeStaffNamesInText(r.okuri||'')}</td>`;
       const nomiDone = isFirstRowDone(r);
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'nominaoshi',this)" style="${nomiDone?'background:#d4edda;color:#000;':''}">${r.nominaoshi||''}</td>`;
       rows += `<td class="editable" onclick="editFirstRow(${g.id},${r.id},'plan',this)" style="${nomiDone?'background:#d4edda;color:#555;':''}">${r.plan||''}</td>`;
@@ -2513,7 +2514,7 @@ function renderView() {
           const count = parseInt(g.count) || 0;
           const photos = (g.rows||[]).map(r => {
             const seat = r.seat ? `<span style="color:#888;font-size:11px;">${r.seat}:</span>` : '';
-            const p = [r.photo1, r.photo2].filter(Boolean).join('/');
+            const p = [r.photo1, r.photo2].filter(Boolean).map(n => normalizeStaffNamesInText(n)).join('/');
             return p ? seat + `<span style="color:var(--text);">${p}</span>` : '';
           }).filter(Boolean).join('<span style="color:#555;"> ・ </span>');
           const displayT = (g.tableNum||'').replace(/^[Pp]/, 'V');
@@ -2554,7 +2555,7 @@ function renderView() {
 }
 
 function viewRow(g) {
-  const noteStr = [g.help ? 'H: ' + g.help : '', g.note || ''].filter(Boolean).join(' ／ ');
+  const noteStr = [g.help ? 'H: ' + normalizeStaffNamesInText(g.help) : '', g.note || ''].filter(Boolean).join(' ／ ');
   const specialIcons = (g.specials || []).map(k => {
     const s = SPECIALS.find(x => x.key === k);
     return s ? `<span style="font-size:15px;" title="${s.label}">${s.icon}</span>` : '';
@@ -2577,7 +2578,7 @@ function viewRow(g) {
           ${specialIcons ? `<span>${specialIcons}</span>` : ''}
           ${aibanIcon}
           <span class="view-num-inline">${displayTable ? displayTable+'卓' : '未定'}</span>
-          <span style="color:#f0c040;font-size:13px;">${g.tanto || ''}</span>
+          <span style="color:#f0c040;font-size:13px;">${normalizeStaffNamesInText(g.tanto || '')}</span>
           <span style="font-weight:700;">${formatGuestDisplayName(g.name || '名前不明')}</span>
           &nbsp;
           <button onclick="event.stopPropagation();confirmToggleLeft(${g.id})"
@@ -3573,6 +3574,22 @@ function getSavedDailyLog(dateKey) {
   return null;
 }
 
+// 「本日」タブが、過去のリセット時点のスナップショットを表示している時に、ライブ集計に戻すためのボタン用。
+// 今日の日付の保存済みログだけを消す（guests/firstGroups等の実データには一切触れない）
+function clearTodaySavedLog() {
+  const dateKey = getTodayKey();
+  try {
+    const raw = localStorage.getItem('rj_monthlyLogs');
+    const logs = raw ? JSON.parse(raw) : {};
+    delete logs[dateKey];
+    localStorage.setItem('rj_monthlyLogs', JSON.stringify(logs));
+  } catch(e) {}
+  if (window._fbMonthlyLogs) delete window._fbMonthlyLogs[dateKey];
+  if (window.fbRemoveMonthlyLog) window.fbRemoveMonthlyLog(dateKey);
+  renderSummaryModalContent();
+  showToast('ライブ表示に戻しました');
+}
+
 function saveTodayToMonthlyLog() {
   const dateKey = getTodayKey();
   const summary = computeDailySummary();
@@ -3754,6 +3771,22 @@ function extractStaffNames(text, aliasIndex) {
   });
   return found;
 }
+
+// 自由入力のテキスト（ヘルプ欄・写真指名・送りなど）を、表示用に正式なキャスト名へ置き換える。
+// 区切り文字（/, 、 スペースなど）はそのまま残し、各断片が呼び名として完全一致した場合だけ正式名に差し替える
+// （部分一致までやると誤爆しやすいため、表示の置き換えはあえて完全一致のみに絞っている）
+function normalizeStaffNamesInText(text) {
+  if (!text) return text;
+  const aliasIndex = buildAliasIndex();
+  const parts = text.split(/([\/,、,・\s]+)/); // 区切り文字も配列に残るようキャプチャして分割
+  return parts.map(part => {
+    if (!part || /^[\/,、,・\s]+$/.test(part)) return part; // 区切り文字部分はそのまま
+    const norm = toHiragana(part.trim());
+    const match = aliasIndex.find(entry => entry.norm === norm);
+    return match ? match.name : part;
+  }).join('');
+}
+
 
 function computeDailySummary() {
   const aliasIndex = buildAliasIndex();
@@ -4038,7 +4071,14 @@ function renderSummaryModalContent() {
       const built = buildSummaryTable(savedLog || computeDailySummary());
       headerHtml = built.headerHtml;
       tableBodyHtml = built.bodyHtml;
-      titleSuffix = '（本日）';
+      titleSuffix = savedLog ? '（本日・リセット済み）' : '（本日・ライブ）';
+      if (savedLog) {
+        extraHtml = `
+          <div style="margin-bottom:10px;font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:8px;">
+            <span>本日分は既にリセット済みのため、リセット直前の記録を表示しています。</span>
+            <button onclick="clearTodaySavedLog()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);font-size:11px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">ライブ表示に戻す</button>
+          </div>`;
+      }
     } else if (_summaryTab === 'day') {
       const dates = getAvailableDates();
       const dateOptions = dates.map(d => `<option value="${d}" ${d===_summaryDayKey?'selected':''}>${d}</option>`).join('');
