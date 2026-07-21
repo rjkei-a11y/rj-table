@@ -1170,7 +1170,7 @@ function syncBudgetRaiseSpecial(g) {
 function syncNewSpecialFromText(g) {
   if (!g.specials) g.specials = [];
   const text = (g.name || '') + (g.note || '');
-  const shouldHave = text.includes('新規') || text.includes('初回RP');
+  const shouldHave = text.includes('新規') || text.includes('初回RP') || text.includes('初回リピート');
   if (shouldHave && !g.specials.includes('new')) g.specials.push('new');
 }
 
@@ -1431,6 +1431,48 @@ function saveTableNumPopup(guestId) {
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
 }
 
+// 備考欄をポップアップで編集する（卓番の有無に関わらず、卓一覧タブから常に内容を確認・編集できるようにする）
+function openNoteEditPopup(guestId) {
+  const g = guests.find(x => x.id === guestId);
+  if (!g) return;
+  let modal = document.getElementById('noteEditPopup');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'noteEditPopup';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `
+    <div class="modal" style="max-width:320px;">
+      <div class="modal-header">
+        <span>備考を編集</span>
+        <button onclick="document.getElementById('noteEditPopup').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="noteEditPopupInput" rows="4" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${g.note || ''}</textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('noteEditPopup').classList.remove('show')">キャンセル</button>
+        <button class="btn btn-primary" onclick="saveNoteEditPopup(${guestId})">保存</button>
+      </div>
+    </div>`;
+  modal.classList.add('show');
+  setTimeout(() => document.getElementById('noteEditPopupInput')?.focus(), 50);
+}
+
+function saveNoteEditPopup(guestId) {
+  const g = guests.find(x => x.id === guestId);
+  if (!g) return;
+  g.note = document.getElementById('noteEditPopupInput').value.trim();
+  syncBudgetRaiseSpecial(g);
+  syncNewSpecialFromText(g);
+  saveToStorage();
+  document.getElementById('noteEditPopup').classList.remove('show');
+  updateSingleGuestRow(guestId);
+  renderFloorStatus();
+  if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
+}
+
 // 卓一覧の特定の1行だけを差し替える（他の行のDOMには一切触れないので、
 // テーブル全体を作り直すことによるスクロールのズレが原理的に起きない）
 function updateSingleGuestRow(guestId) {
@@ -1465,7 +1507,7 @@ function rowHTML(no, g) {
   const tantoCellAttrs = canEditList ? `class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)"` : `class="p-col-tanto"`;
   const nameCellAttrs = canEditList ? `class="p-col-guest editable" onclick="editCell(${g.id},'name',this)"` : `class="p-col-guest"`;
   const bottleCellAttrs = canEditList ? `onclick="toggleBottle(${g.id})" style="cursor:pointer;text-align:center;font-size:16px;color:${bottleColor};user-select:none;"` : `style="text-align:center;font-size:16px;color:${bottleColor};user-select:none;"`;
-  const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="editCell(${g.id},'note',this)"` : `class="p-col-note"`;
+  const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="openNoteEditPopup(${g.id})"` : `class="p-col-note"`;
   return `
     <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         ${holdAttrs}>
@@ -1645,7 +1687,7 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
     line1 = `<span style="font-weight:700;">${tableLabel}</span>${iconsHtml ? ' '+iconsHtml : ''}${tantoHtml}${leaveHtml}`;
     const subBits = [];
     // 卓状況のBOXでは、お客様名に混ぜて書かれた「新規」「初回RP」（🔰自動判定用の文言）は表示上取り除く
-    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name.replace(/新規|初回RP/g, '').replace(/\s+/g, ' ').trim())}</span>`);
+    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name.replace(/新規|初回リピート|初回RP/g, '').replace(/\s+/g, ' ').trim())}</span>`);
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
     line2 = subBits.join(' ');
     // 飲直で出来た卓は、プラン情報を3行目に表示する
@@ -1654,16 +1696,19 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
   const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
   const finalBoxText = isLeaveSoon ? '#fff' : boxText;
+  // 来店済みは今まで通りタップ・長押し両方、未来店はタップでの詳細確認だけできるようにする（備考等を事前に見られるように）
   const interactiveAttrs = arrived
     ? `onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTableDetailModal('${key}',${info && info.guestId != null ? info.guestId : 'null'})"
        oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('table','${key}',${info && info.guestId != null ? info.guestId : 'null'})"
        ontouchstart="startLeaveEditHold('table','${key}',${info && info.guestId != null ? info.guestId : 'null'})" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"`
+    : (info && !info.isFirst)
+    ? `onclick="openTableDetailModal('${key}',${info.guestId != null ? info.guestId : 'null'})"`
     : '';
   const hasShareNote = arrived && info && info.shareNote;
   const line4 = hasShareNote ? `<div style="font-size:8.5px;line-height:1.3;font-weight:700;color:#ffd8c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📢${info.shareNote}</div>` : '';
   return `<div ${interactiveAttrs}
     class="${hasShareNote ? 'share-note-glow' : ''}"
-    style="cursor:${arrived?'pointer':'default'};padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':(isFirst?'#2980b9':'#c9a84c')};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
+    style="cursor:${(arrived || (info && !info.isFirst))?'pointer':'default'};padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':(isFirst?'#2980b9':'#c9a84c')};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
     <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
     <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
     ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
@@ -1709,22 +1754,7 @@ function renderFloorStatus() {
       guestId: g.id
     });
   });
-  // 未来店の予定は、まだその卓に来店済み・初回の実績が何もない場合だけ表示する（実質空いてる卓として扱う）
-  guests.filter(g => g.tableNum && !g.left && !g.arrived).forEach(g => {
-    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
-    if (!infoMap[key] || infoMap[key].length === 0) {
-      infoMap[key] = [{
-        tanto: g.tanto || '',
-        name: (g.name || '').replace('△','').trim(),
-        help: normalizeStaffNamesInText(g.help || ''),
-        leave: g.leave || '',
-        specials: g.specials || [],
-        isFirst: false,
-        arrived: false,
-        guestId: g.id
-      }];
-    }
-  });
+  // 未来店の予定は、分かりにくいという意見があったため卓状況には表示しない（来店確認されて初めて表示される）
 
   // 【場内】欄から卓番ごとの場内指名を取得
   let baanaiText = '';
@@ -3871,7 +3901,7 @@ function computeDailySummary() {
     const name = g.name || '';
     const tanto = matchStaff(g.tanto);
     if (g.arrived) {
-      if (name.includes('初回RP')) {
+      if (name.includes('初回RP') || name.includes('初回リピート')) {
         bump(shinkiCount, tanto);
         bump(rpCount, tanto);
       } else if (name.includes('新規')) {
