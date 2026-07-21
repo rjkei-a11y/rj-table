@@ -359,7 +359,7 @@
 <!-- 卓一覧パネル -->
 <div class="panel" id="panel-tables">
   <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
-    <button onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
+    <button id="manageModalBtn" onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
   </div>
   <div id="assignedTables"></div>
   <div class="unassigned-section" id="unassignedSection" style="display:none;">
@@ -539,6 +539,9 @@ function applyRole(role) {
     if (firstAddBtn) firstAddBtn.style.display = 'none';
     const firstClearBtn = document.getElementById('firstClearBtn');
     if (firstClearBtn) firstClearBtn.style.display = 'none';
+    // 卓一覧タブはキャストロールでは閲覧専用（一覧管理ボタンを非表示）
+    const manageModalBtn = document.getElementById('manageModalBtn');
+    if (manageModalBtn) manageModalBtn.style.display = 'none';
   }
   updateTableListVisibleBtn();
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
@@ -1453,22 +1456,44 @@ function rowHTML(no, g) {
     : '';
   // 未来店で、来店予定時刻を過ぎている行はハイライトする
   const isOverdue = !g.arrived && isTimeOverdue(g.arrive);
+  // 卓一覧タブは内勤のみ編集可能。キャストロールでは閲覧専用にする（クリックしても何も起きない・編集可能に見えないようにする）
+  const canEditList = localStorage.getItem('rj_role') === 'admin';
+  const holdAttrs = canEditList ? `oncontextmenu="event.preventDefault();confirmDelete(${g.id})" data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()"` : '';
+  const noCellAttrs = canEditList ? `onclick="${g.left ? `markReEntry(${g.id})` : `toggleArrived(${g.id})`}" style="cursor:pointer;user-select:none;"` : '';
+  const numCellAttrs = canEditList ? `class="p-col-num editable" onclick="openTableNumPopup(${g.id})"` : `class="p-col-num"`;
+  const arriveCellAttrs = canEditList ? `class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)"` : `class="p-col-time"`;
+  const tantoCellAttrs = canEditList ? `class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)"` : `class="p-col-tanto"`;
+  const nameCellAttrs = canEditList ? `class="p-col-guest editable" onclick="editCell(${g.id},'name',this)"` : `class="p-col-guest"`;
+  const bottleCellAttrs = canEditList ? `onclick="toggleBottle(${g.id})" style="cursor:pointer;text-align:center;font-size:16px;color:${bottleColor};user-select:none;"` : `style="text-align:center;font-size:16px;color:${bottleColor};user-select:none;"`;
+  const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="editCell(${g.id},'note',this)"` : `class="p-col-note"`;
   return `
     <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
-        oncontextmenu="event.preventDefault();confirmDelete(${g.id})"
-        data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">
-      <td class="p-col-no" onclick="${g.left ? `markReEntry(${g.id})` : `toggleArrived(${g.id})`}" style="cursor:pointer;user-select:none;">${no}${isOverdue ? ' ⏰' : ''}</td>
-      <td class="p-col-num editable" onclick="openTableNumPopup(${g.id})">${g.tableNum||''}</td>
-      <td class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)">${g.arrive||''}</td>
-      <td class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)">${normalizeStaffNamesInText(g.tanto||'')}</td>
-      <td class="p-col-guest editable" onclick="editCell(${g.id},'name',this)">${aibanIcon}${g.name||''}</td>
-      <td class="p-col-keep" onclick="toggleBottle(${g.id})" style="cursor:pointer;text-align:center;font-size:16px;color:${bottleColor};user-select:none;">${bottleIcon}</td>
-      <td class="p-col-note editable" onclick="editCell(${g.id},'note',this)">${g.note||''}</td>
+        ${holdAttrs}>
+      <td class="p-col-no" ${noCellAttrs}>${no}${isOverdue ? ' ⏰' : ''}</td>
+      <td ${numCellAttrs}>${g.tableNum||''}</td>
+      <td ${arriveCellAttrs}>${g.arrive||''}</td>
+      <td ${tantoCellAttrs}>${normalizeStaffNamesInText(g.tanto||'')}</td>
+      <td ${nameCellAttrs}>${aibanIcon}${g.name||''}</td>
+      <td class="p-col-keep" ${bottleCellAttrs}>${bottleIcon}</td>
+      <td ${noteCellAttrs}>${g.note||''}</td>
     </tr>`;
 }
 
 function emptyRowHTML(no) {
-  // 空行タップで新規ゲスト作成
+  // 空行タップで新規ゲスト作成（内勤のみ）
+  const canEditList = localStorage.getItem('rj_role') === 'admin';
+  if (!canEditList) {
+    return `
+    <tr id="emptyrow-${no}" data-rownum="${no}">
+      <td class="p-col-no" style="color:#aaa;">${no}</td>
+      <td class="p-col-num"></td>
+      <td class="p-col-time"></td>
+      <td class="p-col-tanto"></td>
+      <td class="p-col-guest"></td>
+      <td class="p-col-keep"></td>
+      <td class="p-col-note"></td>
+    </tr>`;
+  }
   return `
     <tr id="emptyrow-${no}" data-rownum="${no}">
       <td class="p-col-no" style="color:#aaa;">${no}</td>
