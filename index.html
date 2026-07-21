@@ -1725,7 +1725,7 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
     const tanto = (info && info.tanto) || '';
     const isTantoConflict = tanto && multiTantoNames.has(tanto);
     const tantoHtml = tanto ? ` <span style="${isTantoConflict ? 'color:#e74c3c;font-weight:700;' : ''}">${normalizeStaffNamesInText(tanto)}</span>` : '';
-    const leaveHtml = (info && info.leave && info.leave.trim() !== 'ラスト') ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
+    const leaveHtml = (info && info.leave && parseTimeText(info.leave)) ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
     // 飲直転換後に卓移動していたら「元卓→現卓」の形で表示する
     const origTable = info && info.originalTableNum ? info.originalTableNum.toUpperCase().replace(/^P/, 'V') : '';
     const tableLabel = (origTable && origTable !== t) ? `${origTable}→${t}` : t;
@@ -2685,7 +2685,7 @@ function viewRow(g) {
             style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">
             退店
           </button>
-          ${g.leave && g.leave.trim() !== 'ラスト' ? `<span style="font-size:12px;color:#e57373;font-weight:700;">⏰${g.leave}</span>` : ''}
+          ${g.leave && parseTimeText(g.leave) ? `<span style="font-size:12px;color:#e57373;font-weight:700;">⏰${g.leave}</span>` : ''}
           ${g.budget ? `<span style="font-size:11px;color:var(--text-dim);">${g.budget}</span>` : ''}
         </div>
         ${noteStr ? `<div class="view-meta" style="color:#e74c3c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="event.stopPropagation();openNoteDetailModal(${g.id})">${noteStr}</div>` : ''}
@@ -3808,7 +3808,8 @@ function parseTimeText(text) {
   if (!m) return null;
   const hour = parseInt(m[1]);
   const minute = m[2] ? parseInt(m[2]) : 0;
-  if (isNaN(hour) || hour > 23 || minute > 59) return null;
+  // 深夜営業では「24時」「25時」のような表記も使われるため、29時までは有効な時刻として扱う
+  if (isNaN(hour) || hour > 29 || minute > 59) return null;
   return { hour, minute };
 }
 
