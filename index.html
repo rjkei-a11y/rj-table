@@ -358,6 +358,7 @@
 
 <!-- 卓一覧パネル -->
 <div class="panel" id="panel-tables">
+  <div id="emptyTablesArea" style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;"></div>
   <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
     <button id="manageModalBtn" onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
   </div>
@@ -1206,6 +1207,27 @@ function importTextParsed(parsed) {
 
 
 // ===== RENDER TABLES =====
+// 今、誰も使っていない（予約・初回どちらも入っていない）卓番の一覧を、卓一覧タブの上部に表示する
+function renderEmptyTablesArea() {
+  const el = document.getElementById('emptyTablesArea');
+  if (!el) return;
+  const usedKeys = new Set();
+  guests.filter(g => g.tableNum && !g.left).forEach(g => {
+    usedKeys.add(g.tableNum.toUpperCase().replace(/^P/, 'V'));
+  });
+  (firstGroups || []).forEach(g => {
+    if (!g.tableNum) return;
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
+    if (allDone) return;
+    usedKeys.add(g.tableNum.toUpperCase().replace(/^P/, 'V'));
+  });
+  const allTables = [...(floorData.V||[]), ...(floorData.A||[]), ...(floorData.B||[])];
+  const emptyTables = allTables.filter(t => !usedKeys.has(t.toUpperCase()));
+  el.innerHTML = emptyTables.length
+    ? `<span style="color:var(--accent);">空き卓：</span>${emptyTables.join(', ')}`
+    : `<span style="color:var(--accent);">空き卓：</span>なし`;
+}
+
 function renderTables() {
   const container = document.getElementById('assignedTables');
   const MAX_ROWS = 30;
@@ -1262,6 +1284,7 @@ function renderTables() {
 
   updateStats();
   updateTableStats();
+  renderEmptyTablesArea();
 }
 
 // アイバン文字列（「担当名 お客様名」形式）を、担当名部分とお客様名部分に分解する
@@ -2822,6 +2845,7 @@ function toggleLeft(id) {
   g.left = true;
   saveToStorage();
   renderView();
+  renderEmptyTablesArea();
   if (window.renderFloorStatus) window.renderFloorStatus();
 }
 
@@ -2833,6 +2857,7 @@ function undoLeft() {
     lastLeft = null;
     saveToStorage();
     renderView();
+    renderEmptyTablesArea();
     showToast('元に戻しました');
   }
 }
