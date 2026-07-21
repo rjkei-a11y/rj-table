@@ -3080,8 +3080,10 @@ function updateTableStats() {
     return sum + (g.rows||[]).reduce((s, r) => s + (isFirstRowDone(r) ? 0 : (parseInt(g.count)||0) / (g.rows||[1]).length), 0);
   }, 0);
   const firstCurrentInt = Math.round(firstCurrent);
+  // 飲直の件数（初回タブから飲直転換された卓。備考欄が「飲直」から始まるもので判定）
+  const nomiCount = guests.filter(g => g.note && g.note.trim().startsWith('飲直')).length;
 
-  const statsHtml = `<span style="font-size:14px;white-space:nowrap;">予定卓数 <span style="color:var(--accent);font-weight:700;">${maxRow}卓</span><span style="color:var(--text-dim);">（△<span style="color:#e74c3c;font-weight:700;">${deltaCount}</span>）</span>&nbsp;&nbsp;現状 <span style="color:#2ecc71;font-weight:700;">${arrivedCount}卓</span>&nbsp;&nbsp;初回 現在<span style="color:var(--accent);font-weight:700;">${firstCurrentInt}名</span>／<span style="color:var(--text-dim);font-weight:700;">${firstTotal}名</span></span>`;
+  const statsHtml = `<span style="font-size:14px;white-space:nowrap;">予定卓数 <span style="color:var(--accent);font-weight:700;">${maxRow}卓</span><span style="color:var(--text-dim);">（△<span style="color:#e74c3c;font-weight:700;">${deltaCount}</span>）</span>&nbsp;&nbsp;現状 <span style="color:#2ecc71;font-weight:700;">${arrivedCount}卓</span>&nbsp;&nbsp;初回 現在<span style="color:var(--accent);font-weight:700;">${firstCurrentInt}名</span>／<span style="color:var(--text-dim);font-weight:700;">${firstTotal}名</span>&nbsp;&nbsp;飲直 <span style="color:var(--accent);font-weight:700;">${nomiCount}件</span></span>`;
   // 固定バーに反映
   const fixedEl = document.getElementById('fixedStats');
   if (fixedEl) {
