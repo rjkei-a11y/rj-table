@@ -1,4 +1,4 @@
-  :root {
+:root {
     --bg: #0d0d0d;
     --surface: #1a1a1a;
     --surface2: #242424;
@@ -283,7 +283,8 @@
   .p-col-tanto{ width: 46px; }
   .p-col-guest{ width: 80px; }
   .p-col-keep { width: 44px; text-align: center; }
-  .p-col-note { width: 136px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-col-help { width: 70px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-col-note { width: 90px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* 初回タブ：スマホ幅では列を詰めて、横スクロールなしで全体が見えるようにする（PC表示はそのまま） */
   @media (max-width: 500px) {
