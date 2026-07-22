@@ -359,7 +359,8 @@
 
 <!-- 卓一覧パネル -->
 <div class="panel" id="panel-tables">
-  <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:8px;">
+    <button id="printTablesBtn" onclick="printTablesList()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">🖨 印刷</button>
     <button id="manageModalBtn" onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
   </div>
   <div id="assignedTables"></div>
@@ -661,6 +662,14 @@ function switchTab(name) {
   renderEmptyTablesArea();
   // タブによって上部の固定エリアの高さが変わるため、切り替えるたびに固定位置を再計算する
   setTimeout(updateFixedTop, 50);
+}
+
+// 卓一覧タブの表を印刷する（紙様式30行表・空白行も含めて印刷。CSS側の@media printで印刷範囲を絞る）
+function printTablesList() {
+  if (!document.getElementById('panel-tables').classList.contains('active')) {
+    switchTab('tables');
+  }
+  setTimeout(() => window.print(), 100);
 }
 
 // ===== 1件ずつ入力してキューに追加する方式 =====
