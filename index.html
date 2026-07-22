@@ -1337,20 +1337,27 @@ function renderTables() {
   const rowMap = {};
   guests.forEach(g => { if (g.rowNum) rowMap[g.rowNum] = g; });
 
-  let rows = '';
+  // 卓一覧タブでの並び順：①未来店（No.順）②来店済み・退店済み（No.順）③空白行（No.順）の3グループに分ける
+  const notArrivedRows = [];
+  const arrivedRows = [];
+  const emptyRowNums = [];
   for (let i = 1; i <= MAX_ROWS; i++) {
     const g = rowMap[i];
     if (g) {
-      rows += rowHTML(i, g);
+      (g.arrived ? arrivedRows : notArrivedRows).push({ no: i, g });
     } else {
-      rows += emptyRowHTML(i);
+      emptyRowNums.push(i);
     }
   }
-
-  // MAX_ROWS超えの行
+  // MAX_ROWS超えの行も同様に、未来店/来店済みへ振り分ける
   guests.filter(g => g.rowNum && Number(g.rowNum) > MAX_ROWS)
     .sort((a,b) => Number(a.rowNum)-Number(b.rowNum))
-    .forEach(g => { rows += rowHTML(g.rowNum, g); });
+    .forEach(g => { (g.arrived ? arrivedRows : notArrivedRows).push({ no: g.rowNum, g }); });
+
+  let rows = '';
+  notArrivedRows.forEach(({no,g}) => { rows += rowHTML(no, g); });
+  arrivedRows.forEach(({no,g}) => { rows += rowHTML(no, g); });
+  emptyRowNums.forEach(no => { rows += emptyRowHTML(no); });
 
   container.innerHTML = `
     <div style="overflow-x:auto;">
