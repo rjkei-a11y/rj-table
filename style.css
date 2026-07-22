@@ -106,7 +106,7 @@
   .panel.active { display: block; }
 
   /* 固定統計バー（スクロールしても常時表示） */
-  #fixedStats, #tantoStats, #baanaiBar {
+  #fixedStats, #tantoStats, #baanaiBar, #emptyTablesBar {
     position: fixed;
     left: 0;
     right: 0;
