@@ -723,3 +723,33 @@
     .table-grid { grid-template-columns: 1fr; }
     .header-title { font-size: 14px; }
   }
+
+  /* ===== 卓一覧タブの印刷用スタイル ===== */
+  @media print {
+    @page { size: A4 portrait; margin: 10mm; }
+
+    /* 印刷不要な画面UIを非表示にする */
+    header, .tabs,
+    #fixedStats, #tantoStats, #baanaiBar, #emptyTablesBar, #fixedSpacer,
+    #printTablesBtn, #manageModalBtn,
+    .modal-overlay {
+      display: none !important;
+    }
+
+    body { background: #fff; padding-top: 0 !important; }
+    .panel { display: none !important; padding: 0; }
+    .panel.active { display: block !important; }
+    #panel-tables > div:first-child { display: none !important; } /* 印刷/一覧管理ボタン行 */
+    .unassigned-section { display: none !important; }
+
+    #assignedTables > div { overflow-x: visible !important; }
+    .paper-table {
+      width: 100%;
+      font-size: 10px;
+    }
+    .paper-table th, .paper-table td {
+      border-color: #000;
+    }
+    /* 印刷ではNo.タップ等の操作見た目（下線・カーソル）は不要 */
+    .p-col-no { text-decoration: none !important; cursor: default !important; }
+  }
