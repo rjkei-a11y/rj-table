@@ -1555,6 +1555,7 @@ function saveTableNumPopup(guestId) {
 function openNoteEditPopup(guestId) {
   const g = guests.find(x => x.id === guestId);
   if (!g) return;
+  const canEditList = localStorage.getItem('rj_role') === 'admin';
   let modal = document.getElementById('noteEditPopup');
   if (!modal) {
     modal = document.createElement('div');
@@ -1562,22 +1563,25 @@ function openNoteEditPopup(guestId) {
     modal.id = 'noteEditPopup';
     document.body.appendChild(modal);
   }
+  // 従業員ロールは編集不可のため、閲覧専用（テキスト表示のみ・保存ボタンなし）で表示する
+  const bodyHtml = canEditList
+    ? `<textarea id="noteEditPopupInput" rows="4" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${g.note || ''}</textarea>`
+    : `<div style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;padding:10px;white-space:pre-wrap;word-break:break-word;min-height:60px;">${g.note ? g.note.replace(/</g,'&lt;').replace(/>/g,'&gt;') : '（備考なし）'}</div>`;
+  const footerHtml = canEditList
+    ? `<button class="btn btn-ghost" onclick="document.getElementById('noteEditPopup').classList.remove('show')">キャンセル</button>
+       <button class="btn btn-primary" onclick="saveNoteEditPopup(${guestId})">保存</button>`
+    : `<button class="btn btn-primary" onclick="document.getElementById('noteEditPopup').classList.remove('show')" style="flex:1;">閉じる</button>`;
   modal.innerHTML = `
     <div class="modal" style="max-width:320px;">
       <div class="modal-header">
-        <span>備考を編集</span>
+        <span>${canEditList ? '備考を編集' : '備考'}</span>
         <button onclick="document.getElementById('noteEditPopup').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
-      <div class="modal-body">
-        <textarea id="noteEditPopupInput" rows="4" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${g.note || ''}</textarea>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="document.getElementById('noteEditPopup').classList.remove('show')">キャンセル</button>
-        <button class="btn btn-primary" onclick="saveNoteEditPopup(${guestId})">保存</button>
-      </div>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-footer">${footerHtml}</div>
     </div>`;
   modal.classList.add('show');
-  setTimeout(() => document.getElementById('noteEditPopupInput')?.focus(), 50);
+  if (canEditList) setTimeout(() => document.getElementById('noteEditPopupInput')?.focus(), 50);
 }
 
 function saveNoteEditPopup(guestId) {
@@ -1593,10 +1597,12 @@ function saveNoteEditPopup(guestId) {
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
 }
 
-// ヘルプ指名欄をポップアップで編集する（来店前でも確認できるよう、卓一覧タブに専用列を設けた）
+// ヘルプ指名欄をポップアップで確認・編集する（来店前でも確認できるよう、卓一覧タブに専用列を設けた）
+// 内勤ロール：編集可（textarea＋保存）／従業員ロール：閲覧専用（テキスト表示のみ）
 function openHelpEditPopup(guestId) {
   const g = guests.find(x => x.id === guestId);
   if (!g) return;
+  const canEditList = localStorage.getItem('rj_role') === 'admin';
   let modal = document.getElementById('helpEditPopup');
   if (!modal) {
     modal = document.createElement('div');
@@ -1604,22 +1610,24 @@ function openHelpEditPopup(guestId) {
     modal.id = 'helpEditPopup';
     document.body.appendChild(modal);
   }
+  const bodyHtml = canEditList
+    ? `<textarea id="helpEditPopupInput" rows="3" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${g.help || ''}</textarea>`
+    : `<div style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;padding:10px;white-space:pre-wrap;word-break:break-word;min-height:50px;">${g.help ? g.help.replace(/</g,'&lt;').replace(/>/g,'&gt;') : '（ヘルプ指名なし）'}</div>`;
+  const footerHtml = canEditList
+    ? `<button class="btn btn-ghost" onclick="document.getElementById('helpEditPopup').classList.remove('show')">キャンセル</button>
+       <button class="btn btn-primary" onclick="saveHelpEditPopup(${guestId})">保存</button>`
+    : `<button class="btn btn-primary" onclick="document.getElementById('helpEditPopup').classList.remove('show')" style="flex:1;">閉じる</button>`;
   modal.innerHTML = `
     <div class="modal" style="max-width:320px;">
       <div class="modal-header">
-        <span>ヘルプ指名を編集</span>
+        <span>${canEditList ? 'ヘルプ指名を編集' : 'ヘルプ指名'}</span>
         <button onclick="document.getElementById('helpEditPopup').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
-      <div class="modal-body">
-        <textarea id="helpEditPopupInput" rows="3" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${g.help || ''}</textarea>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="document.getElementById('helpEditPopup').classList.remove('show')">キャンセル</button>
-        <button class="btn btn-primary" onclick="saveHelpEditPopup(${guestId})">保存</button>
-      </div>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-footer">${footerHtml}</div>
     </div>`;
   modal.classList.add('show');
-  setTimeout(() => document.getElementById('helpEditPopupInput')?.focus(), 50);
+  if (canEditList) setTimeout(() => document.getElementById('helpEditPopupInput')?.focus(), 50);
 }
 
 function saveHelpEditPopup(guestId) {
@@ -1667,8 +1675,8 @@ function rowHTML(no, g) {
   const tantoCellAttrs = canEditList ? `class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)"` : `class="p-col-tanto"`;
   const nameCellAttrs = canEditList ? `class="p-col-guest editable" onclick="editCell(${g.id},'name',this)"` : `class="p-col-guest"`;
   const bottleCellAttrs = canEditList ? `onclick="toggleBottle(${g.id})" style="cursor:pointer;text-align:center;font-size:16px;color:${bottleColor};user-select:none;"` : `style="text-align:center;font-size:16px;color:${bottleColor};user-select:none;"`;
-  const helpCellAttrs = canEditList ? `class="p-col-help editable" onclick="openHelpEditPopup(${g.id})"` : `class="p-col-help"`;
-  const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="openNoteEditPopup(${g.id})"` : `class="p-col-note"`;
+  const helpCellAttrs = canEditList ? `class="p-col-help editable" onclick="openHelpEditPopup(${g.id})"` : `class="p-col-help" onclick="openHelpEditPopup(${g.id})" style="cursor:pointer;"`;
+  const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="openNoteEditPopup(${g.id})"` : `class="p-col-note" onclick="openNoteEditPopup(${g.id})" style="cursor:pointer;"`;
   return `
     <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         ${holdAttrs}>
