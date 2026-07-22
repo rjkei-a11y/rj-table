@@ -298,6 +298,7 @@
 <div id="fixedStats" style="display:none;z-index:90;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 16px;font-size:13px;"></div>
 <div id="tantoStats" style="display:none;z-index:89;background:var(--surface2);border-bottom:1px solid var(--border);padding:4px 16px;font-size:11px;"></div>
 <div id="baanaiBar" style="display:none;z-index:88;background:var(--surface2);border-bottom:1px solid var(--border);padding:4px 16px;font-size:11px;"></div>
+<div id="emptyTablesBar" style="display:none;z-index:87;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 16px;font-size:12px;color:var(--text-dim);line-height:1.6;"></div>
 <!-- 固定バーの高さぶん、本文を押し下げるためのスペーサー -->
 <div id="fixedSpacer" style="height:0px;"></div>
 
@@ -358,7 +359,6 @@
 
 <!-- 卓一覧パネル -->
 <div class="panel" id="panel-tables">
-  <div id="emptyTablesArea" style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;"></div>
   <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
     <button id="manageModalBtn" onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
   </div>
@@ -658,6 +658,7 @@ function switchTab(name) {
   if (name === 'view') renderView();
   if (name === 'first') renderFirstTab();
   if (name === 'input') renderFloorStatus();
+  renderEmptyTablesArea();
   // タブによって上部の固定エリアの高さが変わるため、切り替えるたびに固定位置を再計算する
   setTimeout(updateFixedTop, 50);
 }
@@ -1209,8 +1210,15 @@ function importTextParsed(parsed) {
 // ===== RENDER TABLES =====
 // 今、誰も使っていない（予約・初回どちらも入っていない）卓番の一覧を、卓一覧タブの上部に表示する
 function renderEmptyTablesArea() {
-  const el = document.getElementById('emptyTablesArea');
+  const el = document.getElementById('emptyTablesBar');
   if (!el) return;
+  // 卓一覧タブがアクティブな時だけ、ヘッダー直下の固定バーとして表示する
+  const tablesPanelActive = document.getElementById('panel-tables') && document.getElementById('panel-tables').classList.contains('active');
+  if (!tablesPanelActive) {
+    el.style.display = 'none';
+    updateFixedTop();
+    return;
+  }
   const usedKeys = new Set();
   guests.filter(g => g.tableNum && !g.left).forEach(g => {
     usedKeys.add(g.tableNum.toUpperCase().replace(/^P/, 'V'));
@@ -1226,6 +1234,8 @@ function renderEmptyTablesArea() {
   el.innerHTML = emptyTables.length
     ? `<span style="color:var(--accent);">空き卓：</span>${emptyTables.join(', ')}`
     : `<span style="color:var(--accent);">空き卓：</span>なし`;
+  el.style.display = 'block';
+  updateFixedTop();
 }
 
 function renderTables() {
@@ -4509,6 +4519,7 @@ function updateFixedTop() {
   const fixedEl = document.getElementById('fixedStats');
   const tantoEl = document.getElementById('tantoStats');
   const baanaiEl = document.getElementById('baanaiBar');
+  const emptyTablesEl = document.getElementById('emptyTablesBar');
   const spacer = document.getElementById('fixedSpacer');
 
   let top = 0;
@@ -4533,8 +4544,12 @@ function updateFixedTop() {
     baanaiEl.style.top = top + 'px';
     top += baanaiEl.offsetHeight;
   }
+  if (emptyTablesEl && emptyTablesEl.style.display !== 'none') {
+    emptyTablesEl.style.top = top + 'px';
+    top += emptyTablesEl.offsetHeight;
+  }
 
-  // header〜baanaiBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる
+  // header〜emptyTablesBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる
   document.body.style.paddingTop = top + 'px';
   // spacerはもう使わないが、古い呼び出しが残っていても実害が無いよう0にしておく
   if (spacer) spacer.style.height = '0px';
