@@ -1167,6 +1167,76 @@ function syncBudgetRaiseSpecial(g) {
   if (!shouldHave && has) g.specials = g.specials.filter(k => k !== 'raise');
 }
 
+// ===== 退店時間の自動計算（クイック／プランC／ワンタイ／ツータイ） =====
+// 現在時刻に指定分数を加算した「HH:MM」形式の文字列を返す
+// 深夜営業を考慮し、加算の結果日付が変わる場合は「25:30」のような24時以降表記にする
+function calcLeaveTimeFromNow(minutesToAdd) {
+  const now = new Date();
+  const totalMinutes = now.getHours() * 60 + now.getMinutes() + minutesToAdd;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// テキスト中に「クイック」が含まれるか（予算・退店・備考のどこに書かれていてもよい）
+function detectQuickKeyword(text) {
+  if (!text) return false;
+  return text.includes('クイック');
+}
+
+// テキスト中に「プランC」が含まれるか（初回タブのプラン欄、またはそれが反映された卓一覧の備考欄）
+function detectPlanCKeyword(text) {
+  if (!text) return false;
+  return text.includes('プランC') || text.includes('プランｃ');
+}
+
+// 退店欄テキストから「ワンタイ」「ツータイ」による加算分数を判定する（該当なければnull）
+// 表記ゆれ（カタカナ/ひらがな、全角/半角数字、長音の有無、「1時間/2時間」等）を広く拾う
+function detectTaimeMinutes(text) {
+  if (!text) return null;
+  // カタカナ→ひらがな、全角数字→半角数字に正規化し、長音符（ー・〜）を除去して比較しやすくする
+  const norm = toHiragana(toHalfWidthDigits(text)).replace(/[ー〜]/g, '');
+  if (/(つ[うー]?たい|2\s*たい|２\s*たい|2\s*時間|２\s*時間)/.test(norm)) return 120;
+  if (/(わんたい|1\s*たい|１\s*たい|1\s*時間|１\s*時間)/.test(norm)) return 60;
+  return null;
+}
+
+// 退店欄に書かれていた「クイック／ワンタイ／ツータイ」の文言を、既存の備考欄の内容を残したまま追記する
+function moveLeaveKeywordToNote(g, keyword) {
+  if (!keyword) return;
+  const existingNote = (g.note || '').trim();
+  // 同じ文言が既に備考欄にあれば重複追記しない
+  if (existingNote.includes(keyword)) return;
+  g.note = existingNote ? `${existingNote} ${keyword}` : keyword;
+}
+
+// 来店確認（入店フラグON）や関連欄の編集保存のタイミングで、ゲスト1件分の退店時間を自動計算して反映する
+// ・ワンタイ／ツータイ（退店欄にその文言がある間）：常に現在時刻からの再計算で上書きする
+// ・クイック（予算・退店・備考のいずれかにその文言がある）：退店欄がまだ空の時だけ、+1時間で自動計算する
+//   （一度自動計算した後に本人が退店欄を具体的な時刻へ手動修正したら、以後はその値を優先し上書きしない）
+// ・退店欄自体に「クイック／ワンタイ／ツータイ」と書かれていた場合は、その文言を備考欄へ移してから退店欄を時刻に置き換える
+function applyAutoLeaveTime(g) {
+  if (!g) return;
+  const leaveText = g.leave || '';
+  const taimeMinutes = detectTaimeMinutes(leaveText);
+  if (taimeMinutes != null) {
+    // 表記ゆれ（わんたい/1タイ/1時間 等）を問わず、備考欄には統一表記で記録する
+    moveLeaveKeywordToNote(g, taimeMinutes === 120 ? 'ツータイ' : 'ワンタイ');
+    g.leave = calcLeaveTimeFromNow(taimeMinutes);
+    return;
+  }
+  const isQuick = detectQuickKeyword(g.budget || '') || detectQuickKeyword(leaveText) || detectQuickKeyword(g.note || '');
+  // 退店欄が空、または退店欄そのものに「クイック」という文字が書かれている場合だけ自動計算する
+  // （退店欄に既に具体的な時刻等が入っている場合は、本人が手動で決めた値として上書きしない）
+  const leaveHasQuickText = detectQuickKeyword(leaveText);
+  const leaveIsEmptyOrQuickText = !leaveText.trim() || leaveHasQuickText;
+  if (isQuick && leaveIsEmptyOrQuickText) {
+    if (leaveHasQuickText) moveLeaveKeywordToNote(g, 'クイック');
+    g.leave = calcLeaveTimeFromNow(60);
+  }
+}
+
+
 // お客様名・備考のどちらかに「新規」「初回RP」の文言が含まれていたら🔰を自動で付ける
 // （飲直による自動付与とは別ルートなので、こちらは追加のみ行い、自動での削除はしない）
 function syncNewSpecialFromText(g) {
@@ -1675,6 +1745,10 @@ function editCell(id, field, td) {
   function save() {
     g[field] = input.value.trim();
     if (field === 'name' || field === 'note') syncNewSpecialFromText(g);
+    // 来店済みのゲストで、予算・退店・備考のいずれかが編集された時は、クイック／ワンタイ／ツータイの退店時間を再計算する
+    if (g.arrived && (field === 'budget' || field === 'leave' || field === 'note')) {
+      applyAutoLeaveTime(g);
+    }
     saveToStorage();
     updateSingleGuestRow(id);
     renderFloorStatus();
@@ -2308,6 +2382,7 @@ function syncNominaoshiToTable(g, r) {
     return;
   }
   const noteStr = ['飲直', r.plan ? r.plan.trim() : ''].filter(Boolean).join(' ');
+  const isPlanC = detectPlanCKeyword(r.plan || '') || detectPlanCKeyword(noteStr);
   const existing = guests.find(x => x.firstKey === key);
   if (existing) {
     existing.tableNum = g.tableNum || '';
@@ -2316,10 +2391,11 @@ function syncNominaoshiToTable(g, r) {
     existing.note = noteStr;
     existing.plan = r.plan ? r.plan.trim() : '';
     existing.arrived = true;
+    if (isPlanC) existing.leave = calcLeaveTimeFromNow(60);
     if (!existing.specials) existing.specials = [];
     if (!existing.specials.includes('new')) existing.specials.push('new'); // 飲直で出来た卓は自動で🔰マーク
   } else {
-    guests.push({
+    const newGuest = {
       id: nextId++,
       rowNum: '999', // 仮番号、repackRowNumsで整理
       tableNum: g.tableNum || '',
@@ -2332,7 +2408,9 @@ function syncNominaoshiToTable(g, r) {
       arrived: true,
       specials: ['new'], // 飲直で出来た卓は自動で🔰マーク
       firstKey: key
-    });
+    };
+    if (isPlanC) newGuest.leave = calcLeaveTimeFromNow(60);
+    guests.push(newGuest);
   }
   repackRowNums();
   saveToStorage();
@@ -2877,6 +2955,10 @@ function toggleArrived(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
   g.arrived = !g.arrived;
+  // 来店確認した瞬間（来店取消への逆操作時は対象外）に、クイック／ワンタイ／ツータイの退店時間を自動計算する
+  if (g.arrived) {
+    applyAutoLeaveTime(g);
+  }
   saveToStorage();
   renderTables();
   renderFloorStatus();
@@ -3008,6 +3090,7 @@ function saveQuickLeaveTime(guestId) {
   g.note = document.getElementById('qe-note').value.trim();
   syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
+  if (g.arrived) applyAutoLeaveTime(g);
   g.shareNote = document.getElementById('qe-sharenote').value.trim();
   g.aiban = [_qeAibanParts.tanto, _qeAibanParts.name].filter(Boolean).join(' ');
   g.aibanTanto = _qeAibanParts.tanto;
@@ -4461,6 +4544,7 @@ function saveEdit(id) {
   g.note = document.getElementById('e-note').value;
   syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
+  if (g.arrived) applyAutoLeaveTime(g);
   g.shareNote = document.getElementById('e-sharenote').value;
   {
     g.aiban = [_editAibanParts.tanto, _editAibanParts.name].filter(Boolean).join(' ');
