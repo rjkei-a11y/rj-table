@@ -761,6 +761,10 @@
       print-color-adjust: exact;
     }
     .paper-table td { font-weight: 500; }
+    /* 印刷時は未来店のお客様（空白行含む）のみ表示し、来店済み・退店済みの行は印刷しない */
+    .paper-table tr.arrived, .paper-table tr.left-guest {
+      display: none !important;
+    }
     .p-col-no { color: #000 !important; }
     /* 印刷ではNo.タップ等の操作見た目（下線・カーソル）は不要 */
     .p-col-no { text-decoration: none !important; cursor: default !important; }
