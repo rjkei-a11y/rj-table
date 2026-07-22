@@ -736,7 +736,13 @@
       display: none !important;
     }
 
-    body { background: #fff; padding-top: 0 !important; }
+    body {
+      background: #fff;
+      padding-top: 0 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      color-adjust: exact;
+    }
     .panel { display: none !important; padding: 0; }
     .panel.active { display: block !important; }
     #panel-tables > div:first-child { display: none !important; } /* 印刷/一覧管理ボタン行 */
@@ -745,11 +751,17 @@
     #assignedTables > div { overflow-x: visible !important; }
     .paper-table {
       width: 100%;
-      font-size: 10px;
+      font-size: 11px;
     }
+    /* スマホ等の印刷機能が自動で色を薄く最適化することがあるため、文字色・枠線色を強制的に濃く固定する */
     .paper-table th, .paper-table td {
-      border-color: #000;
+      border-color: #000 !important;
+      color: #000 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
+    .paper-table td { font-weight: 500; }
+    .p-col-no { color: #000 !important; }
     /* 印刷ではNo.タップ等の操作見た目（下線・カーソル）は不要 */
     .p-col-no { text-decoration: none !important; cursor: default !important; }
   }
