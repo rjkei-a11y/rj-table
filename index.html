@@ -4865,8 +4865,6 @@ function saveStaffFromModal() {
 // ===== FIXED BARS =====
 // ヘッダー・タブの高さぶん下にfixedStats/tantoStats/baanaiBarを重ねて配置し、
 // 表示中のバーの高さぶんだけ本文をfixedSpacerで押し下げる
-// キーボード表示中に固定バーが画面外へ隠れた分、本文側の余白を詰めるために使う「本来の固定バー高さ」
-let _fixedBarsBaseHeight = 0;
 
 function updateFixedTop() {
   const header = document.querySelector('header');
@@ -4912,9 +4910,6 @@ function updateFixedTop() {
   // 補正の必要も弊害もないため、誤って余計なスクロールを起こさないよう対象外にする。
   const oldPaddingStr = document.body.style.paddingTop;
   const oldPadding = parseFloat(oldPaddingStr) || 0;
-  // キーボード表示中に固定バーが画面外へ隠れた分だけ本文側の余白を詰めるため、
-  // 「キーボードが無い時の本来の高さ」をここに保存しておく（syncFixedBarsToVisualViewportから参照する）
-  _fixedBarsBaseHeight = top;
   document.body.style.paddingTop = top + 'px';
   const paddingDelta = top - oldPadding;
   if (paddingDelta !== 0 && oldPaddingStr && window.scrollY > 0) {
@@ -4934,24 +4929,6 @@ window.addEventListener('resize', () => {
   _lastResizeWidth = window.innerWidth;
   setTimeout(updateFixedTop, 50);
 });
-
-// ===== スマホのキーボード表示時、固定ヘッダー/統計バーが画面外に外れる問題への対策 =====
-// iOSでは、キーボードが開いて入力欄が見える位置までページが自動スクロールされる際、
-// position:fixedの要素も一緒に画面外へ押し出されてしまうことがある。
-// 固定バー自体を無理に画面内へ引き戻すのではなく、隠れてしまった分だけ本文側の余白
-// （padding-top）を詰めて、本文がその分だけ上に詰まって見えるようにする
-// （window.visualViewportで、キーボード等に隠されていない「実際に見えている範囲」の
-// オフセットが分かるので、それを使って本文の余白を動的に減らす）
-(function shrinkPaddingWhenFixedBarsHidden() {
-  if (!window.visualViewport) return; // 非対応ブラウザでは何もしない（従来通りのposition:fixedのみで動作）
-  function sync() {
-    const offset = window.visualViewport.offsetTop || 0;
-    const effectivePadding = Math.max(0, _fixedBarsBaseHeight - offset);
-    document.body.style.paddingTop = effectivePadding + 'px';
-  }
-  window.visualViewport.addEventListener('resize', sync);
-  window.visualViewport.addEventListener('scroll', sync);
-})();
 
 // ===== 汎用の「元に戻す」通知バー（削除・全クリアなどで使い回す） =====
 let _lastUndo = null;
