@@ -131,9 +131,16 @@
   };
 
   // ゲストの配列内容が実質的に同じかどうかを比較する（id順に揃えてから比較するので、
-  // Firebase側のキー順の違いだけでは「変化あり」と誤判定しない）
+  // Firebase側のキー順の違いだけでは「変化あり」と誤判定しない。
+  // また、Firebaseはnull値のフィールドを保存時に自動で削除する仕様のため、
+  // ローカル側に残るnullフィールドと、跳ね返ってきたデータでキーごと消えている状態を同一視できるよう正規化する）
+  function normalizeGuestForCompare(g) {
+    const out = {};
+    Object.keys(g || {}).forEach(k => { if (g[k] !== null && g[k] !== undefined) out[k] = g[k]; });
+    return out;
+  }
   function guestsListSignature(list) {
-    return JSON.stringify((list || []).slice().sort((a,b) => (a.id||0)-(b.id||0)));
+    return JSON.stringify((list || []).map(normalizeGuestForCompare).slice().sort((a,b) => (a.id||0)-(b.id||0)));
   }
 
   // Firebaseからゲストをリアルタイム受信
@@ -149,7 +156,8 @@
       guests = window._fbGuests;
       nextId = guests.reduce((m,g) => Math.max(m, (g.id||0)+1), 1);
       if (!changed) return;
-      if (window.renderTables) window.renderTables();
+      if (window.renderTablesPreservingScroll) window.renderTablesPreservingScroll();
+      else if (window.renderTables) window.renderTables();
       if (window.renderStaffStatus) window.renderStaffStatus();
       if (window.renderView && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) window.renderView();
       if (window.updateStats) window.updateStats();
@@ -608,6 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.renderStaffStatus = renderStaffStatus;
   window.applyTableListVisibility = applyTableListVisibility;
   window.renderTables = renderTables;
+  window.renderTablesPreservingScroll = renderTablesPreservingScroll;
   window.renderFloorStatus = renderFloorStatus;
   window.updateBaanaiBar = updateBaanaiBar;
   window.renderView = renderView;
@@ -1926,6 +1935,43 @@ function withScrollPreserved(renderFn, trEl) {
     setTimeout(realign, 100);
     setTimeout(realign, 300);
   }, 120);
+}
+
+// withScrollPreservedと違い、「今どの行を編集していたか」が分からない場面（他端末からの
+// リアルタイム同期反映など）で使う汎用版。画面内で一番上に見えている行を自動的に目印にし、
+// 卓一覧が丸ごと再描画されても、その行が画面上の同じ位置に見え続けるようスクロール位置を補正する。
+function renderTablesPreservingScroll() {
+  const panel = document.getElementById('panel-tables');
+  const isTablesActive = panel && panel.classList.contains('active');
+  if (!isTablesActive) { renderTables(); return; } // 卓一覧タブを見ていない時は特に気にする必要がない
+
+  let anchorRowNum = null, beforeTop = null;
+  const rows = panel.querySelectorAll('[data-rownum]');
+  for (const tr of rows) {
+    const rect = tr.getBoundingClientRect();
+    if (rect.bottom > 0) { // 画面内に入っている一番上の行
+      anchorRowNum = tr.getAttribute('data-rownum');
+      beforeTop = rect.top;
+      break;
+    }
+  }
+
+  function realign() {
+    if (anchorRowNum === null) return;
+    const newTr = document.querySelector(`#panel-tables [data-rownum="${anchorRowNum}"]`);
+    if (newTr) {
+      const afterTop = newTr.getBoundingClientRect().top;
+      window.scrollBy(0, afterTop - beforeTop);
+    }
+  }
+
+  setTimeout(() => {
+    renderTables();
+    realign();
+    requestAnimationFrame(realign);
+    setTimeout(realign, 100);
+    setTimeout(realign, 300);
+  }, 30);
 }
 
 // セルをインライン編集
