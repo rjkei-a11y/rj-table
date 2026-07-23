@@ -1998,7 +1998,9 @@ function editCell(id, field, td) {
       applyAutoLeaveTime(g);
     }
     saveToStorage();
-    updateSingleGuestRow(id);
+    // キーボードが閉じる際の画面ズレを防ぐため、行の更新をキーボードが閉じきるまで少し待ってから行い、
+    // 更新後も同じ行が画面上の同じ位置に見えるようスクロール位置を補正する
+    withScrollPreserved(() => updateSingleGuestRow(id), td.closest('tr'));
     renderFloorStatus();
     if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   }
