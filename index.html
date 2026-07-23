@@ -4901,8 +4901,19 @@ function updateFixedTop() {
     top += emptyTablesEl.offsetHeight;
   }
 
-  // header〜emptyTablesBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる
+  // header〜emptyTablesBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる。
+  // このpadding-topの値が変わると、たとえscrollYが同じ数値のままでも画面上の見た目の位置がズレてしまう
+  // （キーボードの開閉で発生するresizeイベントのたびにここが呼ばれるため、地味に頻発する）。
+  // 変化した分だけscrollByで打ち消し、画面上の見た目の位置を維持する。
+  // ただし初回読み込み時（まだpaddingTopが未設定）や、ページ最上部を見ている時（scrollY=0）は
+  // 補正の必要も弊害もないため、誤って余計なスクロールを起こさないよう対象外にする。
+  const oldPaddingStr = document.body.style.paddingTop;
+  const oldPadding = parseFloat(oldPaddingStr) || 0;
   document.body.style.paddingTop = top + 'px';
+  const paddingDelta = top - oldPadding;
+  if (paddingDelta !== 0 && oldPaddingStr && window.scrollY > 0) {
+    window.scrollBy(0, paddingDelta);
+  }
   // spacerはもう使わないが、古い呼び出しが残っていても実害が無いよう0にしておく
   if (spacer) spacer.style.height = '0px';
 }
