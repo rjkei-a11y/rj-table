@@ -4918,8 +4918,16 @@ function updateFixedTop() {
   if (spacer) spacer.style.height = '0px';
 }
 
-// 画面サイズが変わった時（回転など）も再計算
-window.addEventListener('resize', () => setTimeout(updateFixedTop, 50));
+// 画面サイズが変わった時（回転など）も再計算。
+// ただし、スマホでキーボードが開閉した時にも高さだけの変化としてresizeイベントが発生するため、
+// 「幅」が変わった時だけ再計算するようにする（キーボード開閉のたびにヘッダー位置が再計算され、
+// それに伴って本文がガクッとズレて見える問題を防ぐため。回転や実際の画面サイズ変更は幅も変わるので拾える）
+let _lastResizeWidth = window.innerWidth;
+window.addEventListener('resize', () => {
+  if (window.innerWidth === _lastResizeWidth) return;
+  _lastResizeWidth = window.innerWidth;
+  setTimeout(updateFixedTop, 50);
+});
 
 // ===== 汎用の「元に戻す」通知バー（削除・全クリアなどで使い回す） =====
 let _lastUndo = null;
