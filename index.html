@@ -32,6 +32,7 @@
   const dayStatusRef = ref(db, 'staffDayStatus');
   const monthlyLogsRef = ref(db, 'monthlyLogs');
   const tableListVisibleRef = ref(db, 'tableListVisible');
+  const eventTantoRef = ref(db, 'eventTantoToday');
 
   // Firebaseにゲストデータを保存
   // Firebaseにゲスト1件を保存（衝突回避：全体を上書きせず該当IDのみ書き込む）
@@ -94,6 +95,11 @@
   // 卓一覧タブをキャストに公開するかどうか（内勤が締日などにOFFにできる）。デフォルトは公開(true)
   window.fbSaveTableListVisible = function(visible) {
     set(tableListVisibleRef, !!visible).catch(e => console.error('FB tableListVisible save error:', e));
+  };
+
+  // Firebaseに「本日一度でも👑主役が付いた担当者」の記録を保存（{date, names}形式。日付が変われば自然にリセットされる）
+  window.fbSaveEventTantoToday = function(data) {
+    set(eventTantoRef, data).catch(e => console.error('FB eventTantoToday save error:', e));
   };
 
   // Firebaseに卓状況（フロア構成）を保存
@@ -219,6 +225,17 @@
     const data = snapshot.val();
     window._fbTableListVisible = data === false ? false : true;
     if (window.applyTableListVisibility) window.applyTableListVisibility();
+  });
+
+  // Firebaseから「本日一度でも👑主役が付いた担当者」の記録をリアルタイム受信（別端末での操作もすぐ反映される）
+  onValue(eventTantoRef, (snapshot) => {
+    const data = snapshot.val();
+    const parsed = (data && typeof data === 'object') ? { date: data.date || '', names: data.names || {} } : { date: '', names: {} };
+    window._fbEventTantoToday = parsed;
+    if (typeof eventTantoToday !== 'undefined') {
+      eventTantoToday = parsed;
+      try { localStorage.setItem('rj_eventTantoToday', JSON.stringify(eventTantoToday)); } catch(e) {}
+    }
   });
 
   // Firebaseから卓状況（フロア構成）をリアルタイム受信
@@ -469,6 +486,7 @@ let firstRid = 1;
 let staffList = [];
 let staffAliases = {}; // { "本名": ["呼び名1","呼び名2", ...] }
 let staffDayStatus = {}; // { "本名": { status: 'pending'|'off'|'paid_off'|'half_off', reportType: 'self'|'proxy'|null, timestamp } }
+let eventTantoToday = { date: '', names: {} }; // その日一度でも👑主役が付いた担当者を記録（{ date: 'YYYY-MM-DD', names: { 正規化した担当者名: true } }）。日付が変われば自動的にリセットされる
 let _resetToken = 0; // 本日分リセット/復元のたびに更新。保険の遅延処理が古い操作を巻き戻さないようにするため
 
 // ===== LOGIN =====
@@ -757,6 +775,16 @@ function printTablesList() {
   document.addEventListener('touchmove', onTouchMove, { passive: true });
   document.addEventListener('touchend', onTouchEnd, { passive: true });
 })();
+
+// ===== ポップアップ（モーダル）は外側（オーバーレイの背景部分）をタップしても閉じられるようにする =====
+// クリック先が「.modal-overlay自身」の場合のみ閉じる（内側の.modal本体やボタン等をタップした時は
+// イベントがそこで止まらずbubbleしてくるが、target自体はoverlayにならないので誤って閉じることはない）
+document.addEventListener('click', function(e) {
+  const target = e.target;
+  if (target && target.classList && target.classList.contains('modal-overlay') && target.classList.contains('show')) {
+    target.classList.remove('show');
+  }
+});
 
 // ===== 1件ずつ入力してキューに追加する方式 =====
 let _multiReportQueue = [];
@@ -1341,6 +1369,57 @@ function syncNewSpecialFromText(g) {
   if (shouldHave && !g.specials.includes('new')) g.specials.push('new');
 }
 
+// ===== 👑イベント主役の「本日一度でも付いた担当者」自動判定 =====
+// 担当者名の比較用に正規化する（カタカナ→ひらがな、前後の空白除去）。既存の主役連動ロジックと同じ正規化ルール
+function normalizeTantoName(tanto) {
+  return toHiragana((tanto || '').trim());
+}
+
+// 指定した担当者に、本日一度でも👑主役が付いたことを記録する（Firebase同期・営業日をまたいだら自動でリセット）
+function markEventTantoToday(tanto) {
+  const tantoNorm = normalizeTantoName(tanto);
+  if (!tantoNorm) return;
+  const todayKey = getTodayKey();
+  if (eventTantoToday.date !== todayKey) {
+    eventTantoToday = { date: todayKey, names: {} };
+  }
+  eventTantoToday.names[tantoNorm] = true;
+  saveEventTantoToday();
+}
+
+// 指定した担当者の「本日の主役フラグ」記録を取り消す（特記事項モーダルで手動OFFにした時のみ使用。退店では取り消さない）
+function unmarkEventTantoToday(tanto) {
+  const tantoNorm = normalizeTantoName(tanto);
+  if (!tantoNorm) return;
+  const todayKey = getTodayKey();
+  if (eventTantoToday.date !== todayKey) return; // 別営業日の記録なら触る必要がない
+  if (eventTantoToday.names[tantoNorm]) {
+    delete eventTantoToday.names[tantoNorm];
+    saveEventTantoToday();
+  }
+}
+
+// 指定した担当者が、本日一度でも👑主役が付いた担当者かどうかを判定する
+function isEventTantoToday(tanto) {
+  const tantoNorm = normalizeTantoName(tanto);
+  if (!tantoNorm) return false;
+  if (eventTantoToday.date !== getTodayKey()) return false; // 日付が変わっていたら記録は無効
+  return !!eventTantoToday.names[tantoNorm];
+}
+
+function saveEventTantoToday() {
+  try { localStorage.setItem('rj_eventTantoToday', JSON.stringify(eventTantoToday)); } catch(e) {}
+  if (window.fbSaveEventTantoToday) window.fbSaveEventTantoToday(eventTantoToday);
+}
+
+// ゲストの担当者が「本日一度でも主役が付いた担当者」なら、👑主役の特記事項を自動で付ける（追加のみ、自動での削除はしない）
+// 予定報告の取り込み・卓一覧での新規行作成・担当者欄の編集・飲直確定など、担当者(tanto)が設定されるすべての箇所から呼ぶ
+function syncEventSpecialFromTanto(g) {
+  if (!g.specials) g.specials = [];
+  if (g.specials.includes('event')) return; // 既に付いていれば何もしない
+  if (isEventTantoToday(g.tanto)) g.specials.push('event');
+}
+
 function importTextParsed(parsed) {
   if (!parsed || !parsed.length) {
     showToast('該当する報告が見つかりませんでした');
@@ -1361,6 +1440,7 @@ function importTextParsed(parsed) {
     const specials = detectBudgetRaiseKeyword((g.budget || '') + (g.note || '')) ? ['raise'] : [];
     const newGuest = { id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType(), specials };
     syncNewSpecialFromText(newGuest);
+    syncEventSpecialFromTanto(newGuest);
     guests.push(newGuest);
   });
   saveToStorage();
@@ -1855,6 +1935,7 @@ function editCell(id, field, td) {
   function save() {
     g[field] = input.value.trim();
     if (field === 'name' || field === 'note') syncNewSpecialFromText(g);
+    if (field === 'tanto') syncEventSpecialFromTanto(g);
     // 来店済みのゲストで、予算・退店・備考のいずれかが編集された時は、クイック／ワンタイ／ツータイの退店時間を再計算する
     if (g.arrived && (field === 'budget' || field === 'leave' || field === 'note')) {
       applyAutoLeaveTime(g);
@@ -1885,6 +1966,7 @@ function createAndEdit(rowNum, field, td) {
     const g = { id: nextId++, rowNum: String(rowNum), tableNum:'', arrive:'', leave:'', tanto:'', name:'', budget:'', note:'', help:'', arrived: false };
     g[field] = val;
     syncNewSpecialFromText(g);
+    if (field === 'tanto') syncEventSpecialFromTanto(g);
     guests.push(g);
     repackRowNums();
     saveToStorage();
@@ -2504,6 +2586,7 @@ function syncNominaoshiToTable(g, r) {
     if (isPlanC) existing.leave = calcLeaveTimeFromNow(60);
     if (!existing.specials) existing.specials = [];
     if (!existing.specials.includes('new')) existing.specials.push('new'); // 飲直で出来た卓は自動で🔰マーク
+    syncEventSpecialFromTanto(existing);
   } else {
     const newGuest = {
       id: nextId++,
@@ -2520,6 +2603,7 @@ function syncNominaoshiToTable(g, r) {
       firstKey: key
     };
     if (isPlanC) newGuest.leave = calcLeaveTimeFromNow(60);
+    syncEventSpecialFromTanto(newGuest);
     guests.push(newGuest);
   }
   repackRowNums();
@@ -3007,6 +3091,13 @@ function toggleSpecial(id, key) {
         other.specials = other.specials.filter(k => k !== 'event');
       }
     });
+    // 本日一度でも主役が付いた担当者として記録しておくと、後から来店する同担当者のお客様にも自動で付く。
+    // 手動でOFFにした場合（付け間違いの訂正等）は、この「本日の記録」も一緒に取り消す
+    if (turningOn) {
+      markEventTantoToday(g.tanto);
+    } else {
+      unmarkEventTantoToday(g.tanto);
+    }
   }
   saveToStorage();
   openSpecialModal(id); // モーダル更新
@@ -3200,6 +3291,7 @@ function saveQuickLeaveTime(guestId) {
   g.note = document.getElementById('qe-note').value.trim();
   syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
+  syncEventSpecialFromTanto(g);
   if (g.arrived) applyAutoLeaveTime(g);
   g.shareNote = document.getElementById('qe-sharenote').value.trim();
   g.aiban = [_qeAibanParts.tanto, _qeAibanParts.name].filter(Boolean).join(' ');
@@ -3363,6 +3455,10 @@ function loadStaff() {
   try {
     const rawDayStatus = localStorage.getItem('rj_staffDayStatus');
     if (rawDayStatus) staffDayStatus = JSON.parse(rawDayStatus);
+  } catch(e) {}
+  try {
+    const rawEventTanto = localStorage.getItem('rj_eventTantoToday');
+    if (rawEventTanto) eventTantoToday = JSON.parse(rawEventTanto);
   } catch(e) {}
   // Firebaseスタッフ受信時に更新
   window._fbStaffReady = function() {
@@ -4654,6 +4750,7 @@ function saveEdit(id) {
   g.note = document.getElementById('e-note').value;
   syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
+  syncEventSpecialFromTanto(g);
   if (g.arrived) applyAutoLeaveTime(g);
   g.shareNote = document.getElementById('e-sharenote').value;
   {
