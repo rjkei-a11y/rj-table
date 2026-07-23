@@ -672,6 +672,92 @@ function printTablesList() {
   setTimeout(() => window.print(), 100);
 }
 
+// ===== 横スワイプによるタブ切り替え =====
+(function initTabSwipe() {
+  const TAB_ORDER = ['input', 'tables', 'first', 'view'];
+  let startX = 0, startY = 0, startTime = 0;
+  let tracking = false;   // このタッチをスワイプ候補として追跡中か
+  let ignoreThis = false; // このタッチは横スクロール領域内など、スワイプ判定の対象外か
+  let axisLocked = null;  // 'h'（横方向優勢）'v'（縦方向優勢）が決まったら以後は判定し直さない
+
+  // 指定要素の祖先をたどり、実際に横スクロール可能な要素（中身が画面より横長）の内側かどうかを調べる。
+  // これに該当する間はタブスワイプとして扱わず、その場の横スクロール（統計バーや紙様式の表など）を優先する。
+  function isInsideHorizontalScroller(el) {
+    let node = el;
+    while (node && node !== document.body) {
+      if (node.nodeType === 1) {
+        const style = window.getComputedStyle(node);
+        const canScrollX = (style.overflowX === 'auto' || style.overflowX === 'scroll');
+        if (canScrollX && node.scrollWidth > node.clientWidth + 1) return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  function onTouchStart(e) {
+    if (e.touches.length !== 1) { tracking = false; return; } // ピンチ操作等は対象外
+    // モーダル表示中は誤動作防止のためスワイプ判定を行わない
+    if (document.querySelector('.modal-overlay.show')) { tracking = false; return; }
+    const target = e.target;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') { tracking = false; return; }
+    const touch = e.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    startTime = Date.now();
+    tracking = true;
+    axisLocked = null;
+    ignoreThis = isInsideHorizontalScroller(target);
+  }
+
+  function onTouchMove(e) {
+    if (!tracking || ignoreThis) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    if (axisLocked === null && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      // 動き始めの方向で「横スワイプ候補」か「縦スクロール」かを一度だけ判定する
+      axisLocked = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    }
+  }
+
+  function onTouchEnd(e) {
+    if (!tracking || ignoreThis || axisLocked !== 'h') { tracking = false; return; }
+    tracking = false;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    const dt = Math.max(1, Date.now() - startTime);
+    // 画面幅に応じてしきい値をスケーリングする（狭い画面ほど短い距離でも切り替わるように）
+    const distanceThreshold = Math.max(50, window.innerWidth * 0.18);
+    const velocity = Math.abs(dx) / dt; // px/ms
+    const isHorizontalEnough = Math.abs(dx) > Math.abs(dy) * 1.8;
+    // 「すばやいフリック」または「画面幅に応じた十分な距離のドラッグ」のどちらかを満たせばスワイプとみなす。
+    // ゆっくりした横スクロール操作（統計バーの中身を見る等）と誤反応しないよう、速度と距離の両にらみで判定する。
+    const isFastFlick = velocity > 0.45 && Math.abs(dx) > 30;
+    const isLongDrag = Math.abs(dx) > distanceThreshold;
+    if (!isHorizontalEnough || (!isFastFlick && !isLongDrag)) return;
+
+    const activePanel = document.querySelector('.panel.active');
+    if (!activePanel) return;
+    const currentName = activePanel.id.replace('panel-', '');
+    const currentIndex = TAB_ORDER.indexOf(currentName);
+    if (currentIndex === -1) return;
+    if (dx < 0) {
+      // 左スワイプ：次のタブへ
+      if (currentIndex < TAB_ORDER.length - 1) switchTab(TAB_ORDER[currentIndex + 1]);
+    } else {
+      // 右スワイプ：前のタブへ
+      if (currentIndex > 0) switchTab(TAB_ORDER[currentIndex - 1]);
+    }
+  }
+
+  document.addEventListener('touchstart', onTouchStart, { passive: true });
+  document.addEventListener('touchmove', onTouchMove, { passive: true });
+  document.addEventListener('touchend', onTouchEnd, { passive: true });
+})();
+
 // ===== 1件ずつ入力してキューに追加する方式 =====
 let _multiReportQueue = [];
 let _queueEditOpen = {};
