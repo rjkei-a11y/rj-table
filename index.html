@@ -806,6 +806,35 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// ===== 卓一覧・初回タブのセル編集時、キーボード表示でページ全体が上にスクロールされるのを防ぐ =====
+// スマホでは、画面下の方のセルをタップして入力を始めると、ブラウザが「入力欄が見えるように」
+// ページ自体を自動でスクロールしてしまい、それによってヘッダーや統計バーの位置がズレる。
+// フォーカス中はbodyをその場でposition:fixedにして動けなくすることで、この自動スクロール自体を
+// 発生させないようにする（キーボードは単に画面下を覆うだけになり、上部は動かなくなる）。
+let _cellEditScrollLockY = 0;
+document.addEventListener('focusin', function(e) {
+  const target = e.target;
+  if (target && target.classList && target.classList.contains('cell-input')) {
+    _cellEditScrollLockY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${_cellEditScrollLockY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+  }
+});
+document.addEventListener('focusout', function(e) {
+  const target = e.target;
+  if (target && target.classList && target.classList.contains('cell-input')) {
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    window.scrollTo(0, _cellEditScrollLockY);
+  }
+});
+
 // ===== 1件ずつ入力してキューに追加する方式 =====
 let _multiReportQueue = [];
 let _queueEditOpen = {};
