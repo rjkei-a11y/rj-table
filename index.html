@@ -1907,37 +1907,18 @@ function emptyRowHTML(no) {
 }
 
 // インライン編集でセルを再描画すると、キーボードが閉じるタイミングと重なって
-// 画面が勝手にスクロールしてしまうことがあるため、再描画の前後でスクロール位置を保持する
-// 編集していた行(trEl)を目印に、再描画後も同じ行が画面上の同じ位置に見えるよう調整する
-// （絶対スクロール位置の保持だけだと、編集前後で行の高さがわずかに変わる場合にズレてしまうため）
-function withScrollPreserved(renderFn, trEl) {
-  const rowNum = trEl ? trEl.getAttribute('data-rownum') : null;
-  const trId = trEl ? trEl.id : null;
-  const beforeTop = trEl ? trEl.getBoundingClientRect().top : null;
-
-  function realign() {
-    if (beforeTop === null) return;
-    let newTr = null;
-    if (rowNum) newTr = document.querySelector(`[data-rownum="${rowNum}"]`);
-    if (!newTr && trId) newTr = document.getElementById(trId);
-    if (newTr) {
-      const afterTop = newTr.getBoundingClientRect().top;
-      window.scrollBy(0, afterTop - beforeTop);
-    }
-  }
-
-  // キーボードが閉じるアニメーションと再描画のタイミングが重なるとズレやすいため、
-  // 少し待ってキーボードが閉じきってから再描画し、その後複数回にわたって位置を補正する
+// 画面が勝手にスクロールしてしまうことがあるため、再描画のタイミングをキーボードが閉じきってから行う。
+// キーボード表示中に画面外へ押し出されていたヘッダー/統計バーが正しい位置に戻る際は、
+// それに連動して本文（表）も自然に下へずれるようにし、あえて打ち消すことはしない。
+function withScrollPreserved(renderFn) {
+  // キーボードが閉じるアニメーションと再描画のタイミングが重なるとズレやすいため、少し待ってから行う
   setTimeout(() => {
     // キーボード表示中はヘッダー/統計バーがposition:fixedのまま画面外へ押し出されていることがあるため、
     // キーボードが閉じ終わったこのタイミングで一度だけ正しい位置に計算し直す
-    // （常時監視して直し続けるとガタつきの原因になるため、あくまで編集完了時の1回きりにする）
-    updateFixedTop();
+    // （常時監視して直し続けるとガタつきの原因になるため、あくまで編集完了時の1回きりにする。
+    // 　preserveScroll=falseにより、ヘッダーが戻る動きに本文も連動してそのまま下にずれるようにする）
+    updateFixedTop(false);
     renderFn();
-    realign();
-    requestAnimationFrame(realign);
-    setTimeout(realign, 100);
-    setTimeout(realign, 300);
   }, 120);
 }
 
@@ -4870,7 +4851,7 @@ function saveStaffFromModal() {
 // ヘッダー・タブの高さぶん下にfixedStats/tantoStats/baanaiBarを重ねて配置し、
 // 表示中のバーの高さぶんだけ本文をfixedSpacerで押し下げる
 
-function updateFixedTop() {
+function updateFixedTop(preserveScroll = true) {
   const header = document.querySelector('header');
   const tabs = document.querySelector('.tabs');
   const fixedEl = document.getElementById('fixedStats');
@@ -4907,16 +4888,15 @@ function updateFixedTop() {
   }
 
   // header〜emptyTablesBarまで全て固定表示になったぶん、本文をpadding-topで押し下げる。
-  // このpadding-topの値が変わると、たとえscrollYが同じ数値のままでも画面上の見た目の位置がズレてしまう
-  // （キーボードの開閉で発生するresizeイベントのたびにここが呼ばれるため、地味に頻発する）。
-  // 変化した分だけscrollByで打ち消し、画面上の見た目の位置を維持する。
-  // ただし初回読み込み時（まだpaddingTopが未設定）や、ページ最上部を見ている時（scrollY=0）は
-  // 補正の必要も弊害もないため、誤って余計なスクロールを起こさないよう対象外にする。
+  // このpadding-topの値が変わると、たとえscrollYが同じ数値のままでも画面上の見た目の位置がズレる。
+  // 画面回転などで呼ばれた時（preserveScroll=true）は、そのズレをscrollByで打ち消して見た目の位置を維持する。
+  // 一方、セル編集完了後にキーボードが閉じてヘッダーが正しい位置に戻る時（preserveScroll=false）は、
+  // 逆にその「本文が連動して下にずれる動き」をそのまま見せたいので、ここでは打ち消さない。
   const oldPaddingStr = document.body.style.paddingTop;
   const oldPadding = parseFloat(oldPaddingStr) || 0;
   document.body.style.paddingTop = top + 'px';
   const paddingDelta = top - oldPadding;
-  if (paddingDelta !== 0 && oldPaddingStr && window.scrollY > 0) {
+  if (preserveScroll && paddingDelta !== 0 && oldPaddingStr && window.scrollY > 0) {
     window.scrollBy(0, paddingDelta);
   }
   // spacerはもう使わないが、古い呼び出しが残っていても実害が無いよう0にしておく
