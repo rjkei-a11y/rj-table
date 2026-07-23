@@ -2004,7 +2004,8 @@ function editCell(id, field, td) {
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') input.blur();
+    // 日本語入力（IME）で漢字変換を確定するEnterと区別する。変換確定中のEnterでセル編集自体を終了させない
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) input.blur();
     if (e.key === 'Escape') { td.textContent = current; }
   });
 }
@@ -2032,7 +2033,8 @@ function createAndEdit(rowNum, field, td) {
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') input.blur();
+    // 日本語入力（IME）で漢字変換を確定するEnterと区別する。変換確定中のEnterでセル編集自体を終了させない
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) input.blur();
     if (e.key === 'Escape') { withScrollPreserved(renderTables, td.closest('tr')); }
   });
 }
@@ -2729,7 +2731,7 @@ function editFirstGroup(gid, field, td) {
     }
   }
   input.addEventListener('blur', save);
-  input.addEventListener('keydown', e => { if (e.key==='Enter') input.blur(); if (e.key==='Escape') { td.textContent=current; } });
+  input.addEventListener('keydown', e => { if (e.key==='Enter' && !e.isComposing && e.keyCode !== 229) input.blur(); if (e.key==='Escape') { td.textContent=current; } });
 }
 
 // 飲直にならなかった初回1人分を「終了」として、対応中カウント・卓状況/全体タブから外す
@@ -2779,7 +2781,7 @@ function editFirstRow(gid, rid, field, td) {
     }
   }
   input.addEventListener('blur', save);
-  input.addEventListener('keydown', e => { if (e.key==='Enter') input.blur(); if (e.key==='Escape') { td.textContent=current; } });
+  input.addEventListener('keydown', e => { if (e.key==='Enter' && !e.isComposing && e.keyCode !== 229) input.blur(); if (e.key==='Escape') { td.textContent=current; } });
 }
 
 function deleteFirstGroup(gid) {
