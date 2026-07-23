@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -1930,6 +1929,10 @@ function withScrollPreserved(renderFn, trEl) {
   // キーボードが閉じるアニメーションと再描画のタイミングが重なるとズレやすいため、
   // 少し待ってキーボードが閉じきってから再描画し、その後複数回にわたって位置を補正する
   setTimeout(() => {
+    // キーボード表示中はヘッダー/統計バーがposition:fixedのまま画面外へ押し出されていることがあるため、
+    // キーボードが閉じ終わったこのタイミングで一度だけ正しい位置に計算し直す
+    // （常時監視して直し続けるとガタつきの原因になるため、あくまで編集完了時の1回きりにする）
+    updateFixedTop();
     renderFn();
     realign();
     requestAnimationFrame(realign);
