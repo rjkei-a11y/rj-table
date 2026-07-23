@@ -130,14 +130,25 @@
     remove(ref(db, 'monthlyLogs/' + dateKey)).catch(e => console.error('FB monthlyLog remove error:', e));
   };
 
+  // ゲストの配列内容が実質的に同じかどうかを比較する（id順に揃えてから比較するので、
+  // Firebase側のキー順の違いだけでは「変化あり」と誤判定しない）
+  function guestsListSignature(list) {
+    return JSON.stringify((list || []).slice().sort((a,b) => (a.id||0)-(b.id||0)));
+  }
+
   // Firebaseからゲストをリアルタイム受信
   onValue(guestsRef, (snapshot) => {
     const data = snapshot.val();
     window._fbGuests = data === null ? [] : Object.values(data).filter(g => g && (g.name || g.tanto || g.tableNum));
     if (typeof guests !== 'undefined' && typeof renderTables === 'function') {
+      // 自分自身の保存がそのまま返ってきただけ（内容に変化なし）の場合は、
+      // 全体再描画をスキップする。編集直後に画面が作り直されて行の位置がズレ、
+      // 次のセルをタップしづらくなる問題を防ぐため
+      const changed = guestsListSignature(guests) !== guestsListSignature(window._fbGuests);
       // 初回以降もリアルタイム反映
       guests = window._fbGuests;
       nextId = guests.reduce((m,g) => Math.max(m, (g.id||0)+1), 1);
+      if (!changed) return;
       if (window.renderTables) window.renderTables();
       if (window.renderStaffStatus) window.renderStaffStatus();
       if (window.renderView && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) window.renderView();
