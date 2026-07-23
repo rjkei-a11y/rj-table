@@ -688,6 +688,13 @@ function updateDate() {
 
 // ===== TABS =====
 function switchTab(name) {
+  // セル編集中の入力欄から直接タブボタンをタップした場合など、focusoutが間に合わず
+  // ロックが解除されないままになることがあるため、タブ切り替え時は保険として必ず解除しておく
+  // （ロックしていない時に呼んでも何もしないので、無条件に呼んで問題ない）
+  if (document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('cell-input')) {
+    document.activeElement.blur();
+  }
+  unlockBodyScrollForCellEdit();
   document.querySelectorAll('.tab').forEach((t,i) => {
     t.classList.toggle('active', ['input','tables','first','view'][i] === name);
   });
@@ -812,26 +819,41 @@ document.addEventListener('click', function(e) {
 // フォーカス中はbodyをその場でposition:fixedにして動けなくすることで、この自動スクロール自体を
 // 発生させないようにする（キーボードは単に画面下を覆うだけになり、上部は動かなくなる）。
 let _cellEditScrollLockY = 0;
+let _cellEditScrollLocked = false;
+
+function lockBodyScrollForCellEdit() {
+  if (_cellEditScrollLocked) return; // 二重にロックしない
+  _cellEditScrollLockY = window.scrollY;
+  document.body.style.position = 'fixed';
+  document.body.style.top = `-${_cellEditScrollLockY}px`;
+  document.body.style.left = '0';
+  document.body.style.right = '0';
+  document.body.style.width = '100%';
+  _cellEditScrollLocked = true;
+}
+
+// ロックしていない状態で呼んでも何もしないので、保険として何度でも安全に呼べる
+function unlockBodyScrollForCellEdit() {
+  if (!_cellEditScrollLocked) return;
+  document.body.style.position = '';
+  document.body.style.top = '';
+  document.body.style.left = '';
+  document.body.style.right = '';
+  document.body.style.width = '';
+  window.scrollTo(0, _cellEditScrollLockY);
+  _cellEditScrollLocked = false;
+}
+
 document.addEventListener('focusin', function(e) {
   const target = e.target;
   if (target && target.classList && target.classList.contains('cell-input')) {
-    _cellEditScrollLockY = window.scrollY;
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${_cellEditScrollLockY}px`;
-    document.body.style.left = '0';
-    document.body.style.right = '0';
-    document.body.style.width = '100%';
+    lockBodyScrollForCellEdit();
   }
 });
 document.addEventListener('focusout', function(e) {
   const target = e.target;
   if (target && target.classList && target.classList.contains('cell-input')) {
-    document.body.style.position = '';
-    document.body.style.top = '';
-    document.body.style.left = '';
-    document.body.style.right = '';
-    document.body.style.width = '';
-    window.scrollTo(0, _cellEditScrollLockY);
+    unlockBodyScrollForCellEdit();
   }
 });
 
