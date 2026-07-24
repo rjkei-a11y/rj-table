@@ -1759,11 +1759,16 @@ function computeAibanColorMap() {
   return colorMap;
 }
 
+// アイバン相手が見つからない時（入力ミス等でまだ紐付いていない状態）の色。
+// パレットの色と重複すると、たまたま同じ色になった別グループのペアだと誤解されるため、
+// パレットには含まれない色をあえて使い、「未マッチ」であることが一目で分かるようにする
+const AIBAN_UNMATCHED_COLOR = '#5a6268';
+
 function getAibanLinkInfo(g) {
   const colorMap = computeAibanColorMap();
-  const color = colorMap[g.id] || '#3498db';
   if (g.aiban && g.aiban.trim()) {
     const partner = findAibanPartner(g);
+    const color = partner ? (colorMap[g.id] || AIBAN_UNMATCHED_COLOR) : AIBAN_UNMATCHED_COLOR;
     const label = partner
       ? `アイバン: ${partner.tanto||''} ${formatGuestDisplayName(partner.name)}`
       : `アイバン: ${g.aiban}`;
@@ -1775,6 +1780,7 @@ function getAibanLinkInfo(g) {
     return partner && partner.id === g.id;
   });
   if (referrer) {
+    const color = colorMap[g.id] || AIBAN_UNMATCHED_COLOR;
     return { linked: true, label: `アイバン: ${referrer.tanto||''} ${formatGuestDisplayName(referrer.name)}と`, color, partnerId: referrer.id };
   }
   return { linked: false, label: '', color: null, partnerId: null };
