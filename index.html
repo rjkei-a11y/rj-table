@@ -691,7 +691,7 @@ function switchTab(name) {
   // セル編集中の入力欄から直接タブボタンをタップした場合など、focusoutが間に合わず
   // ロックが解除されないままになることがあるため、タブ切り替え時は保険として必ず解除しておく
   // （ロックしていない時に呼んでも何もしないので、無条件に呼んで問題ない）
-  if (document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('cell-input')) {
+  if (isScrollLockTargetInput(document.activeElement)) {
     document.activeElement.blur();
   }
   unlockBodyScrollForCellEdit();
@@ -846,15 +846,24 @@ function unlockBodyScrollForCellEdit() {
   _cellEditScrollLocked = false;
 }
 
+// 対象になる入力欄かどうかを判定する。
+// ・卓一覧/初回タブのインライン編集欄（cell-input）は常に対象。
+// ・予定報告タブ本体のフォーム欄（mr-input）も対象にするが、同じクラス名がクイック編集/編集モーダル
+// 　でも使われているため、モーダル（.modal-overlay）の外にある場合だけを対象にする
+function isScrollLockTargetInput(target) {
+  if (!target || !target.classList) return false;
+  if (target.classList.contains('cell-input')) return true;
+  if (target.classList.contains('mr-input') && !target.closest('.modal-overlay')) return true;
+  return false;
+}
+
 document.addEventListener('focusin', function(e) {
-  const target = e.target;
-  if (target && target.classList && target.classList.contains('cell-input')) {
+  if (isScrollLockTargetInput(e.target)) {
     lockBodyScrollForCellEdit();
   }
 });
 document.addEventListener('focusout', function(e) {
-  const target = e.target;
-  if (target && target.classList && target.classList.contains('cell-input')) {
+  if (isScrollLockTargetInput(e.target)) {
     unlockBodyScrollForCellEdit();
   }
 });
