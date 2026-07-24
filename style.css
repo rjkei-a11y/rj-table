@@ -275,7 +275,7 @@
   }
   .paper-table tr:not(.arrived):nth-child(even) td { background: #fafafa; }
   .paper-table tr:not(.arrived) td { background: #fff; }
-  .paper-table tr.overdue-highlight td { background: #5a2a2a !important; color: #fff !important; }
+  .paper-table tr.overdue-highlight td { background: #ffd6e0 !important; color: #8b2f4a !important; }
 
   .p-col-no   { width: 24px; text-align: center; color: #888; font-size: 11px; cursor:pointer; }
   .p-col-num  { width: 42px; text-align: center; font-weight: 700; color: #c9a84c; }
