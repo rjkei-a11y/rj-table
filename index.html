@@ -848,12 +848,14 @@ function unlockBodyScrollForCellEdit() {
 
 // 対象になる入力欄かどうかを判定する。
 // ・卓一覧/初回タブのインライン編集欄（cell-input）は常に対象。
-// ・予定報告タブ本体のフォーム欄（mr-input）も対象にするが、同じクラス名がクイック編集/編集モーダル
-// 　でも使われているため、モーダル（.modal-overlay）の外にある場合だけを対象にする
+// ・予定報告タブ本体のフォーム欄（mr-input）とアイバン入力欄（aiban-input）も対象にするが、
+// 　同じクラス名がクイック編集/編集モーダルでも使われているため、
+// 　モーダル（.modal-overlay）の外にある場合だけを対象にする
 function isScrollLockTargetInput(target) {
   if (!target || !target.classList) return false;
   if (target.classList.contains('cell-input')) return true;
   if (target.classList.contains('mr-input') && !target.closest('.modal-overlay')) return true;
+  if (target.classList.contains('aiban-input') && !target.closest('.modal-overlay')) return true;
   return false;
 }
 
@@ -1645,22 +1647,20 @@ function splitAibanText(text) {
   return { tanto: '', name: trimmed };
 }
 
-// アイバン欄（「担当名　お客様名」形式）から、対応する相手のゲストを探す
-// 表記は担当名の呼び名マッチ＋お客様名の部分一致で判定する（完全一致は求めない）
+// アイバン欄（自由入力テキスト）から、対応する相手のゲストを探す。
+// 役職名や敬称などが混ざっていても拾えるよう、「担当名+お客様名」の厳密な切り分けは求めず、
+// アイバン欄のテキストの中に相手のお客様名がそのまま含まれているかどうかだけで判定する
+// （カタカナ／ひらがなの表記ゆれはtoHiraganaで正規化して吸収する）
 function findAibanPartner(g) {
   if (!g.aiban) return null;
   const text = g.aiban.trim();
   if (!text) return null;
-  const aliasIndex = buildAliasIndex();
-  const normText = toHiragana(text);
-  // 担当名らしき部分を先頭から検出
-  const staffMatch = aliasIndex.find(entry => normText.startsWith(entry.norm));
-  const nameHint = staffMatch ? text.slice(staffMatch.text.length).trim() : text;
+  const normText = toHiragana(text).replace(/[\s　]/g, '');
   return guests.find(other => {
-    if (other.id === g.id || other.left) return false;
-    const nameOk = nameHint && other.name && toHiragana(other.name).includes(toHiragana(nameHint).replace(/[△\s]/g,''));
-    const tantoOk = !staffMatch || (other.tanto && toHiragana(other.tanto).includes(staffMatch.norm));
-    return nameOk && tantoOk;
+    if (other.id === g.id || other.left || !other.name) return false;
+    const otherNameNorm = toHiragana(other.name).replace(/[△\s　]/g, '');
+    if (!otherNameNorm) return false;
+    return normText.includes(otherNameNorm);
   }) || null;
 }
 
@@ -1910,7 +1910,7 @@ function rowHTML(no, g) {
   const bottleColor = bottleState === 2 ? '#2ecc71' : '#c9a84c';
   const aibanInfo = getAibanLinkInfo(g);
   const aibanIcon = aibanInfo.linked
-    ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="color:${aibanInfo.color};margin-right:2px;cursor:pointer;">🔗</span>`
+    ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="cursor:pointer;margin-right:2px;"><span style="color:${aibanInfo.color};">●</span>🔗</span>`
     : '';
   // 未来店で、来店予定時刻を過ぎている行はハイライトする
   const isOverdue = !g.arrived && isTimeOverdue(g.arrive);
@@ -2035,6 +2035,17 @@ function editCell(id, field, td) {
     g[field] = input.value.trim();
     if (field === 'name' || field === 'note') syncNewSpecialFromText(g);
     if (field === 'tanto') syncEventSpecialFromTanto(g);
+    // 卓番を編集した時、アイバンで紐づいている相手がいれば同じ卓番を自動で反映する
+    if (field === 'tableNum') {
+      const aibanInfo = getAibanLinkInfo(g);
+      if (aibanInfo.partnerId) {
+        const partner = guests.find(x => x.id === aibanInfo.partnerId);
+        if (partner && partner.tableNum !== g.tableNum) {
+          partner.tableNum = g.tableNum;
+          updateSingleGuestRow(partner.id);
+        }
+      }
+    }
     // 来店済みのゲストで、予算・退店・備考のいずれかが編集された時は、クイック／ワンタイ／ツータイの退店時間を再計算する
     if (g.arrived && (field === 'budget' || field === 'leave' || field === 'note')) {
       applyAutoLeaveTime(g);
@@ -2141,8 +2152,8 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
     line3 = (info && info.plan) ? `<span style="color:${boxDim};">飲直: ${info.plan}</span>` : '';
   }
   const isLeaveSoon = arrived && info && !info.isFirst && info.leave && isTimeOverdue(info.leave, 10);
-  const finalBoxBg = isLeaveSoon ? '#c0392b' : boxBg;
-  const finalBoxText = isLeaveSoon ? '#fff' : boxText;
+  const finalBoxBg = isLeaveSoon ? '#ffd6e0' : boxBg;
+  const finalBoxText = isLeaveSoon ? '#8b2f4a' : boxText;
   // 来店済みは今まで通りタップ・長押し両方、未来店はタップでの詳細確認だけできるようにする（備考等を事前に見られるように）
   const interactiveAttrs = arrived
     ? `onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTableDetailModal('${key}',${info && info.guestId != null ? info.guestId : 'null'})"
@@ -2155,7 +2166,7 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const line4 = hasShareNote ? `<div style="font-size:8.5px;line-height:1.3;font-weight:700;color:#ffd8c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📢${info.shareNote}</div>` : '';
   return `<div ${interactiveAttrs}
     class="${hasShareNote ? 'share-note-glow' : ''}"
-    style="cursor:${(arrived || (info && !info.isFirst))?'pointer':'default'};padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#c0392b':(isFirst?'#2980b9':'#c9a84c')};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
+    style="cursor:${(arrived || (info && !info.isFirst))?'pointer':'default'};padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#e8a0b5':(isFirst?'#2980b9':'#c9a84c')};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
     <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
     <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
     ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
@@ -3070,7 +3081,7 @@ function viewRow(g) {
   }).join('');
   const aibanInfo = getAibanLinkInfo(g);
   const aibanIcon = aibanInfo.linked
-    ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="font-size:14px;color:${aibanInfo.color};cursor:pointer;">🔗</span>`
+    ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="font-size:14px;cursor:pointer;"><span style="color:${aibanInfo.color};">●</span>🔗</span>`
     : '';
 
   // PをVに統一表示
@@ -4747,7 +4758,7 @@ function openManageModal() {
 
   const rows = guests.filter(g => g.name || g.tanto || g.tableNum).map(g => {
     const aibanInfo = getAibanLinkInfo(g);
-    const aibanMark = aibanInfo.linked ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" style="color:${aibanInfo.color};margin-right:4px;">🔗</span>` : '';
+    const aibanMark = aibanInfo.linked ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" style="margin-right:4px;"><span style="color:${aibanInfo.color};">●</span>🔗</span>` : '';
     return `
     <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
       <span style="color:var(--accent);font-weight:700;min-width:36px;font-size:13px;">${g.rowNum ? 'No.'+g.rowNum : '未'}</span>
@@ -4842,6 +4853,7 @@ function renderEditModalContent(id) {
 function saveEdit(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
+  const oldTableNum = g.tableNum;
   g.rowNum = document.getElementById('e-rownum').value || null;
   g.tableNum = document.getElementById('e-table').value;
   g.name = document.getElementById('e-name').value;
@@ -4854,6 +4866,17 @@ function saveEdit(id) {
   syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
   syncEventSpecialFromTanto(g);
+  // 卓番を編集した時、アイバンで紐づいている相手がいれば同じ卓番を自動で反映する
+  if (g.tableNum !== oldTableNum) {
+    const aibanInfo = getAibanLinkInfo(g);
+    if (aibanInfo.partnerId) {
+      const partner = guests.find(x => x.id === aibanInfo.partnerId);
+      if (partner && partner.tableNum !== g.tableNum) {
+        partner.tableNum = g.tableNum;
+        updateSingleGuestRow(partner.id);
+      }
+    }
+  }
   if (g.arrived) applyAutoLeaveTime(g);
   g.shareNote = document.getElementById('e-sharenote').value;
   {
