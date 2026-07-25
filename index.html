@@ -2212,7 +2212,7 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
     line1 = `<span style="font-weight:700;">${tableLabel}</span>${iconsHtml ? ' '+iconsHtml : ''}${tantoHtml}${leaveHtml}`;
     const subBits = [];
     // 卓状況のBOXでは、お客様名に混ぜて書かれた「新規」「初回RP」（🔰自動判定用の文言）は表示上取り除く
-    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name.replace(/新規|初回リピート|初回RP/g, '').replace(/\s+/g, ' ').trim())}</span>`);
+    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name.replace(/新規|初回リピート|初回RP/g, '').replace(/\s+/g, ' ').trim(), info.tanto)}</span>`);
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
     line2 = subBits.join(' ');
     // 飲直で出来た卓は、プラン情報を3行目に表示する
@@ -3172,7 +3172,7 @@ function viewRow(g) {
           ${aibanIcon}
           <span class="view-num-inline">${displayTable ? displayTable+'卓' : '未定'}</span>
           <span style="color:#f0c040;font-size:13px;">${normalizeStaffNamesInText(g.tanto || '')}</span>
-          <span style="font-weight:700;">${formatGuestDisplayName(g.name || '名前不明')}</span>
+          <span style="font-weight:700;">${formatGuestDisplayName(g.name || '名前不明', g.tanto)}</span>
           &nbsp;
           <button onclick="event.stopPropagation();confirmToggleLeft(${g.id})"
             style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">
@@ -3201,7 +3201,7 @@ function openNoteDetailModal(id) {
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;">
       <div class="modal-header">
-        <span>${formatGuestDisplayName(g.name || '名前不明')}</span>
+        <span>${formatGuestDisplayName(g.name || '名前不明', g.tanto)}</span>
         <button onclick="document.getElementById('noteDetailModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body">
@@ -4303,16 +4303,19 @@ function doUndoReset() {
 
 // お客様名を表示用に整形する（△を除去し、「様」を正しい位置に付ける）
 // 「ひな+枝」のような「+枝」表記は、本来の名前より後ろに来るよう「ひな様+枝」の形にする
-function formatGuestDisplayName(rawName) {
+// tantoを渡した場合、それが空なら「様」を付けない（担当が付いていない＝自由記述メモ等の可能性が高いため）。
+// tantoを渡さない呼び出し元は今まで通り常に「様」を付ける（後方互換のため引数省略時はtrue扱い）
+function formatGuestDisplayName(rawName, tanto = true) {
   const name = (rawName || '').replace('△','').trim();
   if (!name) return '';
   if (name === '体入') return name; // 体入はお客様ではないので「様」を付けない
+  const hasTanto = !!(tanto && String(tanto).trim());
   // 「+枝」「+同業」のように、本来の名前より後ろに来るべき接尾語（今後増えたらここに追加する）
   const m = name.match(/^(.*?)\s*[+＋]\s*(枝|同業)\s*$/);
   if (m && m[1].trim()) {
-    return `${m[1].trim()}様+${m[2]}`;
+    return hasTanto ? `${m[1].trim()}様+${m[2]}` : `${m[1].trim()}+${m[2]}`;
   }
-  return `${name}様`;
+  return hasTanto ? `${name}様` : name;
 }
 
 // ===== 時刻の解析・経過判定（来店時間・退店時間の自由入力から数字を拾う） =====
