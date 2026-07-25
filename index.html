@@ -1625,6 +1625,10 @@ function renderEmptyTablesArea() {
 }
 
 function renderTables() {
+  // 表全体を作り直す直前、もし別のセルが編集中のままだった場合に備え、
+  // キーボード表示中のスクロールロック（focusoutで解除されるはずのもの）が
+  // 残ってしまわないよう保険として解除しておく（作り直しでその入力欄自体も消えるため）
+  unlockBodyScrollForCellEdit();
   const container = document.getElementById('assignedTables');
   const MAX_ROWS = 30;
 
@@ -3563,15 +3567,16 @@ function deleteGuest(id) {
 
 // ===== STATS =====
 function updateStats() {
-  const active = guests.filter(g => (g.name || g.tanto || g.tableNum) && g.name !== '体入');
+  // 担当名が入っていない行は予定数に数えない（体入等、まだ担当が付いていない仮の行のため）
+  const active = guests.filter(g => (g.name || g.tanto || g.tableNum) && g.tanto && g.tanto.trim());
   document.getElementById('statTotal').textContent = active.length;
   document.getElementById('statArrived').textContent = active.filter(g => g.arrived).length;
   updateTableStats();
 }
 
 function updateTableStats() {
-  // 体入は「予定卓数」「現状」の集計対象外（お客様ではないため）
-  const withData = guests.filter(g => (g.name || g.tanto) && g.name !== '体入');
+  // 担当名が入っていない行は「予定卓数」「現状」の集計対象外
+  const withData = guests.filter(g => (g.name || g.tanto) && g.tanto && g.tanto.trim());
   // 予定卓数 = 実際にデータが入っている件数（行番号に隙間があっても正確に数える）
   const maxRow = withData.length;
   // △の件数（来店済みは除外）
@@ -4314,12 +4319,25 @@ function formatGuestDisplayName(rawName) {
 // 「21:00」「22時」「22時ごろ」のような表記から時刻を抽出する。「同伴」「未定」等は解析できず null を返す
 function parseTimeText(text) {
   if (!text) return null;
-  const m = String(text).match(/(\d{1,2})[:時](\d{0,2})/);
-  if (!m) return null;
-  const hour = parseInt(m[1]);
-  const minute = m[2] ? parseInt(m[2]) : 0;
+  const str = String(text);
+  // 「半」は30分を意味する（例：「9時半」→9:30）。数字表記より先に判定する
+  const halfMatch = str.match(/(\d{1,2})時半/);
+  let hour, minute;
+  if (halfMatch) {
+    hour = parseInt(halfMatch[1]);
+    minute = 30;
+  } else {
+    const m = str.match(/(\d{1,2})[:時](\d{0,2})/);
+    if (!m) return null;
+    hour = parseInt(m[1]);
+    minute = m[2] ? parseInt(m[2]) : 0;
+  }
+  if (isNaN(hour) || minute > 59) return null;
+  // 夜の営業のみのため、午前/午後の区別がない書き方（1〜11時）は常に午後として扱う
+  // （「9時半」は21:30、「20時」のように元から24時間表記のものはそのまま）
+  if (hour >= 1 && hour <= 11) hour += 12;
   // 深夜営業では「24時」「25時」のような表記も使われるため、29時までは有効な時刻として扱う
-  if (isNaN(hour) || hour > 29 || minute > 59) return null;
+  if (hour > 29) return null;
   return { hour, minute };
 }
 
