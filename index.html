@@ -1373,6 +1373,14 @@ function toHalfWidthDigits(text) {
   return text.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
 }
 
+// 卓番欄向け：全角の英字・数字（Ａ〜Ｚ、ａ〜ｚ、０〜９）を半角に統一する。
+// 全角のまま保存されると、卓状況・全体タブ側の卓番リストと文字として一致せず、
+// 来店済みなのに表示されない不具合の原因になるため、入力された時点で正規化しておく
+function toHalfWidthAlnum(text) {
+  if (!text) return text;
+  return text.replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+}
+
 // 来店時間・退店時間向け：全角数字に加え、全角コロンも半角に統一する
 function toHalfWidthTimeText(text) {
   return toHalfWidthDigits(text).replace(/：/g, ':');
@@ -1862,7 +1870,7 @@ function openTableNumPopup(guestId) {
 function saveTableNumPopup(guestId) {
   const g = guests.find(x => x.id === guestId);
   if (!g) return;
-  g.tableNum = document.getElementById('tableNumPopupInput').value.trim();
+  g.tableNum = toHalfWidthAlnum(document.getElementById('tableNumPopupInput').value.trim());
   saveToStorage();
   document.getElementById('tableNumPopup').classList.remove('show');
   updateSingleGuestRow(guestId);
@@ -2104,6 +2112,7 @@ function editCell(id, field, td) {
   input.setSelectionRange(len, len);
   function save() {
     g[field] = input.value.trim();
+    if (field === 'tableNum') g.tableNum = toHalfWidthAlnum(g.tableNum);
     if (field === 'name' || field === 'note') syncNewSpecialFromText(g);
     if (field === 'tanto') syncEventSpecialFromTanto(g);
     // 卓番を編集した時、アイバンで紐づいている相手がいれば同じ卓番を自動で反映する
@@ -2149,6 +2158,7 @@ function createAndEdit(rowNum, field, td) {
     if (!val) { withScrollPreserved(renderTables, td.closest('tr')); return; } // 空なら何もしない
     const g = { id: nextId++, rowNum: String(rowNum), tableNum:'', arrive:'', leave:'', tanto:'', name:'', budget:'', note:'', help:'', arrived: false };
     g[field] = val;
+    if (field === 'tableNum') g.tableNum = toHalfWidthAlnum(g.tableNum);
     syncNewSpecialFromText(g);
     if (field === 'tanto') syncEventSpecialFromTanto(g);
     guests.push(g);
@@ -4962,7 +4972,7 @@ function saveEdit(id) {
   if (!g) return;
   const oldTableNum = g.tableNum;
   g.rowNum = document.getElementById('e-rownum').value || null;
-  g.tableNum = document.getElementById('e-table').value;
+  g.tableNum = toHalfWidthAlnum(document.getElementById('e-table').value);
   g.name = document.getElementById('e-name').value;
   g.arrive = toHalfWidthTimeText(document.getElementById('e-arrive').value);
   g.leave = toHalfWidthTimeText(document.getElementById('e-leave').value);
