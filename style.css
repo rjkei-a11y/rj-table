@@ -769,3 +769,8 @@
     /* 印刷ではNo.タップ等の操作見た目（下線・カーソル）は不要 */
     .p-col-no { text-decoration: none !important; cursor: default !important; }
   }
+
+  /* 集計モーダル：タップした列を強調表示する */
+  .summary-col-highlight {
+    background: rgba(201, 168, 76, 0.22) !important;
+  }
