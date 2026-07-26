@@ -4600,6 +4600,38 @@ let _summaryTab = 'today'; // 'today' | 'day' | 'month'
 let _summaryMonthKey = null;
 let _summaryDayKey = null;
 
+// ===== 集計モーダル：列タップでその列を強調表示する =====
+let _summaryHighlightCol = null;
+
+function applySummaryColumnHighlight() {
+  const modal = document.getElementById('summaryModal');
+  if (!modal) return;
+  modal.querySelectorAll('[data-scol]').forEach(el => {
+    const isTarget = _summaryHighlightCol !== null && Number(el.getAttribute('data-scol')) === _summaryHighlightCol;
+    el.classList.toggle('summary-col-highlight', isTarget);
+  });
+}
+
+// 列見出しをタップした時：同じ列をもう一度タップしたら解除、違う列なら切り替える
+function toggleSummaryColumnHighlight(i) {
+  _summaryHighlightCol = (_summaryHighlightCol === i) ? null : i;
+  applySummaryColumnHighlight();
+}
+
+function clearSummaryColumnHighlight() {
+  if (_summaryHighlightCol === null) return;
+  _summaryHighlightCol = null;
+  applySummaryColumnHighlight();
+}
+
+// 集計モーダル内（列見出し以外）をタップしたら強調を解除する。
+// 列見出し側はonclickでstopPropagationしているため、ここには届かない
+document.addEventListener('click', function(e) {
+  const modal = document.getElementById('summaryModal');
+  if (!modal || !modal.classList.contains('show')) return;
+  if (modal.contains(e.target)) clearSummaryColumnHighlight();
+});
+
 function openSummaryModal() {
   if (localStorage.getItem('rj_role') !== 'admin') return;
   _summaryTab = 'today';
@@ -4681,17 +4713,17 @@ function buildSummaryTable(summary) {
     const off = (offCount[name] || 0) + (paidOffCount[name] || 0);
     const half = halfOffCount[name] || 0;
     return `<tr>
-      <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${okuri}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${nomi}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${shinki}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${rp}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${help}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#2ecc71;">${self}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${proxy}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e74c3c;">${off}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${half}</td>
+      <td data-scol="0" style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
+      <td data-scol="1" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${okuri}</td>
+      <td data-scol="2" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${nomi}</td>
+      <td data-scol="3" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${shinki}</td>
+      <td data-scol="4" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${rp}</td>
+      <td data-scol="5" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
+      <td data-scol="6" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${help}</td>
+      <td data-scol="7" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#2ecc71;">${self}</td>
+      <td data-scol="8" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${proxy}</td>
+      <td data-scol="9" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e74c3c;">${off}</td>
+      <td data-scol="10" style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${half}</td>
     </tr>`;
   }).join('');
 
@@ -4700,7 +4732,7 @@ function buildSummaryTable(summary) {
       ${summaryColgroup()}
       <thead>
         <tr style="color:var(--accent);">
-          ${SUMMARY_COL_LABELS.map((label, i) => `<th style="padding:6px 4px;text-align:${i===0?'left':'center'};border-bottom:1px solid var(--accent-dim);${i===0?'border-right:1px solid var(--accent-dim);padding-left:4px;':''}white-space:nowrap;background:var(--surface);${i===0?'position:sticky;left:0;z-index:2;':''}">${label}</th>`).join('')}
+          ${SUMMARY_COL_LABELS.map((label, i) => `<th data-scol="${i}" onclick="event.stopPropagation();toggleSummaryColumnHighlight(${i})" style="cursor:pointer;padding:6px 4px;text-align:${i===0?'left':'center'};border-bottom:1px solid var(--accent-dim);${i===0?'border-right:1px solid var(--accent-dim);padding-left:4px;':''}white-space:nowrap;background:var(--surface);${i===0?'position:sticky;left:0;z-index:2;':''}">${label}</th>`).join('')}
         </tr>
       </thead>
     </table>`;
@@ -4715,6 +4747,7 @@ function buildSummaryTable(summary) {
 }
 
 function renderSummaryModalContent() {
+  _summaryHighlightCol = null; // タブ・日付切り替えなど、表の中身が変わる時はハイライトを一旦解除する
   const modal = document.getElementById('summaryModal');
   if (!modal) return;
 
