@@ -4607,8 +4607,11 @@ function applySummaryColumnHighlight() {
   const modal = document.getElementById('summaryModal');
   if (!modal) return;
   modal.querySelectorAll('[data-scol]').forEach(el => {
-    const isTarget = _summaryHighlightCol !== null && Number(el.getAttribute('data-scol')) === _summaryHighlightCol;
-    el.classList.toggle('summary-col-highlight', isTarget);
+    const col = Number(el.getAttribute('data-scol'));
+    const isTarget = _summaryHighlightCol !== null && col === _summaryHighlightCol;
+    // CSSクラスの優先順位に左右されないよう、直接インラインstyleを操作する。
+    // 1列目（キャスト名）だけは元々sticky固定用の背景色(var(--surface))を持っているため、解除時はそれを復元する
+    el.style.background = isTarget ? 'rgba(201, 168, 76, 0.4)' : (col === 0 ? 'var(--surface)' : '');
   });
 }
 
