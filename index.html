@@ -347,7 +347,7 @@
     <button onclick="promptQuickStatus('off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e74c3c;background:transparent;color:#e74c3c;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">本日お休み</button>
     <button onclick="promptQuickStatus('paid_off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e74c3c;background:transparent;color:#e74c3c;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">有休</button>
     <button onclick="promptQuickStatus('half_off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e67e22;background:transparent;color:#e67e22;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">半休</button>
-    <button onclick="promptQuickStatus('clear')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid var(--text-dim);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">↺ 元に戻す</button>
+    <button id="clearStatusBtn" onclick="promptQuickStatus('clear')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid var(--text-dim);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">↺ 元に戻す</button>
   </div>
 
   <div style="display:flex; gap:10px; align-items:flex-start;">
@@ -582,6 +582,9 @@ function applyRole(role) {
     // 卓一覧タブはキャストロールでは閲覧専用（一覧管理ボタンを非表示）
     const manageModalBtn = document.getElementById('manageModalBtn');
     if (manageModalBtn) manageModalBtn.style.display = 'none';
+    // 報告状況の「元に戻す」は内勤（admin）のみ操作可能
+    const clearStatusBtn = document.getElementById('clearStatusBtn');
+    if (clearStatusBtn) clearStatusBtn.style.display = 'none';
   }
   updateTableListVisibleBtn();
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
@@ -2239,11 +2242,11 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const line4 = hasShareNote ? `<div style="font-size:8.5px;line-height:1.3;font-weight:700;color:#ffd8c2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📢${info.shareNote}</div>` : '';
   return `<div ${interactiveAttrs}
     class="${hasShareNote ? 'share-note-glow' : ''}"
-    style="position:relative;cursor:${(arrived || (info && !info.isFirst))?'pointer':'default'};padding:3px 5px;border-radius:4px;border:1px solid ${isLeaveSoon?'#e8a0b5':(isFirst?'#2980b9':'#c9a84c')};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
+    style="position:relative;cursor:${(arrived || (info && !info.isFirst))?'pointer':'default'};padding:5px 7px;border-radius:4px;border:1px solid ${isLeaveSoon?'#e8a0b5':(isFirst?'#2980b9':'#c9a84c')};background:${finalBoxBg};color:${finalBoxText};overflow:hidden;">
     ${budgetBadge}
-    <div style="font-size:10px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
-    <div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line2}</div>
-    ${line3 ? `<div style="font-size:8.5px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
+    <div style="font-size:11px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line1}</div>
+    <div style="font-size:9.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${line2}</div>
+    ${line3 ? `<div style="font-size:9.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${line3}</div>` : ''}
     ${line4}
   </div>`;
 }
@@ -3182,7 +3185,7 @@ function viewRow(g) {
           ${g.leave && parseTimeText(g.leave) ? `<span style="font-size:12px;color:#e57373;font-weight:700;">⏰${g.leave}</span>` : ''}
           ${g.budget ? `<span style="font-size:11px;color:var(--text-dim);">${g.budget}</span>` : ''}
         </div>
-        ${noteStr ? `<div class="view-meta" style="color:#e74c3c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="event.stopPropagation();openNoteDetailModal(${g.id})">${noteStr}</div>` : ''}
+        ${noteStr ? `<div class="view-meta" style="color:#e74c3c;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" onclick="event.stopPropagation();openNoteDetailModal(${g.id})">${noteStr}</div>` : ''}
       </div>
     </div>`;
 }
@@ -4032,6 +4035,8 @@ function markReported(name) {
 // 内勤端末でのクイックボタン用：対象キャストを選んでからステータスを適用する
 function promptQuickStatus(status) {
   const role = localStorage.getItem('rj_role');
+  // 「元に戻す」（未報告への取り消し）は内勤のみ操作可能。ボタン自体は非表示にしているが、念のため関数側でも防ぐ
+  if (status === 'clear' && role !== 'admin') return;
   if (role === 'host') {
     const me = getMyIdentity();
     if (!me) {
