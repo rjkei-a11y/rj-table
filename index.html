@@ -4499,14 +4499,15 @@ function computeDailySummary() {
     if (g.help) {
       extractStaffNames(g.help, aliasIndex).forEach(name => bump(helpCount, name));
     }
-    // 新規・初回RP判定（お客様名に含まれる文字列で判定）※来店確認済みの卓のみカウント
-    const name = g.name || '';
+    // 新規・初回RP判定（お客様名・備考欄どちらに書かれていても拾う。🔰アイコンの自動判定と同じ基準にする）
+    // ※来店確認済みの卓のみカウント
+    const nameAndNote = (g.name || '') + (g.note || '');
     const tanto = matchStaff(g.tanto);
     if (g.arrived) {
-      if (name.includes('初回RP') || name.includes('初回リピート')) {
+      if (nameAndNote.includes('初回RP') || nameAndNote.includes('初回リピート')) {
         bump(shinkiCount, tanto);
         bump(rpCount, tanto);
-      } else if (name.includes('新規')) {
+      } else if (nameAndNote.includes('新規')) {
         bump(shinkiCount, tanto);
       }
     }
