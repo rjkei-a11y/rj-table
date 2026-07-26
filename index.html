@@ -1419,9 +1419,11 @@ function formatBudgetCompact(text) {
 }
 
 // 予算欄に「上げ」（単価上げ・爆上げ等）が含まれていたら、自動で🔺特記事項を付ける
+// ただし「盛り上げ」「もりあげ」は単価アップとは無関係の接客用語なので、誤って拾わないよう除外する
 function detectBudgetRaiseKeyword(text) {
   if (!text) return false;
-  return text.includes('上げ') || text.includes('あげ');
+  const cleaned = text.replace(/盛り?上げ/g, '').replace(/もりあげ/g, '');
+  return cleaned.includes('上げ') || cleaned.includes('あげ');
 }
 
 // 既存の特記事項を崩さず、予算欄の内容に応じて🔺(raise)の有無だけを同期する
