@@ -347,6 +347,7 @@
     <button onclick="promptQuickStatus('off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e74c3c;background:transparent;color:#e74c3c;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">本日お休み</button>
     <button onclick="promptQuickStatus('paid_off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e74c3c;background:transparent;color:#e74c3c;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">有休</button>
     <button onclick="promptQuickStatus('half_off')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid #e67e22;background:transparent;color:#e67e22;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">半休</button>
+    <button onclick="promptQuickStatus('clear')" style="flex:1;min-width:70px;padding:8px 4px;border-radius:6px;border:1px solid var(--text-dim);background:transparent;color:var(--text-dim);font-size:11px;font-weight:700;cursor:pointer;font-family:var(--font-main);">↺ 元に戻す</button>
   </div>
 
   <div style="display:flex; gap:10px; align-items:flex-start;">
@@ -4006,8 +4007,15 @@ function refreshAliasModalIfOpen() {
 }
 
 // 予定未定・お休み・有休・半休のステータスを設定する統一関数
-// status: 'pending' | 'off' | 'paid_off' | 'half_off'
+// status: 'pending' | 'off' | 'paid_off' | 'half_off' | 'clear'（clearは記録を消して未報告の状態に戻す）
 function setStaffDayStatus(name, status) {
+  if (status === 'clear') {
+    delete staffDayStatus[name];
+    saveDayStatus(name);
+    renderStaffStatus();
+    showToast(`${name} の報告状況を未報告に戻しました`);
+    return;
+  }
   const reportType = getCurrentReportType();
   staffDayStatus[name] = { status, reportType, timestamp: Date.now() };
   saveDayStatus(name);
@@ -4041,7 +4049,7 @@ function promptQuickStatus(status) {
     modal.id = 'quickStatusModal';
     document.body.appendChild(modal);
   }
-  const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休' };
+  const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休', clear: '未報告に戻す' };
   const options = staffList.map(name => `
     <button onclick="document.getElementById('quickStatusModal').classList.remove('show');confirmQuickStatus('${name.replace(/'/g,"\\'")}','${status}')"
       style="display:block;width:100%;text-align:left;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;margin-bottom:6px;cursor:pointer;">${name}</button>
@@ -4061,7 +4069,7 @@ function promptQuickStatus(status) {
 
 // 誤操作防止のため、実際に反映する前にもう一度確認する
 function confirmQuickStatus(name, status) {
-  const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休' };
+  const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休', clear: '未報告に戻す' };
   let overlay = document.getElementById('deleteOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
@@ -4791,23 +4799,26 @@ function renderStaffStatus() {
   container.innerHTML = staffList.map(name => {
     const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
     const dayStatus = staffDayStatus[name] ? staffDayStatus[name].status : null;
-    // 優先順位: 報告済み(緑) > 休み/有休(赤) > 半休(オレンジ) > 予定未定(青) > 未報告(グレー)
+    const isHalfOff = dayStatus === 'half_off';
+    // ドットの色は「報告状況」を表す：報告済み(緑) > 休み/有休(赤) > 予定未定または半休で未報告(青) > 未報告(グレー)
+    // 半休であること自体は色とは別に「半」バッジで示すので、半休でも報告が済んでいれば緑、
+    // まだ未報告なら青（予定未定と同じ扱い）になり、どちらの情報も同時に見える
     let color, textColor;
     if (done) {
       color = textColor = '#2ecc71';
     } else if (dayStatus === 'off' || dayStatus === 'paid_off') {
       color = textColor = '#e74c3c';
-    } else if (dayStatus === 'half_off') {
-      color = textColor = '#e67e22';
-    } else if (dayStatus === 'pending') {
+    } else if (dayStatus === 'pending' || isHalfOff) {
       color = textColor = '#3498db';
     } else {
       color = 'var(--border)';
       textColor = 'var(--text-dim)';
     }
+    const halfBadge = isHalfOff ? `<span style="font-size:8px;font-weight:700;color:#e67e22;border:1px solid #e67e22;border-radius:3px;padding:0 3px;line-height:1.4;flex-shrink:0;">半</span>` : '';
     const nameEsc = name.replace(/'/g, "\\'");
     return `<div onclick="openAliasModal('${nameEsc}')" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px;cursor:pointer;">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
+      ${halfBadge}
       <span style="color:${textColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
     </div>`;
   }).join('');
