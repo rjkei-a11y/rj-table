@@ -1526,18 +1526,24 @@ function includesFirstRpText(text) {
   return new RegExp(FIRST_RP_PATTERN_SRC).test(text);
 }
 
-// 表示用にテキストから「新規」「初回RP」「初回リピート」系の文言（表記ゆれ含む）を取り除く
-function stripFirstRpText(text) {
-  if (!text) return text;
-  return text.replace(/新規|初回RP/g, '').replace(new RegExp(FIRST_RP_PATTERN_SRC, 'g'), '');
+// テキストに「新規」または「初指名」（同じ意味の表記ゆれ）が含まれているか判定する
+function includesShinkiText(text) {
+  if (!text) return false;
+  return text.includes('新規') || text.includes('初指名');
 }
 
-// お客様名・備考のどちらかに「新規」「初回RP」の文言が含まれていたら🔰を自動で付ける
+// 表示用にテキストから「新規」「初指名」「初回RP」「初回リピート」系の文言（表記ゆれ含む）を取り除く
+function stripFirstRpText(text) {
+  if (!text) return text;
+  return text.replace(/新規|初指名|初回RP/g, '').replace(new RegExp(FIRST_RP_PATTERN_SRC, 'g'), '');
+}
+
+// お客様名・備考のどちらかに「新規」「初指名」「初回RP」の文言が含まれていたら🔰を自動で付ける
 // （飲直による自動付与とは別ルートなので、こちらは追加のみ行い、自動での削除はしない）
 function syncNewSpecialFromText(g) {
   if (!g.specials) g.specials = [];
   const text = (g.name || '') + (g.note || '');
-  const shouldHave = text.includes('新規') || includesFirstRpText(text);
+  const shouldHave = includesShinkiText(text) || includesFirstRpText(text);
   if (shouldHave && !g.specials.includes('new')) g.specials.push('new');
 }
 
@@ -4554,7 +4560,7 @@ function computeDailySummary() {
       if (includesFirstRpText(nameAndNote)) {
         bump(shinkiCount, tanto);
         bump(rpCount, tanto);
-      } else if (nameAndNote.includes('新規')) {
+      } else if (includesShinkiText(nameAndNote)) {
         bump(shinkiCount, tanto);
       }
     }
