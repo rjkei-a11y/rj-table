@@ -4101,23 +4101,51 @@ function confirmQuickStatus(name, status) {
 
 // ===== 本日分リセット（予定報告タブ） =====
 // 卓一覧データ・報告状況（緑/青ドット）・初回データ・場内メモをまとめて消去し、翌日の運用に備える
+// 日付キー（YYYY-MM-DD）を「7月26日（土）」のような表示用文字列に変換する
+function formatDateKeyForDisplay(dateKey) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  return `${m}月${d}日（${'日月火水木金土'[dateObj.getDay()]}）`;
+}
+
 function confirmResetReports() {
   // 内勤（admin）のみ実行可能。念のためロールも直接チェック（ボタン非表示のバイパス対策）
   if (localStorage.getItem('rj_role') !== 'admin') return;
+  // リセット忘れ等で本来の営業日と実行日がズレることがあるため、先に「どの日の集計として記録するか」を選ばせる
   let overlay = document.getElementById('deleteOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
-  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
-    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">本日分を全てリセットしますか？</div>
-    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">卓データ・報告状況・初回データ・場内メモが全て消去されます。<br>翌日の営業開始時にご利用ください。</div>
-    <div style="display:flex;gap:10px;">
-      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
-      <button onclick="document.getElementById('deleteOverlay').style.display='none';doResetReports()" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">リセット</button>
-    </div>
+  const offsets = [-2, -1, 0, 1, 2];
+  const dateButtons = offsets.map(offset => {
+    const dateKey = getTodayKey(offset);
+    const label = formatDateKeyForDisplay(dateKey);
+    const isToday = offset === 0;
+    return `<button onclick="promptResetConfirm('${dateKey}')" style="padding:10px 6px;background:${isToday?'var(--accent)':'transparent'};border:1px solid ${isToday?'var(--accent)':'#555'};border-radius:6px;color:${isToday?'#1a1400':'#ccc'};font-size:12px;font-weight:${isToday?'700':'400'};cursor:pointer;white-space:nowrap;">${isToday?'本日\n':''}${label}</button>`;
+  }).join('');
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:340px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">この集計はいつの分として記録しますか？</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">リセット忘れ等で日付がズレる場合は、ここで正しい営業日を選んでください。</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px;">${dateButtons}</div>
+    <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="width:100%;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
   </div>`;
   overlay.style.display='flex';
 }
 
-function doResetReports() {
+// 日付を選んだ後の最終確認ダイアログ
+function promptResetConfirm(dateKey) {
+  const overlay = document.getElementById('deleteOverlay');
+  if (!overlay) return;
+  const label = formatDateKeyForDisplay(dateKey);
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">${label}分としてリセットしますか？</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">卓データ・報告状況・初回データ・場内メモが全て消去されます。<br>翌日の営業開始時にご利用ください。</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';doResetReports('${dateKey}')" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">リセット</button>
+    </div>
+  </div>`;
+}
+
+function doResetReports(dateKey) {
   // ===== リセット前のバックアップを作成（誤操作の復元用） =====
   const currentBaanai = (() => {
     try { return localStorage.getItem('rj_baanai') || ''; } catch(e) { return ''; }
@@ -4133,8 +4161,8 @@ function doResetReports() {
   if (window.fbSaveBackup) window.fbSaveBackup(backup);
   window._fbBackup = backup;
 
-  // ===== 月次集計ログに本日分を保存（リセットで消える前に数値だけ残す） =====
-  saveTodayToMonthlyLog();
+  // ===== 月次集計ログに保存（リセットで消える前に数値だけ残す）。日付は選択されたものを使う（未指定なら本日扱い） =====
+  saveTodayToMonthlyLog(dateKey || getTodayKey());
 
   // 卓データ（差分比較に頼らず、Firebase側のノードを丸ごと確実に空にする）
   guests = [];
@@ -4162,7 +4190,7 @@ function doResetReports() {
   renderFloorStatus();
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   updateUndoButtonState();
-  showToast('本日分をリセットしました（復元ボタンから元に戻せます）');
+  showToast(`${formatDateKeyForDisplay(dateKey || getTodayKey())}分としてリセットしました（復元ボタンから元に戻せます）`);
 
   // 保険：リセット直前の書き込みがFirebaseに反映されるタイミングとズレて、
   // 一瞬だけ古いデータが復活して見えることがあるため、少し時間を置いてもう一度確実に空にする
@@ -4188,12 +4216,14 @@ function doResetReports() {
 // 今日の日付キー（YYYY-MM-DD、ローカル時刻基準）
 // 営業日の基準日付を取得する（深夜0時ではなく朝6時を区切りとする）
 // 深夜0時〜5時台にリセットしても、その営業を開始した日の実績として記録されるようにする
-function getTodayKey() {
+// offsetDaysを指定すると、その日数分前後にずらした日付キーを返す（リセット時の日付選択で使用）
+function getTodayKey(offsetDays = 0) {
   const now = new Date();
   const businessDate = new Date(now);
   if (now.getHours() < 6) {
     businessDate.setDate(businessDate.getDate() - 1);
   }
+  businessDate.setDate(businessDate.getDate() + offsetDays);
   const y = businessDate.getFullYear();
   const m = String(businessDate.getMonth() + 1).padStart(2, '0');
   const d = String(businessDate.getDate()).padStart(2, '0');
@@ -4230,8 +4260,8 @@ function clearTodaySavedLog() {
   showToast('ライブ表示に戻しました');
 }
 
-function saveTodayToMonthlyLog() {
-  const dateKey = getTodayKey();
+function saveTodayToMonthlyLog(dateKey) {
+  dateKey = dateKey || getTodayKey();
   const summary = computeDailySummary();
   try {
     const raw = localStorage.getItem('rj_monthlyLogs');
