@@ -1515,12 +1515,29 @@ function applyAutoLeaveTime(g) {
 }
 
 
+// 「初回リピート」の表記ゆれ（初回リーぴーと、初回りぴーと、初回リピート等）をまとめて拾う正規表現。
+// カタカナ/ひらがな混在・長音符の有無を問わず「初回◯ぴ◯と」の形なら一致させる
+const FIRST_RP_PATTERN_SRC = '初回(リピート|りぴーと)';
+
+// テキストに「初回RP」または「初回リピート」系の表記ゆれが含まれているか判定する
+function includesFirstRpText(text) {
+  if (!text) return false;
+  if (text.includes('初回RP')) return true;
+  return new RegExp(FIRST_RP_PATTERN_SRC).test(text);
+}
+
+// 表示用にテキストから「新規」「初回RP」「初回リピート」系の文言（表記ゆれ含む）を取り除く
+function stripFirstRpText(text) {
+  if (!text) return text;
+  return text.replace(/新規|初回RP/g, '').replace(new RegExp(FIRST_RP_PATTERN_SRC, 'g'), '');
+}
+
 // お客様名・備考のどちらかに「新規」「初回RP」の文言が含まれていたら🔰を自動で付ける
 // （飲直による自動付与とは別ルートなので、こちらは追加のみ行い、自動での削除はしない）
 function syncNewSpecialFromText(g) {
   if (!g.specials) g.specials = [];
   const text = (g.name || '') + (g.note || '');
-  const shouldHave = text.includes('新規') || text.includes('初回RP') || text.includes('初回リピート');
+  const shouldHave = text.includes('新規') || includesFirstRpText(text);
   if (shouldHave && !g.specials.includes('new')) g.specials.push('new');
 }
 
@@ -2228,7 +2245,7 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
     line1 = `<span style="font-weight:700;">${tableLabel}</span>${iconsHtml ? ' '+iconsHtml : ''}${tantoHtml}${leaveHtml}`;
     const subBits = [];
     // 卓状況のBOXでは、お客様名に混ぜて書かれた「新規」「初回RP」（🔰自動判定用の文言）は表示上取り除く
-    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(info.name.replace(/新規|初回リピート|初回RP/g, '').replace(/\s+/g, ' ').trim(), info.tanto)}</span>`);
+    if (info && info.name) subBits.push(`<span style="color:${boxText};">${formatGuestDisplayName(stripFirstRpText(info.name).replace(/\s+/g, ' ').trim(), info.tanto)}</span>`);
     if (info && info.help) subBits.push(`<span style="color:${boxDim};">H: ${info.help}</span>`);
     line2 = subBits.join(' ');
     // 飲直で出来た卓は、プラン情報を3行目に表示する
@@ -4114,7 +4131,7 @@ function confirmResetReports() {
   // リセット忘れ等で本来の営業日と実行日がズレることがあるため、先に「どの日の集計として記録するか」を選ばせる
   let overlay = document.getElementById('deleteOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
-  const offsets = [-2, -1, 0, 1, 2];
+  const offsets = [-2, -1, 0];
   const dateButtons = offsets.map(offset => {
     const dateKey = getTodayKey(offset);
     const label = formatDateKeyForDisplay(dateKey);
@@ -4124,7 +4141,7 @@ function confirmResetReports() {
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:340px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">この集計はいつの分として記録しますか？</div>
     <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">リセット忘れ等で日付がズレる場合は、ここで正しい営業日を選んでください。</div>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px;">${dateButtons}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;">${dateButtons}</div>
     <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="width:100%;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
   </div>`;
   overlay.style.display='flex';
@@ -4534,7 +4551,7 @@ function computeDailySummary() {
     const nameAndNote = (g.name || '') + (g.note || '');
     const tanto = matchStaff(g.tanto);
     if (g.arrived) {
-      if (nameAndNote.includes('初回RP') || nameAndNote.includes('初回リピート')) {
+      if (includesFirstRpText(nameAndNote)) {
         bump(shinkiCount, tanto);
         bump(rpCount, tanto);
       } else if (nameAndNote.includes('新規')) {
