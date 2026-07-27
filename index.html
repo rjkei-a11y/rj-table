@@ -1797,7 +1797,10 @@ function findAibanPartner(g) {
   const normText = toHiragana(text).replace(/[\s　]/g, '');
   return guests.find(other => {
     if (other.id === g.id || other.left || !other.name) return false;
-    const otherNameNorm = toHiragana(other.name).replace(/[△\s　]/g, '');
+    // お客様名欄には「△」「新規」「初指名」「初回RP」等、🔰判定用の文言が混ざって入っていることがあるため、
+    // アイバンの相手探しではそれらを取り除いた「本来のお客様名」だけで比較する
+    const cleanedName = stripFirstRpText(other.name).replace(/△/g, '');
+    const otherNameNorm = toHiragana(cleanedName).replace(/[\s　]/g, '');
     if (!otherNameNorm) return false;
     return normText.includes(otherNameNorm);
   }) || null;
