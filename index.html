@@ -145,6 +145,10 @@
 
   // Firebaseからゲストをリアルタイム受信
   onValue(guestsRef, (snapshot) => {
+    // このデータを実際に受信した時刻を記録しておく。
+    // スマホがスリープ・バックグラウンドで長時間データを受信できていなかった端末が、
+    // 復帰した瞬間に古いローカルデータを書き戻してしまう事故を防ぐために使う（下記参照）
+    window._lastFbGuestsReceivedAt = Date.now();
     const data = snapshot.val();
     let receivedGuests = data === null ? [] : Object.values(data).filter(g => g && (g.name || g.tanto || g.tableNum));
     // 削除直後は、Firebase側の書き込み順序のズレで「削除前の古いデータ」が一時的に返ってくることがある。
@@ -3734,6 +3738,12 @@ window._lastSavedGuestJson = _lastSavedGuestJson; // Firebaseモジュール側�
 // 古いスナップショットで、他端末が今しがた作ったばかりのデータを誤って削除してしまう恐れがあるため、
 // そのリスクが無い「保存」だけに絞っている
 function saveGuestsDiffOnly() {
+  // Firebaseから最後にデータを受信したのが一定時間より前（スマホがスリープ・バックグラウンドから
+  // 復帰した直後など）の場合、手元のguestsは他端末の最新の変更を反映できていない可能性が高い。
+  // その状態で自動保存してしまうと、古いデータで他端末の変更を丸ごと上書きする事故になるため、
+  // ここでは保存自体を見送り、次に新しいデータを受信するのを待つ
+  const lastReceived = window._lastFbGuestsReceivedAt || 0;
+  if (Date.now() - lastReceived > 15000) return;
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
   if (window.fbSaveGuest) {
     if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
