@@ -2059,6 +2059,16 @@ function updateSingleGuestRow(guestId) {
   updateTableStats();
 }
 
+// 卓番の表示用変換：内勤ロールは入力されたまま（P表記含む）表示するが、
+// 従業員ロールにはP表記をV表記に変換して見せる（内部的にはP=Vの同じ卓のため、表示だけ揃える）
+function displayTableNum(tableNum) {
+  if (!tableNum) return '';
+  if (localStorage.getItem('rj_role') === 'host' && /^P/i.test(tableNum)) {
+    return tableNum.replace(/^P/i, 'V');
+  }
+  return tableNum;
+}
+
 function rowHTML(no, g) {
   const bottleState = g.bottle || 0;
   const bottleIcon = bottleState === 0 ? '' : bottleState === 1 ? '○' : '◉';
@@ -2084,7 +2094,7 @@ function rowHTML(no, g) {
     <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         ${holdAttrs}>
       <td class="p-col-no" ${noCellAttrs}>${no}${isOverdue ? ' ⏰' : ''}</td>
-      <td ${numCellAttrs}>${g.tableNum||''}</td>
+      <td ${numCellAttrs}>${displayTableNum(g.tableNum)}</td>
       <td ${arriveCellAttrs}>${g.arrive||''}</td>
       <td ${tantoCellAttrs}>${normalizeStaffNamesInText(g.tanto||'')}</td>
       <td ${nameCellAttrs}>${aibanIcon}${g.name||''}</td>
