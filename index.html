@@ -8,7 +8,7 @@
 <!-- Firebase SDK（有効） -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, update, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCdOu7waepEH5WXQkvFKLLFRah-FODcOUI",
@@ -39,6 +39,14 @@
   window.fbSaveGuest = function(guest) {
     if (!guest || guest.id == null) return;
     set(ref(db, 'guests/g' + guest.id), guest).catch(e => console.error('FB save guest error:', e));
+  };
+  // Firebaseのゲスト1件のうち、変更のあったフィールドだけを更新する（レベル1対応）。
+  // set()と違い、指定していないフィールドには一切触れないので、手元のデータの一部が古くても
+  // 他端末が別のタイミングで更新した「触っていない項目」まで巻き込んで上書きする事故を防げる。
+  // fieldsが空、またはguestが新規（idはあるが他に何も無い状態は通常あり得ないので考慮不要）の場合は何もしない
+  window.fbUpdateGuestFields = function(id, fields) {
+    if (id == null || !fields || Object.keys(fields).length === 0) return;
+    update(ref(db, 'guests/g' + id), fields).catch(e => console.error('FB update guest fields error:', e));
   };
   // Firebaseからゲスト1件を削除
   window.fbRemoveGuest = function(id) {
@@ -189,11 +197,18 @@
       window._fbGuests.forEach(g => {
         if (g && g.id != null) {
           window._lastSavedGuestJson[g.id] = JSON.stringify(g);
+          // レベル1対応：フィールド単位の差分計算の基準（_lastSavedGuestFields）も、
+          // Firebaseから受信するたびに最新化しておく（そうしないと、他端末が変更したフィールドを
+          // 「まだ自分は変更を送っていないフィールド」と誤認識し、次の保存で無関係に上書きしてしまう）
+          if (window._lastSavedGuestFields) window._lastSavedGuestFields[g.id] = JSON.parse(JSON.stringify(g));
           receivedIds.add(g.id);
         }
       });
       Object.keys(window._lastSavedGuestJson).forEach(idStr => {
-        if (!receivedIds.has(Number(idStr)) && !receivedIds.has(idStr)) delete window._lastSavedGuestJson[idStr];
+        if (!receivedIds.has(Number(idStr)) && !receivedIds.has(idStr)) {
+          delete window._lastSavedGuestJson[idStr];
+          if (window._lastSavedGuestFields) delete window._lastSavedGuestFields[idStr];
+        }
       });
     }
     if (typeof guests !== 'undefined' && typeof renderTables === 'function') {
@@ -3736,6 +3751,30 @@ function updateTableStats() {
 let _lastSavedGuestJson = {};
 window._lastSavedGuestJson = _lastSavedGuestJson; // Firebaseモジュール側（onValue受信時）からも同期できるようにする
 
+// レベル1対応：直近でFirebaseに書き込んだ（または受信した）「フィールドごとの値」を覚えておく。
+// { guestId: { field: value, ... } } という形。これと現在のguestを見比べて、
+// 実際に値が変わったフィールドだけを特定し、そこだけをピンポイントで更新する（丸ごと上書きしない）ために使う
+let _lastSavedGuestFields = {};
+window._lastSavedGuestFields = _lastSavedGuestFields;
+
+// ゲスト1件について、前回保存/受信した内容(lastFields)と現在の内容(guest)を比較し、
+// 変わったフィールドだけを { フィールド名: 新しい値 } の形で返す。削除されたフィールドはnullにする
+// （Firebaseのupdate()は値にnullを指定するとそのキー自体を削除してくれる仕様のため）。
+// 変化が無ければ空オブジェクトを返す
+function computeGuestFieldDiff(guest, lastFields) {
+  const diff = {};
+  const prev = lastFields || {};
+  Object.keys(guest).forEach(key => {
+    if (JSON.stringify(guest[key]) !== JSON.stringify(prev[key])) {
+      diff[key] = guest[key] === undefined ? null : guest[key];
+    }
+  });
+  Object.keys(prev).forEach(key => {
+    if (!(key in guest)) diff[key] = null;
+  });
+  return diff;
+}
+
 // saveToStorageの「保存」部分だけを行う軽量版（「ローカルに無いものはサーバーからも消す」処理は含まない）。
 // renderTables()の行番号自動修復など、ユーザー操作を伴わずレンダリングのたびに自動発火しうる経路専用。
 // そうした経路でsaveToStorageの削除ロジックまで実行すると、閲覧しているだけの端末が持つ
@@ -3749,13 +3788,16 @@ function saveGuestsDiffOnly() {
   const lastReceived = window._lastFbGuestsReceivedAt || 0;
   if (Date.now() - lastReceived > 15000) return;
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
-  if (window.fbSaveGuest) {
+  if (window.fbUpdateGuestFields) {
     if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
     guests.forEach(g => {
       const json = JSON.stringify(g);
       if (_lastSavedGuestJson[g.id] !== json) {
-        window.fbSaveGuest(g);
+        // レベル1：ゲスト丸ごとではなく、実際に変わったフィールドだけを送る
+        const diff = computeGuestFieldDiff(g, _lastSavedGuestFields[g.id]);
+        if (Object.keys(diff).length > 0) window.fbUpdateGuestFields(g.id, diff);
         _lastSavedGuestJson[g.id] = json;
+        _lastSavedGuestFields[g.id] = JSON.parse(JSON.stringify(g));
         window._recentLocalEditExpiry[g.id] = Date.now() + 8000;
       }
     });
@@ -3768,7 +3810,7 @@ function saveToStorage() {
   // その状態で保存すると、意図せず他端末の変更を古いデータで上書きしてしまう事故になるため、
   // 保存を中断し、画面を更新するよう促す
   const lastReceived = window._lastFbGuestsReceivedAt || 0;
-  if (window.fbSaveGuest && Date.now() - lastReceived > 15000) {
+  if (window.fbUpdateGuestFields && Date.now() - lastReceived > 15000) {
     showToast('しばらく通信が途切れていたようです。画面を更新してからもう一度お試しください');
     return;
   }
@@ -3776,15 +3818,18 @@ function saveToStorage() {
   guests = guests.filter(g => g.name || g.tanto || g.tableNum);
   repackRowNums();
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
-  // Firebase: 各ゲストを個別のパスに書き込む（全体を丸ごと上書きしないので、他端末の変更と衝突しにくい）。
-  // 前回保存時から内容が変わっていないゲストは書き込まない（他端末の削除操作を誤って上書きしないため）
-  if (window.fbSaveGuest) {
+  // Firebase: 各ゲストについて、実際に変わったフィールドだけをピンポイントで更新する（レベル1対応）。
+  // ゲストを丸ごと上書きしないので、手元のデータの一部が古くても、他端末が触った「別の項目」まで
+  // 巻き込んで上書きしてしまう事故を防げる。前回保存時から内容が変わっていないゲストは何もしない
+  if (window.fbUpdateGuestFields) {
     if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
     guests.forEach(g => {
       const json = JSON.stringify(g);
       if (_lastSavedGuestJson[g.id] !== json) {
-        window.fbSaveGuest(g);
+        const diff = computeGuestFieldDiff(g, _lastSavedGuestFields[g.id]);
+        if (Object.keys(diff).length > 0) window.fbUpdateGuestFields(g.id, diff);
         _lastSavedGuestJson[g.id] = json;
+        _lastSavedGuestFields[g.id] = JSON.parse(JSON.stringify(g));
         // このゲストは今まさにローカルで変更して送信した直後なので、しばらくの間は
         // サーバーから届く内容と食い違っても（書き込み順序のズレによる古いデータの可能性が高いため）
         // ローカルの内容を優先する
@@ -3799,6 +3844,7 @@ function saveToStorage() {
       if (g && g.id != null && !currentIds.has(g.id)) {
         window.fbRemoveGuest(g.id);
         delete _lastSavedGuestJson[g.id];
+        delete _lastSavedGuestFields[g.id];
       }
     });
   }
