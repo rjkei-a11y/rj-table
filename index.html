@@ -587,6 +587,13 @@ function doLogin() {
 
 // 卓一覧タブをキャストに見せるかどうかを、現在の公開設定に合わせて反映する
 // （内勤が締日などに一時的にOFFにできる。デフォルトは公開）
+// キャストロールで、かつ卓一覧が非公開設定の時はtrue（この時、備考欄・予算欄を全タブでマスクする）
+// 内勤ロールは常にfalse（常に閲覧可能）
+function shouldMaskSensitiveFields() {
+  if (localStorage.getItem('rj_role') !== 'host') return false;
+  return window._fbTableListVisible === false;
+}
+
 function applyTableListVisibility() {
   if (localStorage.getItem('rj_role') !== 'host') return; // 内勤には常に表示するので対象外
   const visible = window._fbTableListVisible !== false;
@@ -2305,7 +2312,8 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const finalBoxBg = isLeaveSoon ? '#ffd6e0' : boxBg;
   const finalBoxText = isLeaveSoon ? '#8b2f4a' : boxText;
   // 予算が具体的な数字で書かれている時だけ、右上の空きスペースに赤文字のコンパクト表記（例：5万）で表示する
-  const budgetCompact = (info && !info.isFirst) ? formatBudgetCompact(info.budget) : null;
+  // 卓一覧が非公開設定の間は、キャストロールに対して予算欄も一緒に隠す（内勤は常に見える）
+  const budgetCompact = (info && !info.isFirst && !shouldMaskSensitiveFields()) ? formatBudgetCompact(info.budget) : null;
   const budgetBadge = budgetCompact
     ? `<div style="position:absolute;top:2px;right:4px;font-size:9px;font-weight:700;color:#ff3b30;line-height:1;">${budgetCompact}</div>`
     : '';
@@ -2452,9 +2460,9 @@ function openTableDetailModal(tableKey, guestId) {
       ['お客様名', formatGuestDisplayName(guest.name)],
       ['来店時間', guest.arrive],
       ['退店時間', guest.leave],
-      ['予算', guest.budget],
+      // 卓一覧が非公開設定の間は、キャストロールに対して予算・備考も一緒に隠す（内勤は常に見える）
+      ...(shouldMaskSensitiveFields() ? [] : [['予算', guest.budget], ['備考', guest.note]]),
       ['ヘルプ', normalizeStaffNamesInText(guest.help)],
-      ['備考', guest.note],
       ['📢 共有事項', guest.shareNote],
       ['アイバン', guest.aiban],
       ['場内指名', baanaiName],
@@ -3231,7 +3239,8 @@ function renderView() {
 }
 
 function viewRow(g) {
-  const noteStr = [g.help ? 'H: ' + normalizeStaffNamesInText(g.help) : '', g.note || ''].filter(Boolean).join(' ／ ');
+  // 卓一覧が非公開設定の間は、キャストロールに対して備考も一緒に隠す（ヘルプ指名は対象外、内勤は常に見える）
+  const noteStr = [g.help ? 'H: ' + normalizeStaffNamesInText(g.help) : '', (shouldMaskSensitiveFields() ? '' : (g.note || ''))].filter(Boolean).join(' ／ ');
   const specialIcons = (g.specials || []).map(k => {
     const s = SPECIALS.find(x => x.key === k);
     return s ? `<span style="font-size:15px;" title="${s.label}">${s.icon}</span>` : '';
@@ -3262,7 +3271,7 @@ function viewRow(g) {
             退店
           </button>
           ${g.leave && parseTimeText(g.leave) ? `<span style="font-size:12px;color:#e57373;font-weight:700;">⏰${g.leave}</span>` : ''}
-          ${g.budget ? `<span style="font-size:11px;color:var(--text-dim);">${g.budget}</span>` : ''}
+          ${(!shouldMaskSensitiveFields() && g.budget) ? `<span style="font-size:11px;color:var(--text-dim);">${g.budget}</span>` : ''}
         </div>
         ${noteStr ? `<div class="view-meta" style="color:#e74c3c;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;" onclick="event.stopPropagation();openNoteDetailModal(${g.id})">${noteStr}</div>` : ''}
       </div>
@@ -3280,7 +3289,8 @@ function openNoteDetailModal(id) {
     modal.id = 'noteDetailModal';
     document.body.appendChild(modal);
   }
-  const rows = [['ヘルプ', g.help], ['備考', g.note], ['アイバン', g.aiban]].filter(([,v]) => v);
+  // 卓一覧が非公開設定の間は、キャストロールに対して備考も一緒に隠す（ヘルプ指名は対象外、内勤は常に見える）
+  const rows = [['ヘルプ', g.help], ...(shouldMaskSensitiveFields() ? [] : [['備考', g.note]]), ['アイバン', g.aiban]].filter(([,v]) => v);
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;">
       <div class="modal-header">
