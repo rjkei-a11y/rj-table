@@ -1421,12 +1421,12 @@ function toHalfWidthDigits(text) {
   return text.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
 }
 
-// 卓番欄向け：全角の英字・数字（Ａ〜Ｚ、ａ〜ｚ、０〜９）を半角に統一する。
-// 全角のまま保存されると、卓状況・全体タブ側の卓番リストと文字として一致せず、
+// 卓番欄向け：全角の英字・数字（Ａ〜Ｚ、ａ〜ｚ、０〜９）を半角に統一し、あわせて英字は大文字に統一する。
+// 全角や小文字のまま保存されると、卓状況・全体タブ側の卓番リストと文字として一致せず、
 // 来店済みなのに表示されない不具合の原因になるため、入力された時点で正規化しておく
 function toHalfWidthAlnum(text) {
   if (!text) return text;
-  return text.replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  return text.replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).toUpperCase();
 }
 
 // 来店時間・退店時間向け：全角数字に加え、全角コロンも半角に統一する
