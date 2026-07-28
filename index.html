@@ -177,6 +177,10 @@
       });
     }
     window._fbGuests = receivedGuests;
+    // Firebaseから受信した最新データを、必ずlocalStorage（次回リロード時の初期表示に使われるキャッシュ）
+    // にも書き戻しておく。これを怠ると、リロード直後にlocalStorageの古いキャッシュが一瞬復元され、
+    // その隙にユーザーが操作すると、古いデータをサーバーへ書き戻してしまう事故につながるため
+    try { localStorage.setItem('tableManager_guests', JSON.stringify(receivedGuests)); } catch(e) {}
     // Firebaseから受信した内容を「直近で書き込んだ内容」の基準にも反映しておく。
     // こうしないと、一度もローカルで編集していないゲストまで「前回保存時と違う」と誤判定され、
     // 次の保存のたびに（他端末の削除などと衝突しうる）不要な再送信が発生してしまう
@@ -3759,6 +3763,15 @@ function saveGuestsDiffOnly() {
 }
 
 function saveToStorage() {
+  // Firebaseから最後にデータを受信したのが一定時間より前の場合、開きっぱなしで長時間放置されていた
+  // タブ・ウィンドウの可能性が高く、手元のguestsは他端末の最新の変更を反映できていないおそれがある。
+  // その状態で保存すると、意図せず他端末の変更を古いデータで上書きしてしまう事故になるため、
+  // 保存を中断し、画面を更新するよう促す
+  const lastReceived = window._lastFbGuestsReceivedAt || 0;
+  if (window.fbSaveGuest && Date.now() - lastReceived > 15000) {
+    showToast('しばらく通信が途切れていたようです。画面を更新してからもう一度お試しください');
+    return;
+  }
   // 保存前に空行を除去
   guests = guests.filter(g => g.name || g.tanto || g.tableNum);
   repackRowNums();
