@@ -8,7 +8,7 @@
 <!-- Firebase SDK（有効） -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, update, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCdOu7waepEH5WXQkvFKLLFRah-FODcOUI",
@@ -39,6 +39,14 @@
   window.fbSaveGuest = function(guest) {
     if (!guest || guest.id == null) return;
     set(ref(db, 'guests/g' + guest.id), guest).catch(e => console.error('FB save guest error:', e));
+  };
+  // 行番号(rowNum)だけをピンポイントで更新する（行番号の自動詰め直し専用）。
+  // 詰め直しはユーザー操作を伴わずレンダリングのたびに自動発火しうる処理のため、
+  // ゲスト全体を書き込むと、手元のデータの一部が古い場合に他の項目（卓番・来店フラグ等）
+  // まで巻き込んで古い内容で上書きしてしまう恐れがある。rowNumだけに絞ることでその被害を防ぐ
+  window.fbUpdateGuestRowNum = function(id, rowNum) {
+    if (id == null) return;
+    update(ref(db, 'guests/g' + id), { rowNum }).catch(e => console.error('FB update rowNum error:', e));
   };
   // Firebaseからゲスト1件を削除
   window.fbRemoveGuest = function(id) {
@@ -1704,18 +1712,22 @@ function renderTables() {
   const MAX_ROWS = 30;
 
   // 表示前に行番号を詰め直す（他端末から隙間のあるデータを受信した場合も自動修復）
-  const beforeRepack = JSON.stringify(guests.map(g => g.rowNum));
+  const beforeRepackMap = {};
+  guests.forEach(g => { beforeRepackMap[g.id] = g.rowNum; });
   repackRowNums();
-  const afterRepack = JSON.stringify(guests.map(g => g.rowNum));
-  if (beforeRepack !== afterRepack) {
-    // 詰め直しで変化があった場合のみ保存し直し、他端末にも修復結果を反映する。
-    // ここで全件を無条件に書き戻すと、閲覧しているだけの端末が持つ古いスナップショットで
-    // 他端末の直近の変更を上書きしてしまう事故になるため、必ず差分保存にする。
-    // また、この経路はユーザー操作を伴わずレンダリングのたびに自動発火しうるため、
-    // saveToStorage()の「ローカルに無いものはサーバーからも消す」処理は絶対に実行してはいけない
-    // （閲覧端末がまだ受信していない、他端末が今しがた作った新しいデータを誤って消してしまう恐れがあるため）。
-    // そのため保存専用の軽量版を使う
-    saveGuestsDiffOnly();
+  // 詰め直しでrowNumが変わったゲストだけ、rowNumフィールドだけをピンポイントでサーバーに反映する。
+  // この経路はユーザー操作を伴わずレンダリングのたびに自動発火しうるため、ゲストのデータを丸ごと
+  // 送ってしまうと、手元のデータの一部（卓番・来店フラグ等）が他端末の変更をまだ反映できていない場合に、
+  // それらまで巻き込んで古い内容で上書きしてしまう恐れがある。rowNumだけに絞ることでその被害を防ぐ
+  let repackChanged = false;
+  guests.forEach(g => {
+    if (beforeRepackMap[g.id] !== g.rowNum) {
+      repackChanged = true;
+      if (window.fbUpdateGuestRowNum) window.fbUpdateGuestRowNum(g.id, g.rowNum);
+    }
+  });
+  if (repackChanged) {
+    try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
   }
 
   // No.ごとにゲストをマップ（rowNum = 行番号）
@@ -3701,24 +3713,6 @@ function updateTableStats() {
 // 　古いデータが丸ごと書き戻されてしまい、削除したはずのお客様が復活してしまう問題への対策）
 let _lastSavedGuestJson = {};
 window._lastSavedGuestJson = _lastSavedGuestJson; // Firebaseモジュール側（onValue受信時）からも同期できるようにする
-
-// saveToStorageの「保存」部分だけを行う軽量版（「ローカルに無いものはサーバーからも消す」処理は含まない）。
-// renderTables()の行番号自動修復など、ユーザー操作を伴わずレンダリングのたびに自動発火しうる経路専用。
-// そうした経路でsaveToStorageの削除ロジックまで実行すると、閲覧しているだけの端末が持つ
-// 古いスナップショットで、他端末が今しがた作ったばかりのデータを誤って削除してしまう恐れがあるため、
-// そのリスクが無い「保存」だけに絞っている
-function saveGuestsDiffOnly() {
-  try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
-  if (window.fbSaveGuest) {
-    guests.forEach(g => {
-      const json = JSON.stringify(g);
-      if (_lastSavedGuestJson[g.id] !== json) {
-        window.fbSaveGuest(g);
-        _lastSavedGuestJson[g.id] = json;
-      }
-    });
-  }
-}
 
 function saveToStorage() {
   // 保存前に空行を除去
