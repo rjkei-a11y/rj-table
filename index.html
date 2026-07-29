@@ -464,6 +464,8 @@
     <button id="printTablesBtn" onclick="printTablesList()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">🖨 印刷</button>
     <button id="manageModalBtn" onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
   </div>
+  <!-- 印刷時だけ表示される統計情報ヘッダー（画面表示中は非表示。中身はupdateTableStats()が随時最新化する） -->
+  <div id="printStatsHeader" style="display:none;"></div>
   <div id="assignedTables"></div>
   <div class="unassigned-section" id="unassignedSection" style="display:none;">
     <div class="section-label" style="margin-top:16px;">▼ 卓未割り当て</div>
@@ -815,6 +817,7 @@ function printTablesList() {
   if (!document.getElementById('panel-tables').classList.contains('active')) {
     switchTab('tables');
   }
+  updateTableStats(); // 印刷用ヘッダーの統計情報を、印刷する瞬間の最新の状態に確実に合わせる
   setTimeout(() => window.print(), 100);
 }
 
@@ -3742,6 +3745,9 @@ function updateTableStats() {
     fixedEl.style.display = 'block';
     updateFixedTop(); setTimeout(updateFixedTop, 50);
   }
+  // 印刷専用ヘッダーにも同じ内容を反映（画面には出ないが、印刷時にCSS側で表示させる）
+  const printStatsEl = document.getElementById('printStatsHeader');
+  if (printStatsEl) printStatsEl.innerHTML = statsHtml;
 }
 
 // ===== STORAGE =====
