@@ -151,6 +151,16 @@
     return JSON.stringify((list || []).map(normalizeGuestForCompare).slice().sort((a,b) => (a.id||0)-(b.id||0)));
   }
 
+  // 「今、実際にFirebaseサーバーへ接続できているか」を正確に判定する特殊パス。
+  // これはデータの変化とは無関係に、接続/切断が起きるたびに発火するので、
+  // 「しばらく誰も何も変更していないだけ」を「通信が切れている」と誤判定することがない
+  // （データの変化を見て判定する方式だと、予定報告の入力中など、他に誰も操作していない時間が
+  // 続いただけで「通信切れ」と誤検知してしまう問題があったため、この方式に切り替えた）
+  window._fbConnected = true; // 判定できるまでの間は「接続している」扱いにしておく（誤ブロックを避けるため）
+  onValue(ref(db, '.info/connected'), (snap) => {
+    window._fbConnected = snap.val() === true;
+  });
+
   // Firebaseからゲストをリアルタイム受信
   onValue(guestsRef, (snapshot) => {
     // このデータを実際に受信した時刻を記録しておく。
@@ -1680,6 +1690,7 @@ function importTextParsed(parsed) {
   const usedRows = new Set(guests.map(g => Number(g.rowNum)).filter(Boolean));
   let rc = 1;
   let skipped = 0;
+  const addedIds = []; // 保存に失敗した場合、今回追加した分だけを差し戻すために記録しておく
   parsed.forEach(g => {
     const isDuplicate = guests.some(existing =>
       existing.tanto && existing.name && g.tanto && g.name &&
@@ -1694,8 +1705,14 @@ function importTextParsed(parsed) {
     syncNewSpecialFromText(newGuest);
     syncEventSpecialFromTanto(newGuest);
     guests.push(newGuest);
+    addedIds.push(newGuest.id);
   });
-  saveToStorage();
+  const saveOk = saveToStorage();
+  if (!saveOk) {
+    // saveToStorage側で「通信が途切れています」の通知は既に出しているので、ここでは今回追加した分だけを取り消す
+    guests = guests.filter(g => !addedIds.includes(g.id));
+    return;
+  }
   updateStats();
   renderStaffStatus();
   const msg = skipped > 0 ? `取り込みました！（重複${skipped}件をスキップ）` : `${parsed.length - skipped}件を取り込みました！`;
@@ -3787,12 +3804,11 @@ function computeGuestFieldDiff(guest, lastFields) {
 // 古いスナップショットで、他端末が今しがた作ったばかりのデータを誤って削除してしまう恐れがあるため、
 // そのリスクが無い「保存」だけに絞っている
 function saveGuestsDiffOnly() {
-  // Firebaseから最後にデータを受信したのが一定時間より前（スマホがスリープ・バックグラウンドから
-  // 復帰した直後など）の場合、手元のguestsは他端末の最新の変更を反映できていない可能性が高い。
+  // 実際にFirebaseへ接続できていない（スマホがスリープ・バックグラウンドから復帰した直後、
+  // 通信が切れている、等）場合、手元のguestsは他端末の最新の変更を反映できていない可能性が高い。
   // その状態で自動保存してしまうと、古いデータで他端末の変更を丸ごと上書きする事故になるため、
-  // ここでは保存自体を見送り、次に新しいデータを受信するのを待つ
-  const lastReceived = window._lastFbGuestsReceivedAt || 0;
-  if (Date.now() - lastReceived > 15000) return;
+  // ここでは保存自体を見送り、再接続してから新しいデータを受信するのを待つ
+  if (window._fbConnected === false) return;
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
   if (window.fbUpdateGuestFields) {
     if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
@@ -3811,14 +3827,13 @@ function saveGuestsDiffOnly() {
 }
 
 function saveToStorage() {
-  // Firebaseから最後にデータを受信したのが一定時間より前の場合、開きっぱなしで長時間放置されていた
-  // タブ・ウィンドウの可能性が高く、手元のguestsは他端末の最新の変更を反映できていないおそれがある。
+  // 実際にFirebaseへ接続できていない（開きっぱなしのタブで通信が切れている、等）場合、
+  // 手元のguestsは他端末の最新の変更を反映できていないおそれがある。
   // その状態で保存すると、意図せず他端末の変更を古いデータで上書きしてしまう事故になるため、
   // 保存を中断し、画面を更新するよう促す
-  const lastReceived = window._lastFbGuestsReceivedAt || 0;
-  if (window.fbUpdateGuestFields && Date.now() - lastReceived > 15000) {
+  if (window._fbConnected === false) {
     showToast('しばらく通信が途切れていたようです。画面を更新してからもう一度お試しください');
-    return;
+    return false;
   }
   // 保存前に空行を除去
   guests = guests.filter(g => g.name || g.tanto || g.tableNum);
@@ -3854,6 +3869,7 @@ function saveToStorage() {
       }
     });
   }
+  return true;
 }
 function loadFromStorage() {
   try {
