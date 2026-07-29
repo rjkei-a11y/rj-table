@@ -592,6 +592,11 @@ function applyTableListVisibility() {
   if (!visible && panels[1] && panels[1].classList.contains('active')) {
     switchTab('input');
   }
+  // 公開設定の切り替え自体は卓一覧タブの表示/非表示しか制御しないため、既に画面に描画済みの
+  // 卓状況欄BOX（予定報告タブ）・全体タブの予算・備考表示が、切り替わる前の古い状態のまま
+  // 残ってしまう。切り替わった瞬間に再描画して、マスクの有無を確実に反映させる
+  if (typeof renderFloorStatus === 'function') renderFloorStatus();
+  if (typeof renderView === 'function' && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
 }
 
 function applyRole(role) {
