@@ -748,6 +748,18 @@
     #panel-tables > div:first-child { display: none !important; } /* 印刷/一覧管理ボタン行 */
     .unassigned-section { display: none !important; }
 
+    /* 印刷時だけ、統計情報をページ上部のヘッダーとして表示する */
+    #printStatsHeader {
+      display: block !important;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1.5px solid #000;
+      color: #000 !important;
+    }
+    #printStatsHeader * {
+      color: #000 !important;
+    }
+
     #assignedTables > div { overflow-x: visible !important; }
     .paper-table {
       width: 100%;
