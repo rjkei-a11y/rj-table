@@ -8,7 +8,7 @@
 <!-- Firebase SDK（有効） -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, update, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCdOu7waepEH5WXQkvFKLLFRah-FODcOUI",
@@ -39,14 +39,6 @@
   window.fbSaveGuest = function(guest) {
     if (!guest || guest.id == null) return;
     set(ref(db, 'guests/g' + guest.id), guest).catch(e => console.error('FB save guest error:', e));
-  };
-  // Firebaseのゲスト1件のうち、変更のあったフィールドだけを更新する（レベル1対応）。
-  // set()と違い、指定していないフィールドには一切触れないので、手元のデータの一部が古くても
-  // 他端末が別のタイミングで更新した「触っていない項目」まで巻き込んで上書きする事故を防げる。
-  // fieldsが空、またはguestが新規（idはあるが他に何も無い状態は通常あり得ないので考慮不要）の場合は何もしない
-  window.fbUpdateGuestFields = function(id, fields) {
-    if (id == null || !fields || Object.keys(fields).length === 0) return;
-    update(ref(db, 'guests/g' + id), fields).catch(e => console.error('FB update guest fields error:', e));
   };
   // Firebaseからゲスト1件を削除
   window.fbRemoveGuest = function(id) {
@@ -151,16 +143,6 @@
     return JSON.stringify((list || []).map(normalizeGuestForCompare).slice().sort((a,b) => (a.id||0)-(b.id||0)));
   }
 
-  // 「今、実際にFirebaseサーバーへ接続できているか」を正確に判定する特殊パス。
-  // これはデータの変化とは無関係に、接続/切断が起きるたびに発火するので、
-  // 「しばらく誰も何も変更していないだけ」を「通信が切れている」と誤判定することがない
-  // （データの変化を見て判定する方式だと、予定報告の入力中など、他に誰も操作していない時間が
-  // 続いただけで「通信切れ」と誤検知してしまう問題があったため、この方式に切り替えた）
-  window._fbConnected = true; // 判定できるまでの間は「接続している」扱いにしておく（誤ブロックを避けるため）
-  onValue(ref(db, '.info/connected'), (snap) => {
-    window._fbConnected = snap.val() === true;
-  });
-
   // Firebaseからゲストをリアルタイム受信
   onValue(guestsRef, (snapshot) => {
     // このデータを実際に受信した時刻を記録しておく。
@@ -207,18 +189,11 @@
       window._fbGuests.forEach(g => {
         if (g && g.id != null) {
           window._lastSavedGuestJson[g.id] = JSON.stringify(g);
-          // レベル1対応：フィールド単位の差分計算の基準（_lastSavedGuestFields）も、
-          // Firebaseから受信するたびに最新化しておく（そうしないと、他端末が変更したフィールドを
-          // 「まだ自分は変更を送っていないフィールド」と誤認識し、次の保存で無関係に上書きしてしまう）
-          if (window._lastSavedGuestFields) window._lastSavedGuestFields[g.id] = JSON.parse(JSON.stringify(g));
           receivedIds.add(g.id);
         }
       });
       Object.keys(window._lastSavedGuestJson).forEach(idStr => {
-        if (!receivedIds.has(Number(idStr)) && !receivedIds.has(idStr)) {
-          delete window._lastSavedGuestJson[idStr];
-          if (window._lastSavedGuestFields) delete window._lastSavedGuestFields[idStr];
-        }
+        if (!receivedIds.has(Number(idStr)) && !receivedIds.has(idStr)) delete window._lastSavedGuestJson[idStr];
       });
     }
     if (typeof guests !== 'undefined' && typeof renderTables === 'function') {
@@ -474,8 +449,6 @@
     <button id="printTablesBtn" onclick="printTablesList()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">🖨 印刷</button>
     <button id="manageModalBtn" onclick="openManageModal()" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:11px;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">📝 一覧管理</button>
   </div>
-  <!-- 印刷時だけ表示される統計情報ヘッダー（画面表示中は非表示。中身はupdateTableStats()が随時最新化する） -->
-  <div id="printStatsHeader" style="display:none;"></div>
   <div id="assignedTables"></div>
   <div class="unassigned-section" id="unassignedSection" style="display:none;">
     <div class="section-label" style="margin-top:16px;">▼ 卓未割り当て</div>
@@ -827,7 +800,6 @@ function printTablesList() {
   if (!document.getElementById('panel-tables').classList.contains('active')) {
     switchTab('tables');
   }
-  updateTableStats(); // 印刷用ヘッダーの統計情報を、印刷する瞬間の最新の状態に確実に合わせる
   setTimeout(() => window.print(), 100);
 }
 
@@ -1690,7 +1662,6 @@ function importTextParsed(parsed) {
   const usedRows = new Set(guests.map(g => Number(g.rowNum)).filter(Boolean));
   let rc = 1;
   let skipped = 0;
-  const addedIds = []; // 保存に失敗した場合、今回追加した分だけを差し戻すために記録しておく
   parsed.forEach(g => {
     const isDuplicate = guests.some(existing =>
       existing.tanto && existing.name && g.tanto && g.name &&
@@ -1705,14 +1676,8 @@ function importTextParsed(parsed) {
     syncNewSpecialFromText(newGuest);
     syncEventSpecialFromTanto(newGuest);
     guests.push(newGuest);
-    addedIds.push(newGuest.id);
   });
-  const saveOk = saveToStorage();
-  if (!saveOk) {
-    // saveToStorage側で「通信が途切れています」の通知は既に出しているので、ここでは今回追加した分だけを取り消す
-    guests = guests.filter(g => !addedIds.includes(g.id));
-    return;
-  }
+  saveToStorage();
   updateStats();
   renderStaffStatus();
   const msg = skipped > 0 ? `取り込みました！（重複${skipped}件をスキップ）` : `${parsed.length - skipped}件を取り込みました！`;
@@ -3762,9 +3727,6 @@ function updateTableStats() {
     fixedEl.style.display = 'block';
     updateFixedTop(); setTimeout(updateFixedTop, 50);
   }
-  // 印刷専用ヘッダーにも同じ内容を反映（画面には出ないが、印刷時にCSS側で表示させる）
-  const printStatsEl = document.getElementById('printStatsHeader');
-  if (printStatsEl) printStatsEl.innerHTML = statsHtml;
 }
 
 // ===== STORAGE =====
@@ -3774,52 +3736,26 @@ function updateTableStats() {
 let _lastSavedGuestJson = {};
 window._lastSavedGuestJson = _lastSavedGuestJson; // Firebaseモジュール側（onValue受信時）からも同期できるようにする
 
-// レベル1対応：直近でFirebaseに書き込んだ（または受信した）「フィールドごとの値」を覚えておく。
-// { guestId: { field: value, ... } } という形。これと現在のguestを見比べて、
-// 実際に値が変わったフィールドだけを特定し、そこだけをピンポイントで更新する（丸ごと上書きしない）ために使う
-let _lastSavedGuestFields = {};
-window._lastSavedGuestFields = _lastSavedGuestFields;
-
-// ゲスト1件について、前回保存/受信した内容(lastFields)と現在の内容(guest)を比較し、
-// 変わったフィールドだけを { フィールド名: 新しい値 } の形で返す。削除されたフィールドはnullにする
-// （Firebaseのupdate()は値にnullを指定するとそのキー自体を削除してくれる仕様のため）。
-// 変化が無ければ空オブジェクトを返す
-function computeGuestFieldDiff(guest, lastFields) {
-  const diff = {};
-  const prev = lastFields || {};
-  Object.keys(guest).forEach(key => {
-    if (JSON.stringify(guest[key]) !== JSON.stringify(prev[key])) {
-      diff[key] = guest[key] === undefined ? null : guest[key];
-    }
-  });
-  Object.keys(prev).forEach(key => {
-    if (!(key in guest)) diff[key] = null;
-  });
-  return diff;
-}
-
 // saveToStorageの「保存」部分だけを行う軽量版（「ローカルに無いものはサーバーからも消す」処理は含まない）。
 // renderTables()の行番号自動修復など、ユーザー操作を伴わずレンダリングのたびに自動発火しうる経路専用。
 // そうした経路でsaveToStorageの削除ロジックまで実行すると、閲覧しているだけの端末が持つ
 // 古いスナップショットで、他端末が今しがた作ったばかりのデータを誤って削除してしまう恐れがあるため、
 // そのリスクが無い「保存」だけに絞っている
 function saveGuestsDiffOnly() {
-  // 実際にFirebaseへ接続できていない（スマホがスリープ・バックグラウンドから復帰した直後、
-  // 通信が切れている、等）場合、手元のguestsは他端末の最新の変更を反映できていない可能性が高い。
+  // Firebaseから最後にデータを受信したのが一定時間より前（スマホがスリープ・バックグラウンドから
+  // 復帰した直後など）の場合、手元のguestsは他端末の最新の変更を反映できていない可能性が高い。
   // その状態で自動保存してしまうと、古いデータで他端末の変更を丸ごと上書きする事故になるため、
-  // ここでは保存自体を見送り、再接続してから新しいデータを受信するのを待つ
-  if (window._fbConnected === false) return;
+  // ここでは保存自体を見送り、次に新しいデータを受信するのを待つ
+  const lastReceived = window._lastFbGuestsReceivedAt || 0;
+  if (Date.now() - lastReceived > 15000) return;
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
-  if (window.fbUpdateGuestFields) {
+  if (window.fbSaveGuest) {
     if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
     guests.forEach(g => {
       const json = JSON.stringify(g);
       if (_lastSavedGuestJson[g.id] !== json) {
-        // レベル1：ゲスト丸ごとではなく、実際に変わったフィールドだけを送る
-        const diff = computeGuestFieldDiff(g, _lastSavedGuestFields[g.id]);
-        if (Object.keys(diff).length > 0) window.fbUpdateGuestFields(g.id, diff);
+        window.fbSaveGuest(g);
         _lastSavedGuestJson[g.id] = json;
-        _lastSavedGuestFields[g.id] = JSON.parse(JSON.stringify(g));
         window._recentLocalEditExpiry[g.id] = Date.now() + 8000;
       }
     });
@@ -3827,30 +3763,28 @@ function saveGuestsDiffOnly() {
 }
 
 function saveToStorage() {
-  // 実際にFirebaseへ接続できていない（開きっぱなしのタブで通信が切れている、等）場合、
-  // 手元のguestsは他端末の最新の変更を反映できていないおそれがある。
+  // Firebaseから最後にデータを受信したのが一定時間より前の場合、開きっぱなしで長時間放置されていた
+  // タブ・ウィンドウの可能性が高く、手元のguestsは他端末の最新の変更を反映できていないおそれがある。
   // その状態で保存すると、意図せず他端末の変更を古いデータで上書きしてしまう事故になるため、
   // 保存を中断し、画面を更新するよう促す
-  if (window._fbConnected === false) {
+  const lastReceived = window._lastFbGuestsReceivedAt || 0;
+  if (window.fbSaveGuest && Date.now() - lastReceived > 15000) {
     showToast('しばらく通信が途切れていたようです。画面を更新してからもう一度お試しください');
-    return false;
+    return;
   }
   // 保存前に空行を除去
   guests = guests.filter(g => g.name || g.tanto || g.tableNum);
   repackRowNums();
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
-  // Firebase: 各ゲストについて、実際に変わったフィールドだけをピンポイントで更新する（レベル1対応）。
-  // ゲストを丸ごと上書きしないので、手元のデータの一部が古くても、他端末が触った「別の項目」まで
-  // 巻き込んで上書きしてしまう事故を防げる。前回保存時から内容が変わっていないゲストは何もしない
-  if (window.fbUpdateGuestFields) {
+  // Firebase: 各ゲストを個別のパスに書き込む（全体を丸ごと上書きしないので、他端末の変更と衝突しにくい）。
+  // 前回保存時から内容が変わっていないゲストは書き込まない（他端末の削除操作を誤って上書きしないため）
+  if (window.fbSaveGuest) {
     if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
     guests.forEach(g => {
       const json = JSON.stringify(g);
       if (_lastSavedGuestJson[g.id] !== json) {
-        const diff = computeGuestFieldDiff(g, _lastSavedGuestFields[g.id]);
-        if (Object.keys(diff).length > 0) window.fbUpdateGuestFields(g.id, diff);
+        window.fbSaveGuest(g);
         _lastSavedGuestJson[g.id] = json;
-        _lastSavedGuestFields[g.id] = JSON.parse(JSON.stringify(g));
         // このゲストは今まさにローカルで変更して送信した直後なので、しばらくの間は
         // サーバーから届く内容と食い違っても（書き込み順序のズレによる古いデータの可能性が高いため）
         // ローカルの内容を優先する
@@ -3865,11 +3799,9 @@ function saveToStorage() {
       if (g && g.id != null && !currentIds.has(g.id)) {
         window.fbRemoveGuest(g.id);
         delete _lastSavedGuestJson[g.id];
-        delete _lastSavedGuestFields[g.id];
       }
     });
   }
-  return true;
 }
 function loadFromStorage() {
   try {
