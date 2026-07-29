@@ -145,37 +145,8 @@
 
   // Firebaseからゲストをリアルタイム受信
   onValue(guestsRef, (snapshot) => {
-    // このデータを実際に受信した時刻を記録しておく。
-    // スマホがスリープ・バックグラウンドで長時間データを受信できていなかった端末が、
-    // 復帰した瞬間に古いローカルデータを書き戻してしまう事故を防ぐために使う（下記参照）
-    window._lastFbGuestsReceivedAt = Date.now();
     const data = snapshot.val();
     let receivedGuests = data === null ? [] : Object.values(data).filter(g => g && (g.name || g.tanto || g.tableNum));
-    // 削除直後は、Firebase側の書き込み順序のズレで「削除前の古いデータ」が一時的に返ってくることがある。
-    // 直近で削除したIDは、その削除が確実に反映されるまでの数秒間、受信データから除外して復活を防ぐ
-    if (window._recentlyDeletedGuestIds && window._recentlyDeletedGuestIds.size) {
-      receivedGuests = receivedGuests.filter(g => !window._recentlyDeletedGuestIds.has(g.id));
-    }
-    // 削除以外の編集についても同様に、直近ローカルで保存した内容と食い違うデータが届いた場合は
-    // （書き込み順序のズレによる古いデータの可能性が高いため）ローカルの内容を優先する。
-    // ※_lastSavedGuestJsonをこの後で受信データに同期させる処理より必ず先に行う必要がある
-    // （先に同期してしまうと、比較対象自体が届いたばかりの値に書き換わり、判定が効かなくなるため）
-    if (window._recentLocalEditExpiry && typeof guests !== 'undefined') {
-      const now = Date.now();
-      const localById = {};
-      guests.forEach(g => { if (g && g.id != null) localById[g.id] = g; });
-      receivedGuests = receivedGuests.map(g => {
-        if (!g || g.id == null) return g;
-        const expiry = window._recentLocalEditExpiry[g.id];
-        if (expiry && now < expiry) {
-          const expectedJson = window._lastSavedGuestJson ? window._lastSavedGuestJson[g.id] : null;
-          if (expectedJson && JSON.stringify(g) !== expectedJson && localById[g.id]) {
-            return localById[g.id];
-          }
-        }
-        return g;
-      });
-    }
     window._fbGuests = receivedGuests;
     // Firebaseから受信した最新データを、必ずlocalStorage（次回リロード時の初期表示に使われるキャッシュ）
     // にも書き戻しておく。これを怠ると、リロード直後にlocalStorageの古いキャッシュが一瞬復元され、
@@ -1662,6 +1633,7 @@ function importTextParsed(parsed) {
   const usedRows = new Set(guests.map(g => Number(g.rowNum)).filter(Boolean));
   let rc = 1;
   let skipped = 0;
+  const addedIds = []; // 保存に失敗した場合、今回追加した分だけを差し戻すために記録しておく
   parsed.forEach(g => {
     const isDuplicate = guests.some(existing =>
       existing.tanto && existing.name && g.tanto && g.name &&
@@ -1676,8 +1648,14 @@ function importTextParsed(parsed) {
     syncNewSpecialFromText(newGuest);
     syncEventSpecialFromTanto(newGuest);
     guests.push(newGuest);
+    addedIds.push(newGuest.id);
   });
-  saveToStorage();
+  const saveOk = saveToStorage();
+  if (!saveOk) {
+    // saveToStorage側で「通信が途切れています」の通知は既に出しているので、ここでは今回追加した分だけを取り消す
+    guests = guests.filter(g => !addedIds.includes(g.id));
+    return;
+  }
   updateStats();
   renderStaffStatus();
   const msg = skipped > 0 ? `取り込みました！（重複${skipped}件をスキップ）` : `${parsed.length - skipped}件を取り込みました！`;
@@ -3655,16 +3633,6 @@ function toggleBottle(id) {
   renderTables();
 }
 
-// 削除したゲストIDを一時的に記憶しておく（Firebaseの書き込み順序のズレで
-// 削除前の古いデータが一瞬返ってきても、ローカルで復活させないようにするため）
-function markGuestRecentlyDeleted(id) {
-  if (!window._recentlyDeletedGuestIds) window._recentlyDeletedGuestIds = new Set();
-  window._recentlyDeletedGuestIds.add(id);
-  setTimeout(() => {
-    if (window._recentlyDeletedGuestIds) window._recentlyDeletedGuestIds.delete(id);
-  }, 8000);
-}
-
 function deleteGuest(id) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const g = guests.find(x => x.id === id);
@@ -3673,7 +3641,6 @@ function deleteGuest(id) {
   const label = g.name || g.tanto || ('No.' + g.rowNum);
   guests = guests.filter(x => x.id !== id);
   repackRowNums();
-  markGuestRecentlyDeleted(id);
   saveToStorage();
   // 差分比較を待たず、削除対象のIDに対して直接Firebaseへ削除指示を送る（比較タイミングのズレで消えない事態を防ぐ）
   if (window.fbRemoveGuest) window.fbRemoveGuest(id);
@@ -3682,7 +3649,6 @@ function deleteGuest(id) {
   renderFloorStatus();
   showToast('削除しました');
   offerUndo(`「${label}」を削除しました`, () => {
-    if (window._recentlyDeletedGuestIds) window._recentlyDeletedGuestIds.delete(id);
     guests.push(backup);
     repackRowNums();
     saveToStorage();
@@ -3742,36 +3708,19 @@ window._lastSavedGuestJson = _lastSavedGuestJson; // Firebaseモジュール側�
 // 古いスナップショットで、他端末が今しがた作ったばかりのデータを誤って削除してしまう恐れがあるため、
 // そのリスクが無い「保存」だけに絞っている
 function saveGuestsDiffOnly() {
-  // Firebaseから最後にデータを受信したのが一定時間より前（スマホがスリープ・バックグラウンドから
-  // 復帰した直後など）の場合、手元のguestsは他端末の最新の変更を反映できていない可能性が高い。
-  // その状態で自動保存してしまうと、古いデータで他端末の変更を丸ごと上書きする事故になるため、
-  // ここでは保存自体を見送り、次に新しいデータを受信するのを待つ
-  const lastReceived = window._lastFbGuestsReceivedAt || 0;
-  if (Date.now() - lastReceived > 15000) return;
   try { localStorage.setItem('tableManager_guests', JSON.stringify(guests)); } catch(e) {}
   if (window.fbSaveGuest) {
-    if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
     guests.forEach(g => {
       const json = JSON.stringify(g);
       if (_lastSavedGuestJson[g.id] !== json) {
         window.fbSaveGuest(g);
         _lastSavedGuestJson[g.id] = json;
-        window._recentLocalEditExpiry[g.id] = Date.now() + 8000;
       }
     });
   }
 }
 
 function saveToStorage() {
-  // Firebaseから最後にデータを受信したのが一定時間より前の場合、開きっぱなしで長時間放置されていた
-  // タブ・ウィンドウの可能性が高く、手元のguestsは他端末の最新の変更を反映できていないおそれがある。
-  // その状態で保存すると、意図せず他端末の変更を古いデータで上書きしてしまう事故になるため、
-  // 保存を中断し、画面を更新するよう促す
-  const lastReceived = window._lastFbGuestsReceivedAt || 0;
-  if (window.fbSaveGuest && Date.now() - lastReceived > 15000) {
-    showToast('しばらく通信が途切れていたようです。画面を更新してからもう一度お試しください');
-    return;
-  }
   // 保存前に空行を除去
   guests = guests.filter(g => g.name || g.tanto || g.tableNum);
   repackRowNums();
@@ -3779,16 +3728,11 @@ function saveToStorage() {
   // Firebase: 各ゲストを個別のパスに書き込む（全体を丸ごと上書きしないので、他端末の変更と衝突しにくい）。
   // 前回保存時から内容が変わっていないゲストは書き込まない（他端末の削除操作を誤って上書きしないため）
   if (window.fbSaveGuest) {
-    if (!window._recentLocalEditExpiry) window._recentLocalEditExpiry = {};
     guests.forEach(g => {
       const json = JSON.stringify(g);
       if (_lastSavedGuestJson[g.id] !== json) {
         window.fbSaveGuest(g);
         _lastSavedGuestJson[g.id] = json;
-        // このゲストは今まさにローカルで変更して送信した直後なので、しばらくの間は
-        // サーバーから届く内容と食い違っても（書き込み順序のズレによる古いデータの可能性が高いため）
-        // ローカルの内容を優先する
-        window._recentLocalEditExpiry[g.id] = Date.now() + 8000;
       }
     });
   }
@@ -3802,6 +3746,7 @@ function saveToStorage() {
       }
     });
   }
+  return true;
 }
 function loadFromStorage() {
   try {
@@ -3997,7 +3942,6 @@ function doDeleteMyReservation(id) {
   const label = formatGuestDisplayName(g.name);
   guests = guests.filter(x => x.id !== id);
   repackRowNums();
-  markGuestRecentlyDeleted(id);
   saveToStorage();
   if (window.fbRemoveGuest) window.fbRemoveGuest(id);
   renderTables();
@@ -4006,7 +3950,6 @@ function doDeleteMyReservation(id) {
   openMyReportsModal();
   showToast('削除しました');
   offerUndo(`「${label}」を削除しました`, () => {
-    if (window._recentlyDeletedGuestIds) window._recentlyDeletedGuestIds.delete(id);
     guests.push(backup);
     repackRowNums();
     saveToStorage();
