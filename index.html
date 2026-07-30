@@ -582,6 +582,10 @@ function shouldMaskSensitiveFields() {
 }
 
 function applyTableListVisibility() {
+  // 公開設定を受信するたびに、内勤向けの公開/非公開ボタンの表示も正しい状態に更新する。
+  // これを怠ると、リロード直後などまだFirebaseから実際の値を受信する前は「未受信＝公開扱い」の
+  // 初期値のままボタンが表示されてしまい、実際は非公開なのにボタンだけ「公開中」に見えてしまう
+  if (typeof updateTableListVisibleBtn === 'function') updateTableListVisibleBtn();
   if (localStorage.getItem('rj_role') !== 'host') return; // 内勤には常に表示するので対象外
   const visible = window._fbTableListVisible !== false;
   const tabs = document.querySelectorAll('.tab');
