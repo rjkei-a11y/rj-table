@@ -417,7 +417,7 @@
     <div style="width:90px; flex-shrink:0;">
       <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid var(--accent-dim);">報告状況</div>
       <div id="staffStatusList" style="font-size:11px;"></div>
-      <button onclick="openStaffSettings()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:4px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
+      <button id="staffSettingsBtn" onclick="openStaffSettings()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:4px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
     </div>
   </div>
 
@@ -643,6 +643,9 @@ function applyRole(role) {
     // 報告状況の「元に戻す」は内勤（admin）のみ操作可能
     const clearStatusBtn = document.getElementById('clearStatusBtn');
     if (clearStatusBtn) clearStatusBtn.style.display = 'none';
+    // 在籍スタッフ登録（⚙ 編集）は内勤（admin）のみ操作可能
+    const staffSettingsBtn = document.getElementById('staffSettingsBtn');
+    if (staffSettingsBtn) staffSettingsBtn.style.display = 'none';
   }
   updateTableListVisibleBtn();
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
@@ -4096,6 +4099,8 @@ function saveAliases(staffName) {
 let _currentAliasStaff = null;
 
 function openAliasModal(staffName) {
+  // 呼び名の追加・編集は内勤（admin）のみ操作可能
+  if (localStorage.getItem('rj_role') !== 'admin') return;
   _currentAliasStaff = staffName;
   let modal = document.getElementById('aliasModal');
   if (!modal) {
@@ -5199,6 +5204,8 @@ function saveEdit(id) {
 }
 
 function openStaffSettings() {
+  // ボタン自体は既に非表示にしているが、念のため関数側でも内勤（admin）以外を弾いておく
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   let modal = document.getElementById('staffModal');
   if (!modal) {
     modal = document.createElement('div');
