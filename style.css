@@ -73,17 +73,24 @@
   .header-stats {
     font-size: 12px;
     color: var(--text-dim);
-    display: flex;
+    display: grid;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 4px 6px;
     justify-content: flex-end;
     flex: 1 1 auto;
     min-width: 0;
+    overflow-x: auto;
   }
   .header-stats span {
     color: var(--accent);
     font-weight: 700;
+  }
+  .header-stats button {
+    font-size: 10px !important;
+    padding: 4px 7px !important;
   }
 
   /* ===== TABS ===== */
