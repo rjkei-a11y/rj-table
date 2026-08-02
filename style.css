@@ -54,8 +54,8 @@
   }
   .header-title-block {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
+    flex-direction: column;
+    gap: 2px;
     flex-shrink: 0;
   }
   .header-title {
