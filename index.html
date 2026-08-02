@@ -391,17 +391,17 @@
 </div>
 
 <header>
-  <div>
-    <div class="header-title">卓 管 理</div>
-    <div class="header-date" id="headerDate"></div>
-  </div>
-  <div class="header-stats">
+  <div class="header-top-row">
+    <span class="header-title">卓管理</span>
+    <span class="header-date" id="headerDate"></span>
     <span id="statTotal" style="display:none"></span>
     <span id="statArrived" style="display:none"></span>
-    <button id="tableListVisibleBtn" onclick="toggleTableListVisible()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">👁 卓一覧を公開中</button>
     <button id="summaryBtn" onclick="openSummaryModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">📊 集計</button>
-    <button id="mainPassBtn" onclick="openMainPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">🔐 パスワード管理</button>
     <button id="undoResetBtn" onclick="confirmUndoReset()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">↩ 復元</button>
+  </div>
+  <div class="header-stats">
+    <button id="mainPassBtn" onclick="openMainPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">🔐 パスワード管理</button>
+    <button id="tableListVisibleBtn" onclick="toggleTableListVisible()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">👁 卓一覧を公開中</button>
     <button id="resetReportsBtn" onclick="confirmResetReports()" style="background:none;border:1px solid #c0392b;border-radius:4px;color:#c0392b;font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">🔄 本日分リセット</button>
   </div>
 </header>
@@ -4985,7 +4985,21 @@ function saveTempAdminAccess() {
   showToast('一時パスワードを設定しました');
 }
 
+// 「設定を削除」は誤操作防止のため、確認ダイアログを経由してから実行する
 function clearTempAdminAccess() {
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">一時パスワードの設定を削除しますか？</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';doClearTempAdminAccess()" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除する</button>
+    </div>
+  </div>`;
+  overlay.style.display='flex';
+}
+
+function doClearTempAdminAccess() {
   if (window.fbClearTempAdminAccess) window.fbClearTempAdminAccess();
   renderMainPasswordModalContent();
   showToast('一時パスワードの設定を削除しました');
