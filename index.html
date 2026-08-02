@@ -1914,7 +1914,7 @@ function renderTables() {
             <th class="p-col-time">来店時間</th>
             <th class="p-col-tanto">担当者</th>
             <th class="p-col-guest">お客様名</th>
-            <th class="p-col-keep">ボトル</th>
+            <th class="p-col-keep">予算</th>
             <th class="p-col-help">ヘルプ</th>
             <th class="p-col-note">備考</th>
           </tr>
@@ -2219,9 +2219,9 @@ function displayTableNum(tableNum) {
 }
 
 function rowHTML(no, g) {
-  const bottleState = g.bottle || 0;
-  const bottleIcon = bottleState === 0 ? '' : bottleState === 1 ? '○' : '◉';
-  const bottleColor = bottleState === 2 ? '#2ecc71' : '#c9a84c';
+  // 予算欄：具体的な金額（数字のみ、または「5万」等の万表記）だけコンパクト表記にする。
+  // 「未定」等の自由記述はそのまま表示する（formatBudgetCompactがnullを返すため元の文字列を使う）
+  const budgetDisplay = formatBudgetCompact(g.budget) || (g.budget || '');
   const aibanInfo = getAibanLinkInfo(g);
   const aibanIcon = aibanInfo.linked
     ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" onclick="event.stopPropagation();openAibanDetailModal(${g.id})" style="cursor:pointer;margin-right:2px;"><span style="color:${aibanInfo.color};">●</span>🔗</span>`
@@ -2236,7 +2236,7 @@ function rowHTML(no, g) {
   const arriveCellAttrs = canEditList ? `class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)"` : `class="p-col-time"`;
   const tantoCellAttrs = canEditList ? `class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)"` : `class="p-col-tanto"`;
   const nameCellAttrs = canEditList ? `class="p-col-guest editable" onclick="editCell(${g.id},'name',this)"` : `class="p-col-guest"`;
-  const bottleCellAttrs = canEditList ? `onclick="toggleBottle(${g.id})" style="cursor:pointer;text-align:center;font-size:16px;color:${bottleColor};user-select:none;"` : `style="text-align:center;font-size:16px;color:${bottleColor};user-select:none;"`;
+  const budgetCellAttrs = canEditList ? `class="p-col-keep editable" onclick="editCell(${g.id},'budget',this)"` : `class="p-col-keep"`;
   const helpCellAttrs = canEditList ? `class="p-col-help editable" onclick="openHelpEditPopup(${g.id})"` : `class="p-col-help" onclick="openHelpEditPopup(${g.id})" style="cursor:pointer;"`;
   const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="openNoteEditPopup(${g.id})"` : `class="p-col-note" onclick="openNoteEditPopup(${g.id})" style="cursor:pointer;"`;
   return `
@@ -2247,7 +2247,7 @@ function rowHTML(no, g) {
       <td ${arriveCellAttrs}>${g.arrive||''}</td>
       <td ${tantoCellAttrs}>${normalizeStaffNamesInText(g.tanto||'')}</td>
       <td ${nameCellAttrs}>${aibanIcon}${g.name||''}</td>
-      <td class="p-col-keep" ${bottleCellAttrs}>${bottleIcon}</td>
+      <td ${budgetCellAttrs}>${budgetDisplay}</td>
       <td ${helpCellAttrs}>${normalizeStaffNamesInText(g.help||'')}</td>
       <td ${noteCellAttrs}>${g.note||''}</td>
     </tr>`;
