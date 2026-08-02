@@ -400,9 +400,8 @@
     <span id="statArrived" style="display:none"></span>
     <button id="tableListVisibleBtn" onclick="toggleTableListVisible()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">👁 卓一覧を公開中</button>
     <button id="summaryBtn" onclick="openSummaryModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">📊 集計</button>
-    <button id="mainPassBtn" onclick="openMainPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">🔐 パスワード変更</button>
+    <button id="mainPassBtn" onclick="openMainPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">🔐 パスワード管理</button>
     <button id="undoResetBtn" onclick="confirmUndoReset()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">↩ 復元</button>
-    <button id="tempAdminBtn" onclick="openTempAdminModal()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">🔑 一時パスワード</button>
     <button id="resetReportsBtn" onclick="confirmResetReports()" style="background:none;border:1px solid #c0392b;border-radius:4px;color:#c0392b;font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">🔄 本日分リセット</button>
   </div>
 </header>
@@ -758,7 +757,6 @@ function applyRole(role) {
     if (staffSettingsBtn) staffSettingsBtn.style.display = 'none';
   }
   updateTableListVisibleBtn();
-  if (typeof updateTempAdminBtn === 'function') updateTempAdminBtn();
   if (typeof updateMainPassBtn === 'function') updateMainPassBtn();
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
   if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
@@ -778,21 +776,6 @@ function updateTableListVisibleBtn() {
 }
 
 // 一時パスワード管理ボタンは内勤（admin）だけに見せ、設定中かどうかで見た目を変える
-function updateTempAdminBtn() {
-  const btn = document.getElementById('tempAdminBtn');
-  if (!btn) return;
-  // 一時パスワード（rj0123以外）でログインした人には、そもそもこの管理ボタン自体を見せない
-  // （設定を触れるのは、本来のパスワードでログインした内勤だけに限定する）
-  if (localStorage.getItem('rj_role') !== 'admin' || localStorage.getItem('rj_loginSource') === 'temp') {
-    btn.style.display = 'none';
-    return;
-  }
-  btn.style.display = 'inline-block';
-  const active = isTempAdminAccessValid();
-  btn.style.color = active ? '#2ecc71' : 'var(--text-dim)';
-  btn.style.borderColor = active ? '#2ecc71' : 'var(--border)';
-}
-
 // メインパスワード変更ボタンも、本来のパスワードでログインした内勤だけに見せる
 function updateMainPassBtn() {
   const btn = document.getElementById('mainPassBtn');
@@ -4931,9 +4914,8 @@ let _summaryTab = 'today'; // 'today' | 'day' | 'month'
 let _summaryMonthKey = null;
 let _summaryDayKey = null;
 
-// 期間限定の内勤用パスワード（研修者など）を、コードを触らずアプリ内から設定・削除できる管理画面
-// 内勤・従業員のメインパスワードを変更する管理画面。
-// 変更すると、その瞬間から既にログイン済みの端末も自動的にログアウトされる
+// パスワード管理画面（メインパスワードの変更 + 期間限定の一時パスワードの設定を1つにまとめたもの）。
+// メインパスワードを変更すると、その瞬間から既にログイン済みの端末も自動的にログアウトされる
 // （退職者が出た時、パスワードを変更するだけで締め出せるようにするための仕組み）
 function openMainPasswordModal() {
   if (localStorage.getItem('rj_role') !== 'admin' || localStorage.getItem('rj_loginSource') === 'temp') return;
@@ -4944,24 +4926,45 @@ function openMainPasswordModal() {
     modal.id = 'mainPasswordModal';
     document.body.appendChild(modal);
   }
+  renderMainPasswordModalContent();
+  modal.classList.add('show');
+}
+
+function renderMainPasswordModalContent() {
+  const modal = document.getElementById('mainPasswordModal');
+  if (!modal) return;
   const current = window._fbMainPasswords || {};
+  const access = window._fbTempAdminAccess;
+  const active = isTempAdminAccessValid();
+  const tempStatusHtml = access
+    ? `<div style="font-size:11px;color:${active ? '#2ecc71' : 'var(--text-dim)'};margin-bottom:10px;">現在の設定：${active ? '有効' : '期限切れ'}（${access.expiresAt}まで）</div>`
+    : `<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">現在、一時パスワードは設定されていません</div>`;
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;">
       <div class="modal-header">
-        <span>🔐 パスワード変更</span>
+        <span>🔐 パスワード管理</span>
         <button onclick="document.getElementById('mainPasswordModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body">
+        <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">通常パスワード</div>
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">変更すると、既にログイン済みの端末（自分自身も含む）も含めて、全員が新しいパスワードでの再ログインが必要になります。退職者が出た時などにご利用ください。</div>
         <div class="mr-row"><label class="mr-label">内勤用</label><input class="mr-input" id="mainPassAdminInput" value="${(current.admin||'').replace(/"/g,'&quot;')}"></div>
         <div class="mr-row"><label class="mr-label">従業員用</label><input class="mr-input" id="mainPassHostInput" value="${(current.host||'').replace(/"/g,'&quot;')}"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="document.getElementById('mainPasswordModal').classList.remove('show')">キャンセル</button>
-        <button class="btn btn-primary" onclick="saveMainPasswords()">変更する</button>
+        <button class="btn btn-primary" onclick="saveMainPasswords()" style="width:100%;margin-top:6px;margin-bottom:20px;">通常パスワードを変更する</button>
+
+        <div style="border-top:1px solid var(--border);padding-top:16px;">
+          <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">🔑 一時パスワード</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">研修者など、期間限定で内勤権限を渡したい時に使います。指定した日を過ぎると自動的に使えなくなります。</div>
+          ${tempStatusHtml}
+          <div class="mr-row"><label class="mr-label">パスワード</label><input class="mr-input" id="tempAdminPassInput" placeholder="例: gs0802" value="${access ? access.password.replace(/"/g,'&quot;') : ''}"></div>
+          <div class="mr-row"><label class="mr-label">期限</label><input class="mr-input" id="tempAdminExpiresInput" type="date" value="${access ? access.expiresAt : ''}"></div>
+          <div style="display:flex;gap:8px;margin-top:6px;">
+            ${access ? `<button class="btn btn-ghost" onclick="clearTempAdminAccess()" style="flex:1;color:#c0392b;">設定を削除</button>` : ''}
+            <button class="btn btn-primary" onclick="saveTempAdminAccess()" style="flex:1;">一時パスワードを保存</button>
+          </div>
+        </div>
       </div>
     </div>`;
-  modal.classList.add('show');
 }
 
 function saveMainPasswords() {
@@ -4973,61 +4976,18 @@ function saveMainPasswords() {
   showToast('パスワードを変更しました（全員、次回から新しいパスワードでのログインが必要です）');
 }
 
-function openTempAdminModal() {
-  // 一時パスワードでログインした人はこの設定を触れないようにする（本来のパスワードでログインした内勤専用）
-  if (localStorage.getItem('rj_role') !== 'admin' || localStorage.getItem('rj_loginSource') === 'temp') return;
-  let modal = document.getElementById('tempAdminModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.id = 'tempAdminModal';
-    document.body.appendChild(modal);
-  }
-  renderTempAdminModalContent();
-  modal.classList.add('show');
-}
-
-function renderTempAdminModalContent() {
-  const modal = document.getElementById('tempAdminModal');
-  if (!modal) return;
-  const access = window._fbTempAdminAccess;
-  const active = isTempAdminAccessValid();
-  const statusHtml = access
-    ? `<div style="font-size:12px;color:${active ? '#2ecc71' : 'var(--text-dim)'};margin-bottom:12px;">
-        現在の設定：${active ? '有効' : '期限切れ'}（${access.expiresAt}まで）
-       </div>`
-    : `<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">現在、一時パスワードは設定されていません</div>`;
-  modal.innerHTML = `
-    <div class="modal" style="max-width:340px;">
-      <div class="modal-header">
-        <span>🔑 一時パスワード</span>
-        <button onclick="document.getElementById('tempAdminModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
-      </div>
-      <div class="modal-body">
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">研修者など、期間限定で内勤権限を渡したい時に使います。指定した日を過ぎると自動的に使えなくなります。</div>
-        ${statusHtml}
-        <div class="mr-row"><label class="mr-label">パスワード</label><input class="mr-input" id="tempAdminPassInput" placeholder="例: gs0802" value="${access ? access.password.replace(/"/g,'&quot;') : ''}"></div>
-        <div class="mr-row"><label class="mr-label">期限</label><input class="mr-input" id="tempAdminExpiresInput" type="date" value="${access ? access.expiresAt : ''}"></div>
-      </div>
-      <div class="modal-footer">
-        ${access ? `<button class="btn btn-ghost" onclick="clearTempAdminAccess()" style="color:#c0392b;">設定を削除</button>` : ''}
-        <button class="btn btn-primary" onclick="saveTempAdminAccess()">保存</button>
-      </div>
-    </div>`;
-}
-
 function saveTempAdminAccess() {
   const password = document.getElementById('tempAdminPassInput').value.trim();
   const expiresAt = document.getElementById('tempAdminExpiresInput').value;
   if (!password || !expiresAt) { showToast('パスワードと期限の両方を入力してください'); return; }
   if (window.fbSaveTempAdminAccess) window.fbSaveTempAdminAccess({ password, expiresAt });
-  document.getElementById('tempAdminModal').classList.remove('show');
+  renderMainPasswordModalContent();
   showToast('一時パスワードを設定しました');
 }
 
 function clearTempAdminAccess() {
   if (window.fbClearTempAdminAccess) window.fbClearTempAdminAccess();
-  document.getElementById('tempAdminModal').classList.remove('show');
+  renderMainPasswordModalContent();
   showToast('一時パスワードの設定を削除しました');
 }
 
