@@ -2634,14 +2634,18 @@ function renderFloorStatus() {
 // 卓状況の卓をタップした時に、全体タブ相当の詳細情報をポップアップ表示する
 function openTableDetailModal(tableKey, guestId) {
   const active = guests.filter(g => !g.left);
-  const guest = (guestId != null ? active.find(g => g.id === guestId) : null)
-    || active.find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey);
   const firstGroup = (firstGroups || []).find(g => {
     if (!g.tableNum || g.tableNum.toUpperCase().replace(/^P/, 'V') !== tableKey) return false;
     // 全員が飲直/終了済みのグループは、もう「初回」として扱わない（卓状況のBOX表示と同じ判定基準）
     const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     return !allDone;
   });
+  // 卓状況のBOX表示（renderFloorStatus）と同じ優先順位に揃える：
+  // その卓に未完了の初回グループがある場合、guestIdが明示的に指定されていない限りは初回を優先する
+  // （そうしないと、来店確認前で卓番だけ割り振られている別のお客様が誤って表示されてしまうため）。
+  // フォールバックで卓番だけから探す場合も、来店確認前のお客様は対象外にする
+  const guest = (guestId != null ? active.find(g => g.id === guestId) : null)
+    || (!firstGroup ? active.find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey && g.arrived) : null);
 
   let baanaiText = '';
   try { baanaiText = localStorage.getItem('rj_baanai') || ''; } catch(e) {}
