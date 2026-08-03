@@ -36,10 +36,17 @@
   const tempAdminAccessRef = ref(db, 'tempAdminAccess');
   const mainPasswordsRef = ref(db, 'mainPasswords');
 
+  // 閲覧専用モード（開きっぱなしのPC等、受信だけして絶対に書き込みをしたくない端末向け）。
+  // この端末のlocalStorageだけを見るローカル設定で、Firebaseへの書き込み関数は全てこれを確認してから実行する。
+  // 受信（onValue）側は一切ここでは触らないので、閲覧専用中も画面表示は今まで通りリアルタイムに更新され続ける
+  function isViewOnlyMode() {
+    try { return localStorage.getItem('rj_viewOnlyMode') === 'true'; } catch(e) { return false; }
+  }
+
   // Firebaseにゲストデータを保存
   // Firebaseにゲスト1件を保存（衝突回避：全体を上書きせず該当IDのみ書き込む）
   window.fbSaveGuest = function(guest) {
-    if (!guest || guest.id == null) return;
+    if (isViewOnlyMode() || !guest || guest.id == null) return;
     set(ref(db, 'guests/g' + guest.id), guest).catch(e => console.error('FB save guest error:', e));
   };
   // 行番号(rowNum)だけをピンポイントで更新する（行番号の自動詰め直し専用）。
@@ -47,80 +54,89 @@
   // ゲスト全体を書き込むと、手元のデータの一部が古い場合に他の項目（卓番・来店フラグ等）
   // まで巻き込んで古い内容で上書きしてしまう恐れがある。rowNumだけに絞ることでその被害を防ぐ
   window.fbUpdateGuestRowNum = function(id, rowNum) {
-    if (id == null) return;
+    if (isViewOnlyMode() || id == null) return;
     update(ref(db, 'guests/g' + id), { rowNum }).catch(e => console.error('FB update rowNum error:', e));
   };
   // ゲスト1件のうち、変更のあったフィールドだけを更新する（通常の編集操作全般で使う汎用版）。
   // set()と違い、指定していないフィールドには一切触れないので、手元のデータの一部が古くても
   // 他端末が別のタイミングで更新した「触っていない項目」まで巻き込んで上書きする事故を防げる
   window.fbUpdateGuestFields = function(id, fields) {
-    if (id == null || !fields || Object.keys(fields).length === 0) return;
+    if (isViewOnlyMode() || id == null || !fields || Object.keys(fields).length === 0) return;
     update(ref(db, 'guests/g' + id), fields).catch(e => console.error('FB update guest fields error:', e));
   };
   // Firebaseからゲスト1件を削除
   window.fbRemoveGuest = function(id) {
-    if (id == null) return;
+    if (isViewOnlyMode() || id == null) return;
     remove(ref(db, 'guests/g' + id)).catch(e => console.error('FB remove guest error:', e));
   };
   // guestsノード全体を確実に空にする（本日分リセット用。差分比較に頼らないので消し漏れが起きない）
   window.fbClearAllGuests = function() {
+    if (isViewOnlyMode()) return;
     set(guestsRef, null).catch(e => console.error('FB clear guests error:', e));
   };
 
   // Firebaseにスタッフリストを保存
   window.fbSaveStaff = function(list) {
+    if (isViewOnlyMode()) return;
     set(staffRef, list).catch(e => console.error('FB staff save error:', e));
   };
 
   // Firebaseに初回データを保存
   // Firebaseに初回グループ1件を保存（衝突回避：全体を上書きせず該当IDのみ書き込む）
   window.fbSaveFirstGroup = function(group) {
-    if (!group || group.id == null) return;
+    if (isViewOnlyMode() || !group || group.id == null) return;
     set(ref(db, 'firstGroups/g' + group.id), group).catch(e => console.error('FB save firstGroup error:', e));
   };
   // Firebaseから初回グループ1件を削除
   window.fbRemoveFirstGroup = function(id) {
-    if (id == null) return;
+    if (isViewOnlyMode() || id == null) return;
     remove(ref(db, 'firstGroups/g' + id)).catch(e => console.error('FB remove firstGroup error:', e));
   };
   // firstGroupsノード全体を確実に空にする（本日分リセット用。差分比較に頼らないので消し漏れが起きない）
   window.fbClearAllFirstGroups = function() {
+    if (isViewOnlyMode()) return;
     set(firstRef, null).catch(e => console.error('FB clear firstGroups error:', e));
   };
 
   // Firebaseにリセット直前のバックアップを保存
   window.fbSaveBackup = function(backupData) {
+    if (isViewOnlyMode()) return;
     set(backupRef, backupData).catch(e => console.error('FB backup save error:', e));
   };
 
   // Firebaseに呼び名データを保存
   window.fbSaveAliases = function(aliasData) {
+    if (isViewOnlyMode()) return;
     const hasData = aliasData && Object.keys(aliasData).length > 0;
     set(aliasRef, hasData ? aliasData : null).catch(e => console.error('FB alias save error:', e));
   };
   // 呼び名は1名分だけをピンポイントで更新する版（衝突回避）
   window.fbSaveAliasesFor = function(staffName, aliasList) {
-    if (!staffName) return;
+    if (isViewOnlyMode() || !staffName) return;
     set(ref(db, 'staffAliases/' + staffName), aliasList || []).catch(e => console.error('FB alias save error:', e));
   };
 
   // Firebaseに場内メモを保存
   window.fbSaveBaanai = function(text) {
+    if (isViewOnlyMode()) return;
     set(baanaiRef, text || '').catch(e => console.error('FB baanai save error:', e));
   };
 
   // 卓一覧タブをキャストに公開するかどうか（内勤が締日などにOFFにできる）。デフォルトは公開(true)
   window.fbSaveTableListVisible = function(visible) {
+    if (isViewOnlyMode()) return;
     set(tableListVisibleRef, !!visible).catch(e => console.error('FB tableListVisible save error:', e));
   };
 
   // Firebaseに「本日一度でも👑主役が付いた担当者」の記録を保存（{date, names}形式。日付が変われば自然にリセットされる）
   window.fbSaveEventTantoToday = function(data) {
+    if (isViewOnlyMode()) return;
     set(eventTantoRef, data).catch(e => console.error('FB eventTantoToday save error:', e));
   };
 
   // 研修者など期間限定の内勤用パスワードを保存する（{password, expiresAt}形式。expiresAtはYYYY-MM-DD）。
   // コード自体にパスワードを書き込まず、アプリ内の設定画面から内勤が直接設定・変更できるようにするための仕組み
+  // ※パスワード管理系は閲覧専用モードの対象外（閲覧専用を解除しなくても管理できるようにする）
   window.fbSaveTempAdminAccess = function(data) {
     set(tempAdminAccessRef, data).catch(e => console.error('FB tempAdminAccess save error:', e));
   };
@@ -130,18 +146,21 @@
 
   // 内勤・従業員それぞれのメインパスワードを保存する（{admin, host, updatedAt}形式）。
   // updatedAtは、パスワードが変更された瞬間に既にログイン済みの端末を締め出すための目印として使う
+  // ※パスワード管理系は閲覧専用モードの対象外
   window.fbSaveMainPasswords = function(data) {
     set(mainPasswordsRef, data).catch(e => console.error('FB mainPasswords save error:', e));
   };
 
   // Firebaseに卓状況（フロア構成）を保存
   window.fbSaveFloor = function(floorDataObj) {
+    if (isViewOnlyMode()) return;
     const hasData = floorDataObj && Object.keys(floorDataObj).length > 0;
     set(floorRef, hasData ? floorDataObj : null).catch(e => console.error('FB floor save error:', e));
   };
 
   // Firebaseに本日の報告状況（休み・有休・半休・予定未定）を保存
   window.fbSaveDayStatus = function(dayStatusObj) {
+    if (isViewOnlyMode()) return;
     // 空オブジェクト{}をそのままsetしてもFirebase側のデータは消えないため、
     // 空の場合はnullを渡して確実にクリアする（本日分リセット時の消し漏れ対策）
     const hasData = dayStatusObj && Object.keys(dayStatusObj).length > 0;
@@ -149,16 +168,18 @@
   };
   // 報告状況は1名分だけをピンポイントで更新する版（衝突回避）
   window.fbSaveDayStatusFor = function(staffName, entry) {
-    if (!staffName) return;
+    if (isViewOnlyMode() || !staffName) return;
     set(ref(db, 'staffDayStatus/' + staffName), entry).catch(e => console.error('FB dayStatus save error:', e));
   };
 
   // Firebaseに月次集計ログの1日分を保存（キーは日付文字列）
   window.fbSaveMonthlyLog = function(dateKey, logData) {
+    if (isViewOnlyMode()) return;
     set(ref(db, 'monthlyLogs/' + dateKey), logData).catch(e => console.error('FB monthlyLog save error:', e));
   };
   // Firebaseから月次集計ログの1日分を削除（リセット取り消し時に使用）
   window.fbRemoveMonthlyLog = function(dateKey) {
+    if (isViewOnlyMode()) return;
     remove(ref(db, 'monthlyLogs/' + dateKey)).catch(e => console.error('FB monthlyLog remove error:', e));
   };
 
@@ -399,6 +420,7 @@
     <span id="statTotal" style="display:none"></span>
     <span id="statArrived" style="display:none"></span>
     <button id="mainPassBtn" onclick="openMainPasswordModal()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">🔐 パスワード管理</button>
+    <button id="viewOnlyBtn" onclick="toggleViewOnlyMode()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">🔓 閲覧専用OFF</button>
     <button id="tableListVisibleBtn" onclick="toggleTableListVisible()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;display:none;">👁 卓一覧を公開中</button>
     <button id="resetReportsBtn" onclick="confirmResetReports()" style="background:none;border:1px solid #c0392b;border-radius:4px;color:#c0392b;font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">🔄 本日分リセット</button>
     <button id="summaryBtn" onclick="openSummaryModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">📊 集計</button>
@@ -758,6 +780,7 @@ function applyRole(role) {
   }
   updateTableListVisibleBtn();
   if (typeof updateMainPassBtn === 'function') updateMainPassBtn();
+  if (typeof updateViewOnlyBtn === 'function') updateViewOnlyBtn();
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
   if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
   setTimeout(updateFixedTop, 50);
@@ -785,6 +808,31 @@ function updateMainPassBtn() {
     return;
   }
   btn.style.display = 'inline-block';
+}
+
+// 閲覧専用モードのボタン表示（内勤専用）。ONの間は保存が一切できなくなるので、見た目でひと目で分かるようにする
+function updateViewOnlyBtn() {
+  const btn = document.getElementById('viewOnlyBtn');
+  if (!btn) return;
+  if (localStorage.getItem('rj_role') !== 'admin') {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = 'inline-block';
+  const on = localStorage.getItem('rj_viewOnlyMode') === 'true';
+  btn.textContent = on ? '🔒 閲覧専用ON' : '🔓 閲覧専用OFF';
+  btn.style.color = on ? '#e67e22' : 'var(--text-dim)';
+  btn.style.borderColor = on ? '#e67e22' : 'var(--border)';
+}
+
+// 閲覧専用モードを切り替える。ONにすると、この端末からのFirebaseへの書き込みが（行番号の自動詰め直し等、
+// ユーザー操作を伴わない裏の処理も含めて）全て止まる。受信（画面表示のリアルタイム更新）はそのまま動き続ける。
+// 開きっぱなしのPC等、編集する予定がない端末を安全に運用するための機能
+function toggleViewOnlyMode() {
+  const next = !(localStorage.getItem('rj_viewOnlyMode') === 'true');
+  localStorage.setItem('rj_viewOnlyMode', next ? 'true' : 'false');
+  updateViewOnlyBtn();
+  showToast(next ? '閲覧専用モードにしました（この端末からは保存できません）' : '閲覧専用モードを解除しました');
 }
 
 // 内勤が卓一覧タブの公開/非公開を切り替える（締日など、キャストに見せたくない時にOFFにする）
