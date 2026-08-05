@@ -2692,7 +2692,7 @@ function openTableDetailModal(tableKey, guestId) {
       ${rows.map(([label, val]) => `
         <div style="display:flex;padding:7px 0;border-bottom:1px solid var(--border);">
           <div style="width:80px;flex-shrink:0;font-size:11px;color:var(--text-dim);">${label}</div>
-          <div style="font-size:13px;color:${label==='📢 共有事項' ? '#e74c3c' : 'var(--text)'};font-weight:${label==='📢 共有事項' ? '700' : '400'};">${val}</div>
+          <div style="font-size:13px;color:${label==='📢 共有事項' ? '#e74c3c' : (label==='来店時間' && guest.arrived && guest.actualArrive) ? '#2ecc71' : 'var(--text)'};font-weight:${(label==='📢 共有事項' || (label==='来店時間' && guest.arrived && guest.actualArrive)) ? '700' : '400'};">${val}</div>
         </div>`).join('')}
       ${!canEdit ? `<div style="font-size:11px;color:var(--text-dim);margin-top:12px;text-align:center;">※この卓の担当者のみ編集できます</div>` : `
       <div style="display:flex;gap:8px;margin-top:14px;">
@@ -3091,6 +3091,7 @@ function syncNominaoshiToTable(g, r) {
     existing.note = noteStr;
     existing.plan = r.plan ? r.plan.trim() : '';
     existing.arrived = true;
+    existing.actualArrive = calcLeaveTimeFromNow(0);
     if (isPlanC) existing.leave = calcLeaveTimeFromNow(60);
     if (!existing.specials) existing.specials = [];
     if (!existing.specials.includes('new')) existing.specials.push('new'); // 飲直で出来た卓は自動で🔰マーク
@@ -3107,6 +3108,7 @@ function syncNominaoshiToTable(g, r) {
       plan: r.plan ? r.plan.trim() : '',
       arrive: '', leave: '', budget: '', help: '',
       arrived: true,
+      actualArrive: calcLeaveTimeFromNow(0),
       specials: ['new'], // 飲直で出来た卓は自動で🔰マーク
       firstKey: key
     };
@@ -3669,11 +3671,12 @@ function toggleArrived(id) {
   if (!g) return;
   g.arrived = !g.arrived;
   if (g.arrived) {
+    // 実際に来店確認した時刻を記録する（予定報告の来店時間＝予定時刻とは別に持ち、
+    // 来店確認後は詳細ポップアップでこちらを優先して表示する）。
+    // 万が一この後の自動計算処理でエラーが起きても、記録だけは確実に残るよう先に行う
+    g.actualArrive = calcLeaveTimeFromNow(0);
     // 来店確認した瞬間（来店取消への逆操作時は対象外）に、クイック／ワンタイ／ツータイの退店時間を自動計算する
     applyAutoLeaveTime(g);
-    // 実際に来店確認した時刻を記録する（予定報告の来店時間＝予定時刻とは別に持ち、
-    // 来店確認後は詳細ポップアップでこちらを優先して表示する）
-    g.actualArrive = calcLeaveTimeFromNow(0);
   } else {
     // 誤って立てたフラグを取り消した時は、記録していた実際の時刻をクリアするだけでよい
     // （予定時刻はg.arrive側に元々残ったままなので、復元処理は不要）
@@ -3692,6 +3695,8 @@ function markReEntry(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
   g.left = false;
+  // 再来店したタイミングの時刻に更新する
+  g.actualArrive = calcLeaveTimeFromNow(0);
   saveToStorage();
   renderTables();
   renderFloorStatus();
