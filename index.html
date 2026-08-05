@@ -2493,7 +2493,8 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const boxDim = isFirst ? '#1a4a66' : (arrived ? '#5a4a1a' : '#a68a4a');
   let line1, line2, line3;
   if (info && info.isFirst) {
-    line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}`;
+    const arriveHtml = info.actualArrive ? ` <span style="color:${boxText};font-weight:700;">🕐${info.actualArrive}</span>` : '';
+    line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${arriveHtml}`;
     line2 = info.help
       ? `<span style="color:${boxText};">${info.name}</span> <span style="color:${boxDim};">${info.help}</span>`
       : `<span style="color:${boxText};">${info.name}</span>`;
@@ -2555,7 +2556,7 @@ function renderFloorStatus() {
   // 同じ卓に「予定報告の来店予定」と「今対応中の初回」が重なる場合、初回を優先表示する
   // （例：22時に予定の客がいても、19時に来た初回を同じ卓で先に対応しているケース）
   const infoMap = {}; // { "V1": [entry, entry, ...] } 同じ卓に複数ゲストがいる場合は全員分の配列で持つ
-  (firstGroups || []).filter(g => g.tableNum).forEach(g => {
+  (firstGroups || []).filter(g => g.tableNum && g.arrived).forEach(g => {
     // 全員が飲直に転換済みなら、もう「初回」ではなく実際のお客様として扱う（優先表示の対象から外す）
     const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     if (allDone) return;
@@ -2563,7 +2564,7 @@ function renderFloorStatus() {
     if (!infoMap[key]) infoMap[key] = [];
     const count = parseInt(g.count) || 0;
     const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    infoMap[key].push({ tanto: '', name: `初回${count ? count+'名' : ''}`, help: photoNames.length ? '写指:'+photoNames.join('/') : '', specials: [], isFirst: true, arrived: true });
+    infoMap[key].push({ tanto: '', name: `初回${count ? count+'名' : ''}`, help: photoNames.length ? '写指:'+photoNames.join('/') : '', specials: [], isFirst: true, arrived: true, actualArrive: g.actualArrive || '' });
   });
   // 通常ゲストは「来店済み」を優先して登録する。同じ卓に複数の来店済みゲストがいる場合は全員分表示する
   guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
@@ -2669,7 +2670,7 @@ function openTableDetailModal(tableKey, guestId) {
     const rows = [
       ['担当', normalizeStaffNamesInText(guest.tanto)],
       ['お客様名', formatGuestDisplayName(guest.name)],
-      ['来店時間', guest.arrive],
+      ['来店時間', (guest.arrived && guest.actualArrive) ? guest.actualArrive : guest.arrive],
       ['退店時間', guest.leave],
       // 卓一覧が非公開設定の間は、キャストロールに対して予算・備考も一緒に隠す（内勤は常に見える）
       ...(shouldMaskSensitiveFields() ? [] : [['予算', guest.budget], ['備考', guest.note]]),
@@ -2712,7 +2713,7 @@ function openTableDetailModal(tableKey, guestId) {
       return `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--text);">${bits.join(' ／ ') || '（未入力）'}</div>`;
     }).join('');
     bodyHtml = `
-      <div style="font-size:13px;color:#f0c040;font-weight:700;margin-bottom:8px;">初回 ${count}名</div>
+      <div style="font-size:13px;color:#f0c040;font-weight:700;margin-bottom:8px;">初回 ${count}名${firstGroup.actualArrive ? ` <span style="font-size:11px;color:var(--text-dim);font-weight:400;">🕐${firstGroup.actualArrive}</span>` : ''}</div>
       ${rowsHtml || '<div style="color:var(--text-dim);font-size:12px;">詳細未入力</div>'}
       ${baanaiName ? `<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">場内指名: ${baanaiName}</div>` : ''}`;
   } else if (baanaiName) {
@@ -2829,9 +2830,26 @@ function saveFirstData() {
 
 function addFirstRow() {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
-  firstGroups.push({ id: firstGid++, count:'', tableNum:'', rows:[{id:firstRid++,seat:'',photo1:'',photo2:'',okuri:'',nominaoshi:'',plan:''}] });
+  firstGroups.push({ id: firstGid++, count:'', tableNum:'', arrived:false, actualArrive:'', rows:[{id:firstRid++,seat:'',photo1:'',photo2:'',okuri:'',nominaoshi:'',plan:''}] });
   saveFirstData();
   renderFirstTab();
+}
+
+// No.欄タップで来店フラグを切り替える（卓一覧タブのNo.欄と同じ考え方）。
+// 来店フラグを立てて初めて、卓状況欄のBOXにこのグループが反映されるようにする
+// （卓番・人数を入力しただけの段階では、まだ実際に来店していないため表示しない）
+function toggleFirstGroupArrived(gid) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  g.arrived = !g.arrived;
+  // 来店確認した瞬間の実際の時刻を記録する。取り消した時はクリアするだけでよい
+  g.actualArrive = g.arrived ? calcLeaveTimeFromNow(0) : '';
+  saveFirstData();
+  renderFirstTab();
+  renderFloorStatus();
+  if (document.getElementById('panel-view').classList.contains('active')) renderView();
+  showToast(g.arrived ? '来店確認 ✅' : '来店取消');
 }
 
 function clearFirstData() {
@@ -2890,7 +2908,7 @@ function renderFirstTab() {
       rows += `<tr id="fr-${r.id}" oncontextmenu="event.preventDefault();deleteFirstGroup(${g.id})"
           ontouchstart="startHold2(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()">`;
       if (ri === 0) {
-        rows += `<td style="text-align:center;color:#c9a84c;font-size:12px;font-weight:700;${allDone?'background:#d4edda;':''}"${rowspan}>${noCounter}</td>`;
+        rows += `<td onclick="event.stopPropagation();toggleFirstGroupArrived(${g.id})" style="text-align:center;color:${g.arrived?'#2ecc71':'#c9a84c'};font-size:12px;font-weight:700;cursor:pointer;${allDone?'background:#d4edda;':''}"${rowspan}>${noCounter}${g.arrived?' ✅':''}</td>`;
         const countLabel = g.isEda ? `枝${g.count||''}名` : (g.count ? `${g.count}名` : '-');
         rows += `<td${rowspan} style="${allDone?'background:#d4edda;':''}">
           <div onclick="event.stopPropagation();openCountPicker(${g.id}, this)" style="width:100%;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:12px;padding:5px 2px;cursor:pointer;">${countLabel}</div>
@@ -3381,9 +3399,10 @@ function renderView() {
       tableMapMulti[key].push({ type: 'guest', data: g });
     }
   });
-  // 初回グループも追加（全員が飲直に転換済みのグループは、もう実際のゲストとして別枠で表示されるので除外）
+  // 初回グループも追加（全員が飲直に転換済みのグループは、もう実際のゲストとして別枠で表示されるので除外。
+  // また、卓状況欄BOXと同じ基準に揃え、来店フラグが立っているグループだけを対象にする）
   (firstGroups||[]).forEach(g => {
-    if (!g.tableNum) return;
+    if (!g.tableNum || !g.arrived) return;
     const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     if (allDone) return;
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
@@ -3649,9 +3668,16 @@ function toggleArrived(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
   g.arrived = !g.arrived;
-  // 来店確認した瞬間（来店取消への逆操作時は対象外）に、クイック／ワンタイ／ツータイの退店時間を自動計算する
   if (g.arrived) {
+    // 来店確認した瞬間（来店取消への逆操作時は対象外）に、クイック／ワンタイ／ツータイの退店時間を自動計算する
     applyAutoLeaveTime(g);
+    // 実際に来店確認した時刻を記録する（予定報告の来店時間＝予定時刻とは別に持ち、
+    // 来店確認後は詳細ポップアップでこちらを優先して表示する）
+    g.actualArrive = calcLeaveTimeFromNow(0);
+  } else {
+    // 誤って立てたフラグを取り消した時は、記録していた実際の時刻をクリアするだけでよい
+    // （予定時刻はg.arrive側に元々残ったままなので、復元処理は不要）
+    g.actualArrive = '';
   }
   saveToStorage();
   renderTables();
