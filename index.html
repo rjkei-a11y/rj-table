@@ -2689,11 +2689,15 @@ function openTableDetailModal(tableKey, guestId) {
     bodyHtml = `
       ${specialIcons ? `<div style="margin-bottom:10px;">${specialIcons}</div>` : ''}
       ${!guest.arrived ? `<div style="font-size:11px;color:#e67e22;margin-bottom:10px;">⚠ まだ来店確認されていません</div>` : ''}
-      ${rows.map(([label, val]) => `
-        <div style="display:flex;padding:7px 0;border-bottom:1px solid var(--border);">
-          <div style="width:80px;flex-shrink:0;font-size:11px;color:var(--text-dim);">${label}</div>
+      ${rows.map(([label, val]) => {
+        const isArriveRow = label === '来店時間' && guest.arrived && canEdit;
+        const clickAttr = isArriveRow ? `onclick="document.getElementById('tableDetailModal').classList.remove('show');openLeaveTimeQuickEdit('guest',${guest.id})" style="display:flex;padding:7px 0;border-bottom:1px solid var(--border);cursor:pointer;"` : `style="display:flex;padding:7px 0;border-bottom:1px solid var(--border);"`;
+        return `
+        <div ${clickAttr}>
+          <div style="width:80px;flex-shrink:0;font-size:11px;color:var(--text-dim);">${label}${isArriveRow ? ' ✎' : ''}</div>
           <div style="font-size:13px;color:${label==='📢 共有事項' ? '#e74c3c' : (label==='来店時間' && guest.arrived && guest.actualArrive) ? '#2ecc71' : 'var(--text)'};font-weight:${(label==='📢 共有事項' || (label==='来店時間' && guest.arrived && guest.actualArrive)) ? '700' : '400'};">${val}</div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
       ${!canEdit ? `<div style="font-size:11px;color:var(--text-dim);margin-top:12px;text-align:center;">※この卓の担当者のみ編集できます</div>` : `
       <div style="display:flex;gap:8px;margin-top:14px;">
         <button class="btn btn-ghost" onclick="document.getElementById('tableDetailModal').classList.remove('show');openSpecialModal(${guest.id})" style="flex:1;">特記事項を編集</button>
@@ -3785,7 +3789,7 @@ function renderLeaveTimeEditModal(guestId) {
           <label class="mr-label">アイバン</label>
           ${aibanHtml}
         </div>
-        <div class="mr-row"><label class="mr-label">来店</label><input class="mr-input" id="qe-arrive" value="${guest.arrive || ''}"></div>
+        <div class="mr-row"><label class="mr-label">${guest.arrived ? '実来店' : '来店'}</label><input class="mr-input" id="qe-arrive" value="${guest.arrived ? (guest.actualArrive || '') : (guest.arrive || '')}"></div>
         <div class="mr-row"><label class="mr-label">退店</label><input class="mr-input" id="qe-leave" value="${guest.leave || ''}" placeholder="例: 24時 / ラスト"></div>
         <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="qe-budget" value="${guest.budget || ''}"></div>
         <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="qe-help" value="${guest.help || ''}"></div>
@@ -3808,7 +3812,12 @@ function saveQuickLeaveTime(guestId) {
   if (!g) return;
   g.tanto = document.getElementById('qe-tanto').value.trim();
   g.name = document.getElementById('qe-name').value.trim();
-  g.arrive = toHalfWidthTimeText(document.getElementById('qe-arrive').value.trim());
+  if (g.arrived) {
+    // 来店確認済みなら「実際の来店時刻」の欄として編集させているので、そちらに保存する
+    g.actualArrive = toHalfWidthTimeText(document.getElementById('qe-arrive').value.trim());
+  } else {
+    g.arrive = toHalfWidthTimeText(document.getElementById('qe-arrive').value.trim());
+  }
   g.leave = toHalfWidthTimeText(document.getElementById('qe-leave').value.trim());
   g.budget = formatBudgetText(document.getElementById('qe-budget').value.trim());
   g.help = document.getElementById('qe-help').value.trim();
