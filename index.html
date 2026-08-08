@@ -24,6 +24,8 @@
   const db = getDatabase(app);
   const guestsRef = ref(db, 'guests');
   const staffRef = ref(db, 'staff');
+  const staffTeamsRef = ref(db, 'staffTeams');
+  const teamDefsRef = ref(db, 'teamDefs');
   const firstRef = ref(db, 'firstGroups');
   const backupRef = ref(db, 'resetBackup');
   const aliasRef = ref(db, 'staffAliases');
@@ -79,6 +81,20 @@
   window.fbSaveStaff = function(list) {
     if (isViewOnlyMode()) return;
     set(staffRef, list).catch(e => console.error('FB staff save error:', e));
+  };
+
+  // Firebaseに各スタッフの所属チーム（{名前: 'team1'/'team2'/...}形式）を保存
+  window.fbSaveStaffTeams = function(teamsObj) {
+    if (isViewOnlyMode()) return;
+    const hasData = teamsObj && Object.keys(teamsObj).length > 0;
+    set(staffTeamsRef, hasData ? teamsObj : null).catch(e => console.error('FB staffTeams save error:', e));
+  };
+
+  // Firebaseにチーム自体の定義（[{key, label, color}, ...]）を保存。
+  // チーム名や色、チーム数自体を内勤が自由に変更できるようにするための仕組み
+  window.fbSaveTeamDefs = function(list) {
+    if (isViewOnlyMode()) return;
+    set(teamDefsRef, list && list.length ? list : null).catch(e => console.error('FB teamDefs save error:', e));
   };
 
   // Firebaseに初回データを保存
@@ -261,6 +277,34 @@
         window._fbStaffReady();
       }
     }
+  });
+
+  // Firebaseから各スタッフの所属チームをリアルタイム受信
+  onValue(staffTeamsRef, (snapshot) => {
+    const data = snapshot.val();
+    window.staffTeams = data || {};
+    try { localStorage.setItem('tableManager_staffTeams', JSON.stringify(window.staffTeams)); } catch(e) {}
+    if (typeof renderTeamCounts === 'function') renderTeamCounts();
+  });
+
+  // Firebaseからチーム定義（名前・色・数）をリアルタイム受信。
+  // まだ設定が無ければ（初めてこの機能を使う時）、初期値として4チームを自動的に書き込む
+  onValue(teamDefsRef, (snapshot) => {
+    const data = snapshot.val();
+    if (Array.isArray(data) && data.length > 0) {
+      window.teamDefs = data;
+    } else {
+      const initial = [
+        { key: 'team_gold', label: 'ゴールド', color: '#d4af37' },
+        { key: 'team_sapphire', label: 'サファイア', color: '#4a90d9' },
+        { key: 'team_ruby', label: 'ルビー', color: '#e0524a' },
+        { key: 'team_diamond', label: 'ダイヤ', color: '#7fd4d4' },
+      ];
+      window.teamDefs = initial;
+      set(teamDefsRef, initial).catch(e => console.error('FB teamDefs init error:', e));
+    }
+    try { localStorage.setItem('tableManager_teamDefs', JSON.stringify(window.teamDefs)); } catch(e) {}
+    if (typeof renderTeamCounts === 'function') renderTeamCounts();
   });
 
   // Firebaseから初回データをリアルタイム受信
@@ -481,10 +525,14 @@
       <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid var(--accent-dim);">報告状況</div>
       <div id="staffStatusList" style="font-size:11px;"></div>
       <button id="staffSettingsBtn" onclick="openStaffSettings()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:4px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
+      <button id="staffTeamsBtn" onclick="openStaffTeamsModal()" style="margin-top:4px;width:100%;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:4px;cursor:pointer;font-family:var(--font-main);">🎨 チーム設定</button>
     </div>
   </div>
 
   <div id="previewArea"></div>
+
+  <!-- チーム別 来店数 -->
+  <div id="teamCountsArea" style="margin-top:16px;display:none;"></div>
 
   <!-- 卓状況 -->
   <div style="margin-top:16px;">
@@ -777,6 +825,9 @@ function applyRole(role) {
     // 在籍スタッフ登録（⚙ 編集）は内勤（admin）のみ操作可能
     const staffSettingsBtn = document.getElementById('staffSettingsBtn');
     if (staffSettingsBtn) staffSettingsBtn.style.display = 'none';
+    // チーム設定も内勤（admin）のみ操作可能
+    const staffTeamsBtn = document.getElementById('staffTeamsBtn');
+    if (staffTeamsBtn) staffTeamsBtn.style.display = 'none';
   }
   updateTableListVisibleBtn();
   if (typeof updateMainPassBtn === 'function') updateMainPassBtn();
@@ -1671,7 +1722,12 @@ function syncBudgetRaiseSpecial(g) {
 // 深夜営業を考慮し、加算の結果日付が変わる場合は「25:30」のような24時以降表記にする
 function calcLeaveTimeFromNow(minutesToAdd) {
   const now = new Date();
-  const totalMinutes = now.getHours() * 60 + now.getMinutes() + minutesToAdd;
+  // 深夜営業を考慮し、0時〜5時台は「前日の続き」として24時以降の表記にする
+  // （toShiftMinutesと同じ閾値。これをしないと、24:05来店→ワンタイ60分後が「01:05」と表示され、
+  // 　実際は退店前なのに「時間超過」と誤判定されてしまう）
+  let hours = now.getHours();
+  if (hours < 6) hours += 24;
+  const totalMinutes = hours * 60 + now.getMinutes() + minutesToAdd;
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -2546,9 +2602,59 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   </div>`;
 }
 
+// チーム別の来店数（担当が来店確認済みのお客様の数）を集計し、卓状況欄の上に棒グラフで表示する
+function renderTeamCounts() {
+  const area = document.getElementById('teamCountsArea');
+  if (!area) return;
+  if (!window.teamDefs || window.teamDefs.length === 0) { area.style.display = 'none'; area.innerHTML = ''; return; }
+  const teams = window.staffTeams || {};
+  // 未所属のスタッフは黙って集計対象から除外する
+  const memberOf = {}; // { teamKey: [name, name, ...] }
+  Object.keys(teams).forEach(name => {
+    const key = teams[name];
+    if (!memberOf[key]) memberOf[key] = [];
+    memberOf[key].push(name);
+  });
+  // 1件もチーム設定がなければ、そもそも表示しない
+  if (Object.keys(teams).length === 0) { area.style.display = 'none'; area.innerHTML = ''; return; }
+
+  // 「その日に実際に卓があった数」を数えるのが目的なので、退店済みでも来店確認済みなら対象にする
+  const activeGuests = guests.filter(g => g.arrived);
+  const counts = {};
+  window.teamDefs.forEach(t => {
+    const members = memberOf[t.key] || [];
+    counts[t.key] = activeGuests.filter(g => {
+      const matched = matchStaffName(g.tanto);
+      return matched && members.includes(matched);
+    }).length;
+  });
+  const maxCount = Math.max(1, ...window.teamDefs.map(t => counts[t.key]));
+
+  const rowsHtml = window.teamDefs.map(t => {
+    const c = counts[t.key];
+    const widthPct = Math.round((c / maxCount) * 100);
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;">
+        <span style="width:66px;flex-shrink:0;font-weight:700;color:${t.color};">${t.label}</span>
+        <div style="flex:1;background:#262626;border-radius:4px;height:14px;overflow:hidden;">
+          <div style="height:100%;border-radius:4px;width:${widthPct}%;background:${t.color};"></div>
+        </div>
+        <span style="width:44px;text-align:right;font-weight:700;color:var(--text);">${c}卓</span>
+      </div>`;
+  }).join('');
+
+  area.style.display = 'block';
+  area.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">
+      <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">チーム別 来店数</span>
+    </div>
+    ${rowsHtml}`;
+}
+
 function renderFloorStatus() {
   renderMyTodaySummary();
   updateTantoStats();
+  renderTeamCounts();
   const multiTantoNames = computeMultiTantoNames();
   const area = document.getElementById('floorStatusArea');
   if (!area) return;
@@ -4038,6 +4144,16 @@ function loadStaff() {
     const rawEventTanto = localStorage.getItem('rj_eventTantoToday');
     if (rawEventTanto) eventTantoToday = JSON.parse(rawEventTanto);
   } catch(e) {}
+  try {
+    const rawTeams = localStorage.getItem('tableManager_staffTeams');
+    if (rawTeams) window.staffTeams = JSON.parse(rawTeams);
+  } catch(e) {}
+  if (!window.staffTeams) window.staffTeams = {};
+  try {
+    const rawTeamDefs = localStorage.getItem('tableManager_teamDefs');
+    if (rawTeamDefs) window.teamDefs = JSON.parse(rawTeamDefs);
+  } catch(e) {}
+  if (!window.teamDefs) window.teamDefs = [];
   // Firebaseスタッフ受信時に更新
   window._fbStaffReady = function() {
     if (window._fbStaff) {
@@ -4766,9 +4882,13 @@ function parseTimeText(text) {
     minute = m[2] ? parseInt(m[2]) : 0;
   }
   if (isNaN(hour) || minute > 59) return null;
-  // 夜の営業のみのため、午前/午後の区別がない書き方（1〜11時）は常に午後として扱う
+  // 夜の営業のみ（19:00〜25:00）のため、午前/午後の区別がない書き方は常に営業時間内として扱う
   // （「9時半」は21:30、「20時」のように元から24時間表記のものはそのまま）
-  if (hour >= 1 && hour <= 11) hour += 12;
+  // 「1時」は営業時間内では25:00（深夜1時）を意味するので、13:00ではなく25:00に変換する
+  // 「12時」も同様に24:00（深夜0時）を意味する
+  if (hour === 1) hour = 25;
+  else if (hour === 12) hour = 24;
+  else if (hour >= 2 && hour <= 11) hour += 12;
   // 深夜営業では「24時」「25時」のような表記も使われるため、29時までは有効な時刻として扱う
   if (hour > 29) return null;
   return { hour, minute };
@@ -4813,6 +4933,23 @@ function buildAliasIndex() {
   });
   index.sort((a, b) => b.text.length - a.text.length);
   return index;
+}
+
+// 担当名などの自由入力テキストから、正式なスタッフ名を特定する（呼び名の表記ゆれも吸収する）。
+// computeDailySummary内にあった同種のロジック（matchStaff）を、他の集計機能からも使えるよう独立させたもの
+function matchStaffName(rawText) {
+  if (!rawText) return null;
+  const text = rawText.trim();
+  if (!text) return null;
+  const aliasIndex = buildAliasIndex();
+  const normText = toHiragana(text);
+  const exact = staffList.find(s => toHiragana(s) === normText) ||
+    Object.keys(staffAliases).find(name => (staffAliases[name] || []).some(a => toHiragana(a) === normText));
+  if (exact) return exact;
+  const partial = staffList.find(s => normText.includes(toHiragana(s)) || toHiragana(s).includes(normText));
+  if (partial) return partial;
+  const aliasPartial = aliasIndex.find(entry => normText.includes(entry.norm) || entry.norm.includes(normText));
+  return aliasPartial ? aliasPartial.name : text;
 }
 
 // ヘルプ欄などの自由入力テキストから、含まれるスタッフ名を貪欲マッチで抽出する
@@ -5543,6 +5680,128 @@ function saveStaffFromModal() {
   document.getElementById('staffModal').classList.remove('show');
   renderStaffStatus();
   showToast('スタッフリストを保存しました');
+}
+
+// チーム定義はFirebase経由のwindow.teamDefsが本体（内勤が自由に追加・削除・改名できる）。
+// ページ読み込み直後などまだ受信できていない一瞬のフォールバックとして、空配列にしておく
+if (!window.teamDefs) window.teamDefs = [];
+
+// 各スタッフの所属チームを設定する画面（内勤専用）
+// チーム名の色として選べるプリセットパレット（将来チームが増えても選べるよう幅広く用意）
+const TEAM_COLOR_PALETTE = ['#d4af37', '#4a90d9', '#e0524a', '#7fd4d4', '#8e6fd9', '#5fbf6e', '#e089c4', '#e0954a'];
+
+function openStaffTeamsModal() {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  let modal = document.getElementById('staffTeamsModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'staffTeamsModal';
+    document.body.appendChild(modal);
+  }
+  const teams = window.staffTeams || {};
+
+  // チーム自体の管理セクション（名前編集・色変更・削除・追加）
+  const teamManageHtml = (window.teamDefs || []).map(t => {
+    const paletteHtml = TEAM_COLOR_PALETTE.map(c =>
+      `<span onclick="setTeamColor('${t.key}','${c}')" style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${t.color===c ? '#fff' : 'transparent'};margin-right:3px;"></span>`
+    ).join('');
+    return `
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <input value="${t.label.replace(/"/g,'&quot;')}" onchange="renameTeam('${t.key}',this.value)" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:${t.color};font-weight:700;font-size:12px;padding:6px 8px;font-family:var(--font-main);">
+        <button onclick="deleteTeam('${t.key}')" style="background:none;border:1px solid #555;border-radius:5px;color:#888;font-size:11px;padding:6px 8px;cursor:pointer;">削除</button>
+      </div>
+      <div style="margin:-4px 0 12px 2px;">${paletteHtml}</div>`;
+  }).join('') || '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">チームがまだありません</div>';
+
+  const rowsHtml = staffList.map(name => {
+    const current = teams[name] || '';
+    const btnsHtml = window.teamDefs.map(t => {
+      const active = current === t.key;
+      return `<button onclick="setStaffTeam('${name.replace(/'/g,"\\'")}','${t.key}')" style="flex:1;padding:6px 2px;border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:var(--font-main);border:1px solid ${active ? t.color : 'var(--border)'};background:${active ? t.color : 'transparent'};color:${active ? '#111' : t.color};">${t.label}</button>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:10px;">
+        <div style="font-size:12px;color:var(--text);margin-bottom:4px;">${name}</div>
+        <div style="display:flex;gap:4px;">${btnsHtml}</div>
+      </div>`;
+  }).join('') || '<div style="font-size:12px;color:var(--text-dim);">先に在籍スタッフを登録してください</div>';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:360px;">
+      <div class="modal-header">
+        <span>🎨 チーム設定</span>
+        <button onclick="document.getElementById('staffTeamsModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+        <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">チーム一覧（名前・色の変更、削除ができます）</div>
+        ${teamManageHtml}
+        <button onclick="addTeam()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:5px;color:var(--text-dim);font-size:11px;padding:8px;cursor:pointer;font-family:var(--font-main);margin-bottom:16px;">＋ チームを追加</button>
+
+        <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;padding-top:8px;border-top:1px solid var(--border);">スタッフの所属チーム</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px;line-height:1.6;">各スタッフをタップして、所属チームを選んでください（変更はすぐに保存されます）。</div>
+        ${rowsHtml}
+      </div>
+    </div>`;
+  modal.classList.add('show');
+}
+
+function saveTeamDefs() {
+  if (window.fbSaveTeamDefs) window.fbSaveTeamDefs(window.teamDefs);
+  try { localStorage.setItem('tableManager_teamDefs', JSON.stringify(window.teamDefs)); } catch(e) {}
+  if (typeof renderTeamCounts === 'function') renderTeamCounts();
+}
+
+function renameTeam(key, newLabel) {
+  const t = (window.teamDefs || []).find(x => x.key === key);
+  if (!t || !newLabel.trim()) return;
+  t.label = newLabel.trim();
+  saveTeamDefs();
+}
+
+function setTeamColor(key, color) {
+  const t = (window.teamDefs || []).find(x => x.key === key);
+  if (!t) return;
+  t.color = color;
+  saveTeamDefs();
+  openStaffTeamsModal();
+}
+
+function addTeam() {
+  if (!window.teamDefs) window.teamDefs = [];
+  const usedColors = window.teamDefs.map(t => t.color);
+  const nextColor = TEAM_COLOR_PALETTE.find(c => !usedColors.includes(c)) || TEAM_COLOR_PALETTE[0];
+  window.teamDefs.push({ key: 'team_' + Date.now(), label: '新チーム', color: nextColor });
+  saveTeamDefs();
+  openStaffTeamsModal();
+}
+
+function deleteTeam(key) {
+  if (!confirm('このチームを削除しますか？（所属していたスタッフは未所属に戻ります）')) return;
+  window.teamDefs = (window.teamDefs || []).filter(t => t.key !== key);
+  // このチームに所属していたスタッフの割り当ても一緒に解除する
+  if (window.staffTeams) {
+    Object.keys(window.staffTeams).forEach(name => {
+      if (window.staffTeams[name] === key) delete window.staffTeams[name];
+    });
+    if (window.fbSaveStaffTeams) window.fbSaveStaffTeams(window.staffTeams);
+    try { localStorage.setItem('tableManager_staffTeams', JSON.stringify(window.staffTeams)); } catch(e) {}
+  }
+  saveTeamDefs();
+  openStaffTeamsModal();
+}
+
+function setStaffTeam(name, teamKey) {
+  if (!window.staffTeams) window.staffTeams = {};
+  // 同じチームをもう一度押したら未設定に戻す（誤タップの取り消しをしやすくするため）
+  if (window.staffTeams[name] === teamKey) {
+    delete window.staffTeams[name];
+  } else {
+    window.staffTeams[name] = teamKey;
+  }
+  if (window.fbSaveStaffTeams) window.fbSaveStaffTeams(window.staffTeams);
+  try { localStorage.setItem('tableManager_staffTeams', JSON.stringify(window.staffTeams)); } catch(e) {}
+  openStaffTeamsModal(); // 選択状態を反映して再描画
+  if (typeof renderTeamCounts === 'function') renderTeamCounts();
 }
 
 // ===== FIXED BARS =====
