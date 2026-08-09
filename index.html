@@ -3192,7 +3192,10 @@ function syncNominaoshiToTable(g, r) {
     return;
   }
   const noteStr = ['飲直', r.plan ? r.plan.trim() : ''].filter(Boolean).join(' ');
-  const isPlanC = detectPlanCKeyword(r.plan || '') || detectPlanCKeyword(noteStr);
+  // 「プランC」だけでなく「クイック」が書かれている場合も、通常ゲストの自動計算と同様に
+  // 退店時間を60分後で自動セットする（以前はプランCしか見ておらず、クイックが反映されなかった不具合の修正）
+  const shouldAutoSetLeave60 = detectPlanCKeyword(r.plan || '') || detectPlanCKeyword(noteStr)
+    || detectQuickKeyword(r.plan || '') || detectQuickKeyword(noteStr);
   const existing = guests.find(x => x.firstKey === key);
   if (existing) {
     existing.tableNum = g.tableNum || '';
@@ -3202,7 +3205,7 @@ function syncNominaoshiToTable(g, r) {
     existing.plan = r.plan ? r.plan.trim() : '';
     existing.arrived = true;
     existing.actualArrive = calcLeaveTimeFromNow(0);
-    if (isPlanC) existing.leave = calcLeaveTimeFromNow(60);
+    if (shouldAutoSetLeave60) existing.leave = calcLeaveTimeFromNow(60);
     if (!existing.specials) existing.specials = [];
     if (!existing.specials.includes('new')) existing.specials.push('new'); // 飲直で出来た卓は自動で🔰マーク
     syncEventSpecialFromTanto(existing);
@@ -3222,7 +3225,7 @@ function syncNominaoshiToTable(g, r) {
       specials: ['new'], // 飲直で出来た卓は自動で🔰マーク
       firstKey: key
     };
-    if (isPlanC) newGuest.leave = calcLeaveTimeFromNow(60);
+    if (shouldAutoSetLeave60) newGuest.leave = calcLeaveTimeFromNow(60);
     syncEventSpecialFromTanto(newGuest);
     guests.push(newGuest);
   }
