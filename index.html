@@ -2620,6 +2620,9 @@ function renderTeamCounts() {
 
   // 「その日に実際に卓があった数」を数えるのが目的なので、退店済みでも来店確認済みなら対象にする
   const activeGuests = guests.filter(g => g.arrived);
+  // 「△予定」（お客様名に△が含まれ、まだ来店確認していない仮予約）は分母から除外する。
+  // ヘッダーの「予定卓数（△◯）」と同じ判定基準
+  const plannedGuests = guests.filter(g => !(g.name && g.name.includes('△') && !g.arrived));
   const counts = {}; // 来店数（塗りつぶしに使う）
   const plannedCounts = {}; // 予定数（枠の大きさ・分母に使う）。空行は元々guestsに含まれないためそのまま数える
   window.teamDefs.forEach(t => {
@@ -2629,7 +2632,7 @@ function renderTeamCounts() {
       return matched && members.includes(matched);
     };
     counts[t.key] = activeGuests.filter(isMember).length;
-    plannedCounts[t.key] = guests.filter(isMember).length;
+    plannedCounts[t.key] = plannedGuests.filter(isMember).length;
   });
   // 枠の横幅は、4チームの中で一番予定数が多いチームを基準にした相対値にする
   const maxPlanned = Math.max(1, ...window.teamDefs.map(t => plannedCounts[t.key]));
