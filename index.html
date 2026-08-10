@@ -2642,7 +2642,7 @@ function renderTeamCounts() {
     return `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px;">
         <span style="width:62px;flex-shrink:0;font-weight:700;color:${t.color};">${t.label}</span>
-        <div style="flex:1;height:15px;position:relative;">
+        <div style="flex:1;height:15px;position:relative;background:#262626;border-radius:4px;">
           <div style="position:absolute;left:0;top:0;height:100%;border-radius:4px;border:1.5px solid ${t.color};width:${outlineWidthPct}%;">
             <div style="height:100%;border-radius:2px;margin:1.5px;width:calc(${fillWidthPct}% - 3px);background:${t.color};"></div>
           </div>
@@ -4774,6 +4774,41 @@ function saveTodayToMonthlyLog(dateKey) {
   if (window.fbSaveMonthlyLog) window.fbSaveMonthlyLog(dateKey, summary);
 }
 
+// 集計モーダルの「日別」タブで手動編集した内容を保存する。
+// 過去の報告漏れ等で自動集計に反映されなかった分を、内勤が直接修正できるようにするための機能
+function saveEditedSummary(dateKey) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const table = document.getElementById('summaryBodyTable');
+  if (!table) return;
+  const inputs = table.querySelectorAll('input[data-name][data-field]');
+  // 元のログをベースに（このテーブルには出てこない項目があっても保持するため）、
+  // 編集対象の列だけを画面の入力内容で丸ごと置き換える
+  const base = getSavedDailyLog(dateKey) || {};
+  const newSummary = JSON.parse(JSON.stringify(base));
+  SUMMARY_COL_FIELDS.forEach(field => {
+    newSummary[field] = {};
+    if (field === 'offCount') newSummary.paidOffCount = {}; // 「休/有休」はoffCount側にまとめて入れ直すため、内訳は一旦空にする
+  });
+  inputs.forEach(input => {
+    const name = input.dataset.name;
+    const field = input.dataset.field;
+    const val = parseInt(input.value, 10);
+    if (!val || val <= 0) return; // 0や空欄は保存しない（該当者なしとして扱う）
+    newSummary[field][name] = val;
+  });
+  try {
+    const raw = localStorage.getItem('rj_monthlyLogs');
+    const logs = raw ? JSON.parse(raw) : {};
+    logs[dateKey] = newSummary;
+    localStorage.setItem('rj_monthlyLogs', JSON.stringify(logs));
+  } catch(e) {}
+  if (!window._fbMonthlyLogs) window._fbMonthlyLogs = {};
+  window._fbMonthlyLogs[dateKey] = newSummary;
+  if (window.fbSaveMonthlyLog) window.fbSaveMonthlyLog(dateKey, newSummary);
+  showToast(`${dateKey}の集計を保存しました`);
+  renderSummaryModalContent();
+}
+
 // ===== リセットの復元 =====
 function updateUndoButtonState() {
   const btn = document.getElementById('undoResetBtn');
@@ -5279,13 +5314,16 @@ function changeSummaryDay(dayKey) {
 // 列幅を固定し、ヘッダー用テーブルと本体用テーブルで完全に揃える（横スクロールを連動させるため）
 const SUMMARY_COL_WIDTHS = [68, 54, 54, 50, 54, 54, 62, 50, 50, 58, 50];
 const SUMMARY_COL_LABELS = ['キャスト','送り','飲直','新規','初回RP','写真指名','ヘルプ指名','本人','代理','休/有休','半休'];
+// 表示列（名前を除く）と、集計データ側のフィールド名の対応。編集モードでの保存時に使う
+const SUMMARY_COL_FIELDS = ['okuriCount','nomiCount','shinkiCount','rpCount','photoCount','helpCount','selfCount','proxyCount','offCount','halfOffCount'];
 function summaryColgroup() {
   return '<colgroup>' + SUMMARY_COL_WIDTHS.map(w => `<col style="width:${w}px;">`).join('') + '</colgroup>';
 }
 
 // 集計テーブルを「固定表示するヘッダー部分」と「縦横スクロールする本体部分」に分けて返す
 // （sticky指定に頼らず、スクロール領域そのものの外にヘッダーを出すことで確実に固定する）
-function buildSummaryTable(summary) {
+// editable=trueの場合、各セルを直接編集できる入力欄にする（過去日の報告漏れなどを手動で直すための機能）
+function buildSummaryTable(summary, editable) {
   summary = summary || {};
   const photoCount = summary.photoCount || {};
   const okuriCount = summary.okuriCount || {};
@@ -5295,6 +5333,9 @@ function buildSummaryTable(summary) {
   const rpCount = summary.rpCount || {};
   const selfCount = summary.selfCount || {};
   const proxyCount = summary.proxyCount || {};
+  // 「休/有休」は元々2種類のカウント（無給・有給）の合算値として表示している。
+  // 編集モードでは1つの数字としてしか直せないため、編集して保存した場合はoffCount側にまとめて入れ直す
+  // （paidOffCountとの内訳は失われるが、合計の正確さを優先する）
   const offCount = summary.offCount || {};
   const paidOffCount = summary.paidOffCount || {};
   const halfOffCount = summary.halfOffCount || {};
@@ -5314,6 +5355,15 @@ function buildSummaryTable(summary) {
     ...[...allNames].filter(n => !staffList.includes(n)).sort()
   ];
 
+  const cellStyle = 'padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;';
+  const inputStyle = 'width:34px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:12px;text-align:center;padding:2px 0;';
+  const cell = (name, field, value, extraColor) => {
+    if (editable) {
+      return `<td style="${cellStyle}"><input type="number" min="0" inputmode="numeric" value="${value}" data-name="${name.replace(/"/g,'&quot;')}" data-field="${field}" style="${inputStyle}${extraColor?`color:${extraColor};`:''}"></td>`;
+    }
+    return `<td style="${cellStyle}${extraColor?`color:${extraColor};`:''}">${value}</td>`;
+  };
+
   const rows = orderedNames.map(name => {
     const photo = photoCount[name] || 0;
     const okuri = okuriCount[name] || 0;
@@ -5327,16 +5377,16 @@ function buildSummaryTable(summary) {
     const half = halfOffCount[name] || 0;
     return `<tr>
       <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${okuri}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${nomi}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${shinki}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${rp}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${photo}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;">${help}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#2ecc71;">${self}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${proxy}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e74c3c;">${off}</td>
-      <td style="padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;color:#e67e22;">${half}</td>
+      ${cell(name, 'okuriCount', okuri)}
+      ${cell(name, 'nomiCount', nomi)}
+      ${cell(name, 'shinkiCount', shinki)}
+      ${cell(name, 'rpCount', rp)}
+      ${cell(name, 'photoCount', photo)}
+      ${cell(name, 'helpCount', help)}
+      ${cell(name, 'selfCount', self, '#2ecc71')}
+      ${cell(name, 'proxyCount', proxy, '#e67e22')}
+      ${cell(name, 'offCount', off, '#e74c3c')}
+      ${cell(name, 'halfOffCount', half, '#e67e22')}
     </tr>`;
   }).join('');
 
@@ -5351,7 +5401,7 @@ function buildSummaryTable(summary) {
     </table>`;
 
   const bodyHtml = `
-    <table style="width:604px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
+    <table id="summaryBodyTable" style="width:604px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
       ${summaryColgroup()}
       <tbody>${rows || `<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>`}</tbody>
     </table>`;
@@ -5385,15 +5435,21 @@ function renderSummaryModalContent() {
       const dates = getAvailableDates();
       const dateOptions = dates.map(d => `<option value="${d}" ${d===_summaryDayKey?'selected':''}>${d}</option>`).join('');
       // 選んだ日付が今日で、まだリセット前（保存ログが無い）ならライブデータを見る
-      const summary = getSavedDailyLog(_summaryDayKey) || (_summaryDayKey === getTodayKey() ? computeDailySummary() : {});
-      const built = buildSummaryTable(summary);
+      const savedDayLog = getSavedDailyLog(_summaryDayKey);
+      const isLive = !savedDayLog && _summaryDayKey === getTodayKey();
+      const summary = savedDayLog || (isLive ? computeDailySummary() : {});
+      // 確定済みのログ（本日分リセット後、または過去日）だけ編集できるようにする。
+      // まだリセット前のライブ集計は、再計算のたびに上書きされてしまうため編集対象にしない
+      const canEditSummary = !isLive;
+      const built = buildSummaryTable(summary, canEditSummary);
       headerHtml = built.headerHtml;
       tableBodyHtml = built.bodyHtml;
       extraHtml = `
-        <div style="margin-bottom:10px;">
+        <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <select onchange="changeSummaryDay(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:6px 8px;outline:none;">
             ${dateOptions}
           </select>
+          ${canEditSummary ? `<button onclick="saveEditedSummary('${_summaryDayKey}')" style="background:var(--accent);border:none;border-radius:5px;color:#1a1a1a;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer;font-family:var(--font-main);">✎ 変更を保存</button>` : `<span style="font-size:11px;color:var(--text-dim);">※本日分リセット前は編集できません</span>`}
         </div>`;
       titleSuffix = '（日別）';
     } else {
