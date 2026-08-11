@@ -2660,7 +2660,7 @@ function renderTeamCounts() {
     const outlineWidthPct = Math.round((planned / maxPlanned) * 100);
     const fillWidthPct = planned > 0 ? Math.round((arrived / planned) * 100) : 0;
     return `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px;">
+      <div onclick="openTeamMembersPopup('${t.key}')" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px;cursor:pointer;">
         <span style="width:62px;flex-shrink:0;font-weight:700;color:${t.color};">${t.label}</span>
         <div style="flex:1;height:15px;position:relative;background:#262626;border-radius:4px;">
           <div style="position:absolute;left:0;top:0;height:100%;border-radius:4px;border:1.5px solid ${t.color};width:${outlineWidthPct}%;">
@@ -2677,6 +2677,43 @@ function renderTeamCounts() {
       <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">チーム別 来店数</span>
     </div>
     ${rowsHtml}`;
+}
+
+// チーム別バーをタップした時に、そのチームの各メンバーの来店数/予定数を個別に見られるポップアップを開く
+function openTeamMembersPopup(teamKey) {
+  const t = (window.teamDefs || []).find(x => x.key === teamKey);
+  if (!t) return;
+  const teams = window.staffTeams || {};
+  const members = Object.keys(teams).filter(name => teams[name] === teamKey);
+
+  const activeGuests = guests.filter(g => g.arrived);
+  const plannedGuests = guests.filter(g => !(g.name && g.name.includes('△') && !g.arrived));
+
+  const memberStats = members.map(name => {
+    const isThisPerson = g => matchStaffName(g.tanto) === name;
+    const arrived = activeGuests.filter(isThisPerson).length;
+    const planned = plannedGuests.filter(isThisPerson).length;
+    return { name, arrived, planned };
+  }).sort((a, b) => b.planned - a.planned); // 予定数が多い順に並べる
+
+  let overlay = document.getElementById('teamMembersOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='teamMembersOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+
+  const rowsHtml = memberStats.length
+    ? memberStats.map(m => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;color:var(--text);">${m.name}</span>
+          <span style="font-size:13px;font-weight:700;color:${t.color};font-variant-numeric:tabular-nums;">${m.arrived}<span style="color:var(--text-dim);font-weight:400;">/</span>${m.planned}</span>
+        </div>`).join('')
+    : `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">このチームにはまだ誰も所属していません</div>`;
+
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:70vh;overflow-y:auto;">
+    <div style="font-size:15px;font-weight:700;color:${t.color};margin-bottom:12px;">${t.label}</div>
+    ${rowsHtml}
+    <button onclick="document.getElementById('teamMembersOverlay').style.display='none'" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
+  </div>`;
+  overlay.style.display = 'flex';
 }
 
 function renderFloorStatus() {
