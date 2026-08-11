@@ -3516,10 +3516,10 @@ function renderView() {
 
   let html = '';
 
-  // 特記事項凡例
-  const hasSpecial = active.some(g => g.specials && g.specials.length);
+  // 特記事項凡例（来店前のお客様の分は、まだ実際に卓に反映されていないので対象外にする）
+  const hasSpecial = active.some(g => g.arrived && g.specials && g.specials.length);
   if (hasSpecial) {
-    const legendHtml = SPECIALS.filter(s => active.some(g => g.specials && g.specials.includes(s.key)))
+    const legendHtml = SPECIALS.filter(s => active.some(g => g.arrived && g.specials && g.specials.includes(s.key)))
       .map(s => `<span style="font-size:11px;color:var(--text-dim);">${s.icon}${s.label}</span>`).join(' ');
     html += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">${legendHtml}</div>`;
   }
