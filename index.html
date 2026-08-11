@@ -25,6 +25,7 @@
   const guestsRef = ref(db, 'guests');
   const staffRef = ref(db, 'staff');
   const staffTeamsRef = ref(db, 'staffTeams');
+  const staffKanbuRef = ref(db, 'staffKanbu');
   const teamDefsRef = ref(db, 'teamDefs');
   const firstRef = ref(db, 'firstGroups');
   const backupRef = ref(db, 'resetBackup');
@@ -88,6 +89,13 @@
     if (isViewOnlyMode()) return;
     const hasData = teamsObj && Object.keys(teamsObj).length > 0;
     set(staffTeamsRef, hasData ? teamsObj : null).catch(e => console.error('FB staffTeams save error:', e));
+  };
+
+  // Firebaseに「幹部かどうか」の一覧（{名前: true}形式。falseは持たず、幹部の人だけキーを持つ）を保存
+  window.fbSaveStaffKanbu = function(kanbuObj) {
+    if (isViewOnlyMode()) return;
+    const hasData = kanbuObj && Object.keys(kanbuObj).length > 0;
+    set(staffKanbuRef, hasData ? kanbuObj : null).catch(e => console.error('FB staffKanbu save error:', e));
   };
 
   // Firebaseにチーム自体の定義（[{key, label, color}, ...]）を保存。
@@ -285,6 +293,13 @@
     window.staffTeams = data || {};
     try { localStorage.setItem('tableManager_staffTeams', JSON.stringify(window.staffTeams)); } catch(e) {}
     if (typeof renderTeamCounts === 'function') renderTeamCounts();
+  });
+
+  // Firebaseから「幹部かどうか」の一覧をリアルタイム受信
+  onValue(staffKanbuRef, (snapshot) => {
+    const data = snapshot.val();
+    window.staffKanbu = data || {};
+    try { localStorage.setItem('tableManager_staffKanbu', JSON.stringify(window.staffKanbu)); } catch(e) {}
   });
 
   // Firebaseからチーム定義（名前・色・数）をリアルタイム受信。
@@ -4172,6 +4187,11 @@ function loadStaff() {
     if (rawTeamDefs) window.teamDefs = JSON.parse(rawTeamDefs);
   } catch(e) {}
   if (!window.teamDefs) window.teamDefs = [];
+  try {
+    const rawKanbu = localStorage.getItem('tableManager_staffKanbu');
+    if (rawKanbu) window.staffKanbu = JSON.parse(rawKanbu);
+  } catch(e) {}
+  if (!window.staffKanbu) window.staffKanbu = {};
   // Firebaseスタッフ受信時に更新
   window._fbStaffReady = function() {
     if (window._fbStaff) {
@@ -5804,13 +5824,17 @@ function openStaffTeamsModal() {
 
   const rowsHtml = staffList.map(name => {
     const current = teams[name] || '';
+    const isKanbu = !!(window.staffKanbu || {})[name];
     const btnsHtml = window.teamDefs.map(t => {
       const active = current === t.key;
       return `<button onclick="setStaffTeam('${name.replace(/'/g,"\\'")}','${t.key}')" style="flex:1;padding:6px 2px;border-radius:5px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:var(--font-main);border:1px solid ${active ? t.color : 'var(--border)'};background:${active ? t.color : 'transparent'};color:${active ? '#111' : t.color};">${t.label}</button>`;
     }).join('');
     return `
       <div style="margin-bottom:10px;">
-        <div style="font-size:12px;color:var(--text);margin-bottom:4px;">${name}</div>
+        <div onclick="openStaffKanbuPopup('${name.replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:5px;margin-bottom:4px;cursor:pointer;">
+          <span style="font-size:12px;color:var(--text);">${name}</span>
+          ${isKanbu ? '<span style="font-size:10px;color:#e8b64c;">⭐幹部</span>' : ''}
+        </div>
         <div style="display:flex;gap:4px;">${btnsHtml}</div>
       </div>`;
   }).join('') || '<div style="font-size:12px;color:var(--text-dim);">先に在籍スタッフを登録してください</div>';
@@ -5890,6 +5914,33 @@ function setStaffTeam(name, teamKey) {
   try { localStorage.setItem('tableManager_staffTeams', JSON.stringify(window.staffTeams)); } catch(e) {}
   openStaffTeamsModal(); // 選択状態を反映して再描画
   if (typeof renderTeamCounts === 'function') renderTeamCounts();
+}
+
+// 個人名をタップすると開く、その人専用の設定ポップアップ（幹部かどうかを切り替える）
+function openStaffKanbuPopup(name) {
+  let overlay = document.getElementById('staffKanbuOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='staffKanbuOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  const isKanbu = !!(window.staffKanbu || {})[name];
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:22px;max-width:280px;width:100%;text-align:center;">
+    <div style="font-size:15px;color:#f0ece0;font-weight:700;margin-bottom:16px;">${name}</div>
+    <button onclick="toggleStaffKanbu('${name.replace(/'/g,"\\'")}')" style="width:100%;padding:12px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);border:1px solid ${isKanbu ? '#e8b64c' : '#555'};background:${isKanbu ? '#e8b64c' : 'transparent'};color:${isKanbu ? '#111' : '#ccc'};margin-bottom:10px;">⭐ 幹部${isKanbu ? '（ON）' : '（OFF）'}</button>
+    <button onclick="document.getElementById('staffKanbuOverlay').style.display='none'" style="width:100%;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
+  </div>`;
+  overlay.style.display='flex';
+}
+
+// 「幹部かどうか」を切り替える（付け回し機能などで、対象を幹部だけに絞るために使う想定）
+function toggleStaffKanbu(name) {
+  if (!window.staffKanbu) window.staffKanbu = {};
+  if (window.staffKanbu[name]) {
+    delete window.staffKanbu[name]; // falseの人はキー自体を持たない（データを小さく保つため）
+  } else {
+    window.staffKanbu[name] = true;
+  }
+  if (window.fbSaveStaffKanbu) window.fbSaveStaffKanbu(window.staffKanbu);
+  try { localStorage.setItem('tableManager_staffKanbu', JSON.stringify(window.staffKanbu)); } catch(e) {}
+  openStaffTeamsModal(); // 背後のスタッフ一覧の表示も更新しておく
+  openStaffKanbuPopup(name); // ポップアップ自体もON/OFFの見た目を反映して再描画
 }
 
 // ===== FIXED BARS =====
