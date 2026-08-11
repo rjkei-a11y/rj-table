@@ -5362,7 +5362,7 @@ function buildSummaryTable(summary, editable) {
     ...[...allNames].filter(n => !staffList.includes(n)).sort()
   ];
 
-  const cellStyle = 'padding:6px 4px;border-bottom:1px solid var(--border);text-align:center;';
+  const cellStyle = 'padding:9px 4px;line-height:1.4;border-bottom:1px solid var(--border);text-align:center;';
   const inputStyle = 'width:34px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:12px;text-align:center;padding:2px 0;';
   const cell = (name, field, value, extraColor) => {
     if (editable) {
@@ -5383,7 +5383,7 @@ function buildSummaryTable(summary, editable) {
     const off = (offCount[name] || 0) + (paidOffCount[name] || 0);
     const half = halfOffCount[name] || 0;
     return `<tr>
-      <td style="padding:6px 8px 6px 4px;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
+      <td style="padding:9px 8px 9px 4px;line-height:1.4;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
       ${cell(name, 'okuriCount', okuri)}
       ${cell(name, 'nomiCount', nomi)}
       ${cell(name, 'shinkiCount', shinki)}
@@ -5402,7 +5402,7 @@ function buildSummaryTable(summary, editable) {
       ${summaryColgroup()}
       <thead>
         <tr style="color:var(--accent);">
-          ${SUMMARY_COL_LABELS.map((label, i) => `<th style="padding:6px 4px;text-align:${i===0?'left':'center'};border-bottom:1px solid var(--accent-dim);${i===0?'border-right:1px solid var(--accent-dim);padding-left:4px;':''}white-space:nowrap;background:var(--surface);${i===0?'position:sticky;left:0;z-index:2;':''}">${label}</th>`).join('')}
+          ${SUMMARY_COL_LABELS.map((label, i) => `<th style="padding:9px 4px;line-height:1.4;text-align:${i===0?'left':'center'};border-bottom:1px solid var(--accent-dim);${i===0?'border-right:1px solid var(--accent-dim);padding-left:4px;':''}white-space:nowrap;background:var(--surface);${i===0?'position:sticky;left:0;z-index:2;':''}">${label}</th>`).join('')}
         </tr>
       </thead>
     </table>`;
@@ -5491,7 +5491,7 @@ function renderSummaryModalContent() {
         ${tabBtn('day', '日別')}
         ${tabBtn('month', '月間')}
       </div>
-      <div id="summaryHeaderWrap" class="no-scrollbar" style="overflow-x:auto;border-bottom:1px solid var(--accent-dim);background:var(--surface);padding-left:12px;pointer-events:none;">
+      <div id="summaryHeaderWrap" class="no-scrollbar" style="overflow-x:auto;border-bottom:1px solid var(--accent-dim);background:var(--surface);padding-left:12px;padding-right:12px;pointer-events:none;">
         ${headerHtml}
       </div>
       <div class="modal-body" style="overflow-y:auto;overflow-x:hidden;flex:1;padding:12px;">
