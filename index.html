@@ -4781,6 +4781,16 @@ function saveTodayToMonthlyLog(dateKey) {
   if (window.fbSaveMonthlyLog) window.fbSaveMonthlyLog(dateKey, summary);
 }
 
+// 本日分リセットをせずに、今の集計(ライブ)の値だけを月間の記録に反映させる（チェックポイント保存）。
+// ゲストデータは一切消さないので、営業はそのまま続けられる。外部連携（GAS等）が確定済みの
+// monthlyLogsだけを見ている場合、リセットを待たずにその日の最新の実績を反映させたい時に使う
+function saveCheckpointLog() {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  saveTodayToMonthlyLog(getTodayKey());
+  showToast('現在の集計値を保存しました（営業データは消えていません）');
+  renderSummaryModalContent();
+}
+
 // 集計モーダルの「日別」タブで手動編集した内容を保存する。
 // 過去の報告漏れ等で自動集計に反映されなかった分を、内勤が直接修正できるようにするための機能
 function saveEditedSummary(dateKey) {
@@ -5425,13 +5435,16 @@ function renderSummaryModalContent() {
   let headerHtml = '', extraHtml = '', tableBodyHtml = '', titleSuffix;
   try {
     if (_summaryTab === 'today') {
-      // 本日分リセット済みなら、その時点で保存されたログを優先する（ライブデータは空になっているため）
+      // 「保存済みログがあるか」ではなく「実際にゲストデータが空かどうか」で、本当にリセット済みかを判定する。
+      // チェックポイント保存（リセットせず途中経過だけ保存する機能）を導入したため、
+      // 保存済みログの有無だけでは「リセット済み」と誤判定してしまうようになったための対応
+      const actuallyReset = guests.length === 0 && (firstGroups || []).length === 0;
       const savedLog = getSavedDailyLog(getTodayKey());
-      const built = buildSummaryTable(savedLog || computeDailySummary());
+      const built = buildSummaryTable((actuallyReset && savedLog) ? savedLog : computeDailySummary());
       headerHtml = built.headerHtml;
       tableBodyHtml = built.bodyHtml;
-      titleSuffix = savedLog ? '（本日・リセット済み）' : '（本日・ライブ）';
-      if (savedLog) {
+      titleSuffix = actuallyReset ? '（本日・リセット済み）' : '（本日・ライブ）';
+      if (actuallyReset && savedLog) {
         extraHtml = `
           <div style="margin-bottom:10px;font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:8px;">
             <span>本日分は既にリセット済みのため、リセット直前の記録を表示しています。</span>
@@ -5484,6 +5497,7 @@ function renderSummaryModalContent() {
     <div class="modal" style="max-width:640px;max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <span>📊 集計${titleSuffix}</span>
+        ${titleSuffix === '（本日・ライブ）' ? `<button onclick="saveCheckpointLog()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;margin-left:auto;margin-right:10px;">💾 現在値を保存</button>` : ''}
         <button onclick="document.getElementById('summaryModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div style="display:flex;border-bottom:1px solid var(--border);">
