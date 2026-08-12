@@ -26,6 +26,8 @@
   const staffRef = ref(db, 'staff');
   const staffTeamsRef = ref(db, 'staffTeams');
   const staffKanbuRef = ref(db, 'staffKanbu');
+  const tsukeActiveRef = ref(db, 'tsukemawashiActive');
+  const tsukeLogRef = ref(db, 'tsukemawashiLog');
   const teamDefsRef = ref(db, 'teamDefs');
   const firstRef = ref(db, 'firstGroups');
   const backupRef = ref(db, 'resetBackup');
@@ -96,6 +98,24 @@
     if (isViewOnlyMode()) return;
     const hasData = kanbuObj && Object.keys(kanbuObj).length > 0;
     set(staffKanbuRef, hasData ? kanbuObj : null).catch(e => console.error('FB staffKanbu save error:', e));
+  };
+
+  // 付け回し：今まさに誰がどの卓についているか（{幹部名: {tableKey, tanto, guestName, startedAt}}）を保存
+  window.fbSaveTsukeActive = function(activeObj) {
+    if (isViewOnlyMode()) return;
+    const hasData = activeObj && Object.keys(activeObj).length > 0;
+    set(tsukeActiveRef, hasData ? activeObj : null).catch(e => console.error('FB tsukeActive save error:', e));
+  };
+  // 付け回し：離席した記録を1件、個別のIDで保存する（衝突回避：全体を上書きせず該当IDのみ書き込む）
+  window.fbSaveTsukeLogEntry = function(logId, entry) {
+    if (isViewOnlyMode()) return;
+    set(ref(db, 'tsukemawashiLog/' + logId), entry).catch(e => console.error('FB tsukeLog save error:', e));
+  };
+  // 本日分リセット用：付け回しの記録を全部空にする
+  window.fbClearTsukeAll = function() {
+    if (isViewOnlyMode()) return;
+    set(tsukeActiveRef, null).catch(e => console.error('FB tsukeActive clear error:', e));
+    set(tsukeLogRef, null).catch(e => console.error('FB tsukeLog clear error:', e));
   };
 
   // Firebaseにチーム自体の定義（[{key, label, color}, ...]）を保存。
@@ -300,6 +320,20 @@
     const data = snapshot.val();
     window.staffKanbu = data || {};
     try { localStorage.setItem('tableManager_staffKanbu', JSON.stringify(window.staffKanbu)); } catch(e) {}
+    if (typeof updateTsukeEntryBtn === 'function') updateTsukeEntryBtn();
+  });
+
+  // 付け回し：今まさに誰がどの卓についているかをリアルタイム受信
+  onValue(tsukeActiveRef, (snapshot) => {
+    const data = snapshot.val();
+    window.tsukeActive = data || {};
+    if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
+  });
+  // 付け回し：離席済みの記録一覧をリアルタイム受信
+  onValue(tsukeLogRef, (snapshot) => {
+    const data = snapshot.val();
+    window.tsukeLog = data || {};
+    if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
   });
 
   // Firebaseからチーム定義（名前・色・数）をリアルタイム受信。
@@ -552,7 +586,10 @@
   <!-- 卓状況 -->
   <div style="margin-top:16px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">
-      <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">卓状況</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">卓状況</span>
+        <button id="tsukeEntryBtn" onclick="openTsukemawashiModal()" style="display:none;background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);font-weight:700;">🚶 付け回し</button>
+      </div>
       <button onclick="openFloorSettings()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:2px 8px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
     </div>
     <div id="floorLegend" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"></div>
@@ -846,6 +883,7 @@ function applyRole(role) {
   }
   updateTableListVisibleBtn();
   if (typeof updateMainPassBtn === 'function') updateMainPassBtn();
+  if (typeof updateTsukeEntryBtn === 'function') updateTsukeEntryBtn();
   if (typeof updateViewOnlyBtn === 'function') updateViewOnlyBtn();
   if (typeof updateUndoButtonState === 'function') updateUndoButtonState();
   if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
@@ -874,6 +912,13 @@ function updateMainPassBtn() {
     return;
   }
   btn.style.display = 'inline-block';
+}
+
+// 付け回し入り口ボタンは、内勤 or 幹部登録されている従業員だけに見せる
+function updateTsukeEntryBtn() {
+  const btn = document.getElementById('tsukeEntryBtn');
+  if (!btn) return;
+  btn.style.display = (typeof canUseTsukemawashi === 'function' && canUseTsukemawashi()) ? 'inline-block' : 'none';
 }
 
 // 閲覧専用モードのボタン表示（内勤専用）。ONの間は保存が一切できなくなるので、見た目でひと目で分かるようにする
@@ -2721,6 +2766,236 @@ function openTeamMembersPopup(teamKey) {
   overlay.style.display = 'flex';
 }
 
+// ===== 付け回し（幹部がヘルプとして卓に着く動きを記録する機能） =====
+// 対象は通常の予定報告経由のお客様のみ（初回タブ由来の卓は対象外）。
+// 「今誰がどの卓についているか」はtsukeActiveに、離席した記録はtsukeLogに、それぞれFirebase経由で共有される
+
+// 幹部フラグが付いているスタッフの一覧を返す
+function getKanbuStaffList() {
+  const kanbu = window.staffKanbu || {};
+  return staffList.filter(name => kanbu[name]);
+}
+
+// この端末の付け回し操作を、内勤 or 幹部登録されている従業員だけに許可する
+function canUseTsukemawashi() {
+  if (localStorage.getItem('rj_role') === 'admin') return true;
+  const myName = getMyIdentity();
+  return !!(myName && (window.staffKanbu || {})[myName]);
+}
+
+// 指定した幹部が、今まさについている卓の情報を返す（無ければnull）
+function getTsukeActiveOf(kanbuName) {
+  return (window.tsukeActive || {})[kanbuName] || null;
+}
+
+// 指定した卓に、今ついている幹部たちの一覧を返す（[{name, startedAt}, ...]）
+function getTsukeMembersOnTable(tableKey) {
+  const active = window.tsukeActive || {};
+  return Object.keys(active)
+    .filter(name => active[name].tableKey === tableKey)
+    .map(name => ({ name, startedAt: active[name].startedAt }));
+}
+
+// 分単位の経過時間を計算する
+function tsukeElapsedMinutes(startedAt) {
+  return Math.max(0, Math.floor((Date.now() - startedAt) / 60000));
+}
+
+// 着席する：既に他の卓についていれば、まずそちらを自動で離席させてから、新しい卓に着く
+function doJoinTsuke(kanbuName, tableKey, tanto, guestName) {
+  const prev = getTsukeActiveOf(kanbuName);
+  if (prev && prev.tableKey !== tableKey) {
+    doLeaveTsuke(kanbuName, false); // 前の卓の記録をログに残しつつ離席させる（再描画は後でまとめて行う）
+  }
+  if (!window.tsukeActive) window.tsukeActive = {};
+  window.tsukeActive[kanbuName] = { tableKey, tanto: tanto || '', guestName: guestName || '', startedAt: Date.now() };
+  if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
+  renderTsukeModalIfOpen();
+  renderFloorStatus();
+}
+
+// 離席する：経過時間を計算し、「担当・お客様名」の組み合わせで記録に合算する
+function doLeaveTsuke(kanbuName, shouldRender) {
+  const active = getTsukeActiveOf(kanbuName);
+  if (!active) return;
+  const minutes = tsukeElapsedMinutes(active.startedAt);
+  const logId = Date.now() + '_' + kanbuName.replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠]/g, '');
+  const entry = { kanbu: kanbuName, tanto: active.tanto, guestName: active.guestName, startedAt: active.startedAt, endedAt: Date.now(), minutes };
+  if (!window.tsukeLog) window.tsukeLog = {};
+  window.tsukeLog[logId] = entry;
+  if (window.fbSaveTsukeLogEntry) window.fbSaveTsukeLogEntry(logId, entry);
+  delete window.tsukeActive[kanbuName];
+  if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
+  if (shouldRender !== false) {
+    renderTsukeModalIfOpen();
+    renderFloorStatus();
+  }
+}
+
+// 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）
+function buildTsukeFloorBoxesHtml() {
+  const infoMap = {};
+  guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    if (!infoMap[key]) infoMap[key] = { tanto: g.tanto || '', name: (g.name || '').replace('△','').trim() };
+  });
+  const floors = ['V', 'A', 'B'];
+  const colsHtml = floors.map(f => {
+    const nums = (floorData[f] || []).slice();
+    const boxesHtml = nums.map(t => {
+      const info = infoMap[t];
+      const members = getTsukeMembersOnTable(t);
+      if (!info) {
+        return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 6px;min-height:34px;color:#555;font-size:10px;display:flex;align-items:center;">${t}</div>`;
+      }
+      const memberHtml = members.map(m => `
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--accent);font-weight:700;margin-top:3px;padding-top:3px;border-top:1px dashed #444;">
+          <span>🚶${m.name}</span><span style="color:#7fd97f;" data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}分</span>
+        </div>`).join('');
+      return `<div onclick="openTsukeTablePopup('${t}')" style="background:${members.length ? '#2a2410' : 'var(--surface2)'};border:1px solid ${members.length ? 'var(--accent)' : 'var(--border)'};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
+        <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}</span><span style="font-size:8.5px;color:var(--text-dim);">${info.tanto}</span></div>
+        <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
+        ${memberHtml}
+      </div>`;
+    }).join('');
+    return `<div><div style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:5px;">${f}フロア</div><div style="display:flex;flex-direction:column;gap:5px;">${boxesHtml}</div></div>`;
+  }).join('');
+  return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">${colsHtml}</div>`;
+}
+
+// 幹部稼働カード（2列）を組み立てる。担当・お客様名ごとに合算し、対応順（古い方が上）で並べる
+function buildTsukeKanbuStatsHtml() {
+  const kanbuList = getKanbuStaffList();
+  if (!kanbuList.length) return `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">幹部が登録されていません（従業員設定から登録できます）</div>`;
+
+  const log = window.tsukeLog || {};
+  const cardsHtml = kanbuList.map(name => {
+    // このスタッフのログを、対応順（古い記録から）に取り出す
+    const entries = Object.values(log).filter(e => e.kanbu === name).sort((a, b) => a.startedAt - b.startedAt);
+    // 担当・お客様名の組み合わせごとに合算する
+    const pairs = [];
+    const pairIndex = {};
+    entries.forEach(e => {
+      const pairKey = e.tanto + '　' + e.guestName;
+      if (pairIndex[pairKey] == null) {
+        pairIndex[pairKey] = pairs.length;
+        pairs.push({ tanto: e.tanto, guestName: e.guestName, count: 0, total: 0 });
+      }
+      const p = pairs[pairIndex[pairKey]];
+      p.count++;
+      p.total += e.minutes;
+    });
+    const total = pairs.reduce((s, p) => s + p.total, 0);
+    const pairsHtml = pairs.length
+      ? pairs.map(p => `<div style="font-size:10.5px;color:var(--text-dim);padding:2px 0;line-height:1.4;"><span style="color:var(--text);display:block;">${p.tanto}・${p.guestName}</span><span><b style="color:var(--accent);">${p.count}回</b>・<b style="color:var(--accent);">${p.total}分</b></span></div>`).join('')
+      : `<div style="font-size:10.5px;color:var(--text-dim);">まだ記録がありません</div>`;
+    const active = getTsukeActiveOf(name);
+    const currentHtml = active
+      ? `<div style="font-size:10.5px;color:#7fd97f;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span data-tsuke-timer="${active.startedAt}">${tsukeElapsedMinutes(active.startedAt)}</span>分）</div>`
+      : `<div style="font-size:10px;color:#666;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">現在ついていません</div>`;
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 11px;">
+      <div style="font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:${active ? '#7fd97f' : '#555'};${active ? 'box-shadow:0 0 5px #7fd97f;' : ''}"></span>${name}</div>
+      ${pairsHtml}
+      <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;padding-top:5px;margin-top:3px;border-top:1px dashed #3a3a3a;"><span>トータル</span><b style="color:var(--accent);">${total}分</b></div>
+      ${currentHtml}
+    </div>`;
+  }).join('');
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${cardsHtml}</div>`;
+}
+
+// 卓をタップした時のポップアップ：今ついている幹部一覧＋離席ボタン、＋自分も着く操作
+function openTsukeTablePopup(tableKey) {
+  const guest = guests.find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey && g.arrived && !g.left);
+  if (!guest) return; // 空卓・初回のみの卓はタップしても何も起きない
+  const members = getTsukeMembersOnTable(tableKey);
+  let overlay = document.getElementById('tsukeTableOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeTableOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1002;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+
+  const kanbuList = getKanbuStaffList();
+  const notOnThisTable = kanbuList.filter(name => !members.some(m => m.name === name));
+  const membersHtml = members.length
+    ? members.map(m => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;color:var(--text);">${m.name}（<span data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}</span>分）</span>
+          <button onclick="confirmLeaveTsuke('${m.name.replace(/'/g,"\\'")}')" style="background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);">離れる</button>
+        </div>`).join('')
+    : `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:10px 0;">まだ誰もついていません</div>`;
+  const addHtml = notOnThisTable.length
+    ? `<div style="margin-top:12px;">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;">
+          ${notOnThisTable.map(name => `<button onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${tableKey}')" style="background:none;border:1px solid var(--accent-dim);border-radius:5px;color:var(--accent);font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}</button>`).join('')}
+        </div>
+      </div>`
+    : '';
+
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:75vh;overflow-y:auto;">
+    <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:2px;">${tableKey}卓</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">${guest.tanto || ''}・${(guest.name||'').replace('△','').trim()}</div>
+    ${membersHtml}
+    ${addHtml}
+    <button onclick="document.getElementById('tsukeTableOverlay').style.display='none'" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
+  </div>`;
+  overlay.style.display = 'flex';
+}
+
+function confirmJoinTsuke(name, tableKey) {
+  const guest = guests.find(g => g.tableNum && g.tableNum.toUpperCase().replace(/^P/, 'V') === tableKey && g.arrived && !g.left);
+  if (!guest) return;
+  doJoinTsuke(name, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
+  document.getElementById('tsukeTableOverlay').style.display = 'none';
+  showToast(`${name}さんが${tableKey}卓に着きました`);
+}
+
+function confirmLeaveTsuke(name) {
+  doLeaveTsuke(name);
+  document.getElementById('tsukeTableOverlay').style.display = 'none';
+  showToast(`${name}さんが離れました`);
+}
+
+// 付け回し専用のポップアップを開く（内勤・幹部登録済みの従業員のみ）
+function openTsukemawashiModal() {
+  if (!canUseTsukemawashi()) { showToast('この機能は内勤・幹部のみ利用できます'); return; }
+  let overlay = document.getElementById('tsukeModal');
+  if (!overlay) { overlay = document.createElement('div'); overlay.className = 'modal-overlay'; overlay.id = 'tsukeModal'; document.body.appendChild(overlay); }
+  renderTsukeModalIfOpen();
+  overlay.classList.add('show');
+  if (!window._tsukeTimerInterval) {
+    // 経過時間の表示を1分おきに自動更新する（ポップアップが開いている間だけ）
+    window._tsukeTimerInterval = setInterval(() => {
+      document.querySelectorAll('[data-tsuke-timer]').forEach(el => {
+        el.textContent = tsukeElapsedMinutes(Number(el.getAttribute('data-tsuke-timer')));
+      });
+    }, 60000);
+  }
+}
+
+function closeTsukemawashiModal() {
+  const overlay = document.getElementById('tsukeModal');
+  if (overlay) overlay.classList.remove('show');
+  if (window._tsukeTimerInterval) { clearInterval(window._tsukeTimerInterval); window._tsukeTimerInterval = null; }
+}
+
+// 付け回しポップアップが今開いている時だけ、中身を再描画する（Firebase受信のたびに毎回呼ばれるため）
+function renderTsukeModalIfOpen() {
+  const overlay = document.getElementById('tsukeModal');
+  if (!overlay || !overlay.classList.contains('show')) return;
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;width:96vw;max-height:88vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>🚶 付け回し</span>
+        <button onclick="closeTsukemawashiModal()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;">
+        <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">卓状況</div>
+        ${buildTsukeFloorBoxesHtml()}
+        <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">本日の幹部稼働</div>
+        ${buildTsukeKanbuStatsHtml()}
+      </div>
+    </div>`;
+}
+
 function renderFloorStatus() {
   renderMyTodaySummary();
   updateTantoStats();
@@ -4236,6 +4511,8 @@ function loadStaff() {
     if (rawKanbu) window.staffKanbu = JSON.parse(rawKanbu);
   } catch(e) {}
   if (!window.staffKanbu) window.staffKanbu = {};
+  if (!window.tsukeActive) window.tsukeActive = {};
+  if (!window.tsukeLog) window.tsukeLog = {};
   // Firebaseスタッフ受信時に更新
   window._fbStaffReady = function() {
     if (window._fbStaff) {
@@ -4266,6 +4543,7 @@ function setMyIdentity(name) {
   try { localStorage.setItem('rj_myIdentity', name); } catch(e) {}
   prefillMrTanto();
   renderMyTodaySummary();
+  if (typeof updateTsukeEntryBtn === 'function') updateTsukeEntryBtn();
 }
 
 // 今の入力が「本人」か「代理」かを判定する
@@ -4756,6 +5034,10 @@ function doResetReports(dateKey) {
   const baanaiInput = document.getElementById('baanaiInput');
   if (baanaiInput) baanaiInput.value = '';
   updateBaanaiBar('');
+  // 付け回しの記録（着席中の状態・履歴）も、翌営業日に持ち越さないようクリアする
+  window.tsukeActive = {};
+  window.tsukeLog = {};
+  if (window.fbClearTsukeAll) window.fbClearTsukeAll();
 
   renderTables();
   renderStaffStatus();
