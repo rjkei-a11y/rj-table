@@ -2438,7 +2438,12 @@ function renderTablesPreservingScroll() {
     const newTr = document.querySelector(`#panel-tables [data-rownum="${anchorRowNum}"]`);
     if (newTr) {
       const afterTop = newTr.getBoundingClientRect().top;
-      window.scrollBy(0, afterTop - beforeTop);
+      const diff = afterTop - beforeTop;
+      // 来店確認などで行そのものが「未来店グループ→来店済みグループ」へ移動すると、
+      // 目印にしていた行の位置が大きくズレ、それを追いかけて補正しようとすると逆に
+      // カクンと目立つ動きになってしまう。ズレが大きい時は、無理に追従せずそのままにする
+      if (Math.abs(diff) > 150) return;
+      window.scrollBy(0, diff);
     }
   }
 
@@ -5598,15 +5603,15 @@ function renderStaffStatus() {
     const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
     const dayStatus = staffDayStatus[name] ? staffDayStatus[name].status : null;
     const isHalfOff = dayStatus === 'half_off';
-    // ドットの色は「報告状況」を表す：報告済み(緑) > 休み/有休(赤) > 予定未定または半休で未報告(青) > 未報告(グレー)
-    // 半休であること自体は色とは別に「半」バッジで示すので、半休でも報告が済んでいれば緑、
-    // まだ未報告なら青（予定未定と同じ扱い）になり、どちらの情報も同時に見える
+    // ドットの色は「報告状況」を表す：報告済み(緑) > 休み/有休(赤) > 予定未定(青) > 未報告(グレー)
+    // 半休であること自体は色とは別に「半」バッジで示す。半休でも報告が済んでいれば緑、
+    // まだ未報告なら（予定未定と区別せず）グレーのまま、「半」バッジだけが付く
     let color, textColor;
     if (done) {
       color = textColor = '#2ecc71';
     } else if (dayStatus === 'off' || dayStatus === 'paid_off') {
       color = textColor = '#e74c3c';
-    } else if (dayStatus === 'pending' || isHalfOff) {
+    } else if (dayStatus === 'pending') {
       color = textColor = '#3498db';
     } else {
       color = 'var(--border)';
