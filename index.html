@@ -2959,8 +2959,8 @@ function openTsukemawashiModal() {
   if (!canUseTsukemawashi()) { showToast('この機能は内勤・幹部のみ利用できます'); return; }
   let overlay = document.getElementById('tsukeModal');
   if (!overlay) { overlay = document.createElement('div'); overlay.className = 'modal-overlay'; overlay.id = 'tsukeModal'; document.body.appendChild(overlay); }
+  overlay.classList.add('show'); // 先に「表示中」の印を付けてから中身を組み立てる（順序が逆だと中身が空のまま表示されてしまう）
   renderTsukeModalIfOpen();
-  overlay.classList.add('show');
   if (!window._tsukeTimerInterval) {
     // 経過時間の表示を1分おきに自動更新する（ポップアップが開いている間だけ）
     window._tsukeTimerInterval = setInterval(() => {
