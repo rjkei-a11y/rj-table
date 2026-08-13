@@ -2918,32 +2918,65 @@ function openTsukeTablePopup(guestId) {
   if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeTableOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1002;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
 
-  const kanbuList = getKanbuStaffList();
-  const notOnThisGuest = kanbuList.filter(name => !members.some(m => m.name === name));
+  const isAdmin = localStorage.getItem('rj_role') === 'admin';
+  const myName = getMyIdentity();
+
+  // キャストロールは「自分」しか操作できないので、他の幹部の「離れる」ボタンは出さない
+  // （内勤は代理で誰の分でも操作できるよう、全員分にボタンを出す）
   const membersHtml = members.length
-    ? members.map(m => `
+    ? members.map(m => {
+        const canLeaveThis = isAdmin || m.name === myName;
+        return `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
           <span style="font-size:13px;color:var(--text);">${m.name}（<span data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}</span>分）</span>
-          <button onclick="confirmLeaveTsuke('${m.name.replace(/'/g,"\\'")}')" style="background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);">離れる</button>
-        </div>`).join('')
+          ${canLeaveThis ? `<button onclick="confirmLeaveTsuke('${m.name.replace(/'/g,"\\'")}')" style="background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : ''}
+        </div>`;
+      }).join('')
     : `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:10px 0;">まだ誰もついていません</div>`;
-  const addHtml = notOnThisGuest.length
-    ? `<div style="margin-top:12px;">
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く</div>
-        <div style="display:flex;flex-wrap:wrap;gap:5px;">
-          ${notOnThisGuest.map(name => `<button onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}',${guestId})" style="background:none;border:1px solid var(--accent-dim);border-radius:5px;color:var(--accent);font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}</button>`).join('')}
-        </div>
-      </div>`
-    : '';
+
+  let addHtml;
+  if (isAdmin) {
+    // 内勤：誰の分として着けるか、対象キャストの一覧からボタンで選ぶ
+    const notOnThisGuest = getKanbuStaffList().filter(name => !members.some(m => m.name === name));
+    addHtml = notOnThisGuest.length
+      ? `<div style="margin-top:12px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;">
+            ${notOnThisGuest.map(name => `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}',${guestId})" style="background:none;border:1px solid var(--accent-dim);border-radius:5px;color:var(--accent);font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}</button>`).join('')}
+          </div>
+        </div>`
+      : '';
+  } else {
+    // キャスト：自分がまだこの卓についていなければ、シンプルに「着卓する」の1ボタンだけ出す
+    const alreadyHere = members.some(m => m.name === myName);
+    addHtml = (!alreadyHere && myName)
+      ? `<button onclick="confirmJoinTsuke('${myName.replace(/'/g,"\\'")}',${guestId})" style="width:100%;margin-top:12px;padding:11px;background:var(--accent);border:none;border-radius:8px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">この卓に着卓する</button>`
+      : '';
+  }
 
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:75vh;overflow-y:auto;">
     <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:2px;">${tableKey}卓</div>
     <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">${guest.tanto || ''}・${(guest.name||'').replace('△','').trim()}</div>
     ${membersHtml}
     ${addHtml}
-    <button onclick="document.getElementById('tsukeTableOverlay').style.display='none'" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
+    <button onclick="document.getElementById('tsukeTableOverlay').style.display='none'" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
   </div>`;
   overlay.style.display = 'flex';
+}
+
+// 内勤が代理でキャストを着席させる時、誤タップ防止のため確認ダイアログを一度挟む
+// （キャスト自身が押す「この卓に着卓する」ボタンは、それ自体が意思確認になっているので対象外）
+function promptJoinTsuke(name, guestId) {
+  let overlay = document.getElementById('tsukeJoinConfirmOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeJoinConfirmOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1003;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:280px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${name}さんを着卓させますか？</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
+      <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none';confirmJoinTsuke('${name.replace(/'/g,"\\'")}',${guestId})" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">はい</button>
+    </div>
+  </div>`;
+  overlay.style.display='flex';
 }
 
 function confirmJoinTsuke(name, guestId) {
