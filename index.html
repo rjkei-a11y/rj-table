@@ -2836,11 +2836,11 @@ function doLeaveTsuke(kanbuName, shouldRender) {
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
 // 同じ卓番に複数のお客様がいる場合は、卓状況欄と同じように、その分だけBOXを並べて表示する
 function buildTsukeFloorBoxesHtml() {
-  const infoMap = {}; // { "V3": [{guestId, tanto, name}, ...] }
+  const infoMap = {}; // { "V3": [{guestId, tanto, name, help}, ...] }
   guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!infoMap[key]) infoMap[key] = [];
-    infoMap[key].push({ guestId: g.id, tanto: g.tanto || '', name: (g.name || '').replace('△','').trim() });
+    infoMap[key].push({ guestId: g.id, tanto: g.tanto || '', name: (g.name || '').replace('△','').trim(), help: g.help || '' });
   });
   const floors = ['V', 'A', 'B'];
   const colsHtml = floors.map(f => {
@@ -2859,6 +2859,7 @@ function buildTsukeFloorBoxesHtml() {
         return `<div onclick="openTsukeTablePopup(${info.guestId})" style="background:${members.length ? '#2a2410' : 'var(--surface2)'};border:1px solid ${members.length ? 'var(--accent)' : 'var(--border)'};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
           <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}</span><span style="font-size:8.5px;color:var(--text-dim);">${info.tanto}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
+          ${info.help ? `<div style="font-size:8.5px;color:#e8954a;">H: ${info.help}</div>` : ''}
           ${memberHtml}
         </div>`;
       }).join('<div style="height:4px;"></div>');
@@ -2920,6 +2921,11 @@ function openTsukeTablePopup(guestId) {
 
   const isAdmin = localStorage.getItem('rj_role') === 'admin';
   const myName = getMyIdentity();
+  // このお客様の「担当・お客様名」ペア（卓移動があっても、この組み合わせで過去の実績を追う）
+  const pairTanto = guest.tanto || '';
+  const pairGuestName = (guest.name || '').replace('△','').trim();
+  // ヘルプ指名欄に書かれているキャスト名を抽出する（担当が来てほしいと書いた人を、選択時に目立たせるため）
+  const helpNames = extractStaffNames(guest.help || '', buildAliasIndex());
 
   // キャストロールは「自分」しか操作できないので、他の幹部の「離れる」ボタンは出さない
   // （内勤は代理で誰の分でも操作できるよう、全員分にボタンを出す）
@@ -2936,13 +2942,20 @@ function openTsukeTablePopup(guestId) {
 
   let addHtml;
   if (isAdmin) {
-    // 内勤：誰の分として着けるか、対象キャストの一覧からボタンで選ぶ
+    // 内勤：誰の分として着けるか、対象キャストの一覧からボタンで選ぶ。
+    // ヘルプ指名されている人は色を変えて目立たせ、このお客様に過去何回付いたかも右横に数字で出す
     const notOnThisGuest = getKanbuStaffList().filter(name => !members.some(m => m.name === name));
+    const log = window.tsukeLog || {};
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く<span style="color:var(--accent);">（オレンジ＝ヘルプ指名されている人）</span></div>
           <div style="display:flex;flex-wrap:wrap;gap:5px;">
-            ${notOnThisGuest.map(name => `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}',${guestId})" style="background:none;border:1px solid var(--accent-dim);border-radius:5px;color:var(--accent);font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}</button>`).join('')}
+            ${notOnThisGuest.map(name => {
+              const isHelpRequested = helpNames.includes(name);
+              const pastCount = Object.values(log).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
+              const color = isHelpRequested ? '#e8954a' : 'var(--accent)';
+              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}',${guestId})" style="background:none;border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}${pastCount > 0 ? `<span style="opacity:0.8;"> ${pastCount}</span>` : ''}</button>`;
+            }).join('')}
           </div>
         </div>`
       : '';
@@ -2956,7 +2969,8 @@ function openTsukeTablePopup(guestId) {
 
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:75vh;overflow-y:auto;">
     <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:2px;">${tableKey}卓</div>
-    <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;">${guest.tanto || ''}・${(guest.name||'').replace('△','').trim()}</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">${pairTanto}・${pairGuestName}</div>
+    ${guest.help ? `<div style="font-size:10.5px;color:#e8954a;margin-bottom:12px;">ヘルプ指名: ${guest.help}</div>` : `<div style="margin-bottom:12px;"></div>`}
     ${membersHtml}
     ${addHtml}
     <button onclick="document.getElementById('tsukeTableOverlay').style.display='none'" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
