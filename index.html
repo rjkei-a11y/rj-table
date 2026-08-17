@@ -2265,6 +2265,7 @@ function saveTableNumPopup(guestId) {
   saveToStorage();
   document.getElementById('tableNumPopup').classList.remove('show');
   updateSingleGuestRow(guestId);
+  renderEmptyTablesArea();
   renderFloorStatus();
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
 }
@@ -2541,6 +2542,8 @@ function editCell(id, field, td) {
     // 更新後も同じ行が画面上の同じ位置に見えるようスクロール位置を補正する
     withScrollPreserved(() => updateSingleGuestRow(id), td.closest('tr'));
     renderFloorStatus();
+    // 卓番が変わった場合、空き卓一覧はupdateSingleGuestRow（行だけの軽量更新）には含まれないため、別途更新する
+    if (field === 'tableNum') renderEmptyTablesArea();
     if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   }
   input.addEventListener('blur', save);
