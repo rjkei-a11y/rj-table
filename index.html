@@ -2802,8 +2802,9 @@ function getTsukeActiveOf(kanbuName) {
 // 同じ卓番に複数のお客様がいることがあるため、卓番だけでなくguestIdで区別する
 function getTsukeMembersOnGuest(guestId) {
   const active = window.tsukeActive || {};
+  const key = String(guestId); // onclick経由だと文字列、直接呼ぶ場合は数値のことがあるため、比較前に必ず文字列へ揃える
   return Object.keys(active)
-    .filter(name => active[name].guestId === guestId)
+    .filter(name => String(active[name].guestId) === key)
     .map(name => ({ name, startedAt: active[name].startedAt }));
 }
 
@@ -2814,24 +2815,27 @@ function tsukeElapsedMinutes(startedAt) {
 
 // 着席する：既に他のお客様についていれば、まずそちらを自動で離席させてから、新しいお客様に着く
 function doJoinTsuke(kanbuName, guestId, tableKey, tanto, guestName) {
+  const idStr = String(guestId); // 通常ゲスト(数値)・初回グループ("first_◯"文字列)どちらも、以後は文字列として統一して扱う
+  const isFirst = idStr.indexOf('first_') === 0; // 初回グループの卓かどうか。ログに残しつつ、幹部カードの集計からは除外するために使う
   const prev = getTsukeActiveOf(kanbuName);
-  if (prev && prev.guestId !== guestId) {
+  if (prev && String(prev.guestId) !== idStr) {
     doLeaveTsuke(kanbuName, false); // 前の分の記録をログに残しつつ離席させる（再描画は後でまとめて行う）
   }
   if (!window.tsukeActive) window.tsukeActive = {};
-  window.tsukeActive[kanbuName] = { guestId, tableKey, tanto: tanto || '', guestName: guestName || '', startedAt: Date.now() };
+  window.tsukeActive[kanbuName] = { guestId: idStr, tableKey, tanto: tanto || '', guestName: guestName || '', startedAt: Date.now(), isFirst };
   if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
   renderTsukeModalIfOpen();
   renderFloorStatus();
 }
 
-// 離席する：経過時間を計算し、「担当・お客様名」の組み合わせで記録に合算する
+// 離席する：経過時間を計算し、「担当・お客様名」の組み合わせで記録に合算する。
+// 初回グループの分もここではそのままログに残す（幹部カードの表示だけ、初回分は除外して見せる）
 function doLeaveTsuke(kanbuName, shouldRender) {
   const active = getTsukeActiveOf(kanbuName);
   if (!active) return;
   const minutes = tsukeElapsedMinutes(active.startedAt);
   const logId = Date.now() + '_' + kanbuName.replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠]/g, '');
-  const entry = { kanbu: kanbuName, tanto: active.tanto, guestName: active.guestName, startedAt: active.startedAt, endedAt: Date.now(), minutes };
+  const entry = { kanbu: kanbuName, tanto: active.tanto, guestName: active.guestName, startedAt: active.startedAt, endedAt: Date.now(), minutes, isFirst: !!active.isFirst };
   if (!window.tsukeLog) window.tsukeLog = {};
   window.tsukeLog[logId] = entry;
   if (window.fbSaveTsukeLogEntry) window.fbSaveTsukeLogEntry(logId, entry);
@@ -2846,11 +2850,21 @@ function doLeaveTsuke(kanbuName, shouldRender) {
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
 // 同じ卓番に複数のお客様がいる場合は、卓状況欄と同じように、その分だけBOXを並べて表示する
 function buildTsukeFloorBoxesHtml() {
-  const infoMap = {}; // { "V3": [{guestId, tanto, name, help}, ...] }
+  const infoMap = {}; // { "V3": [{guestId, tanto, name, help, isFirst}, ...] }
   guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!infoMap[key]) infoMap[key] = [];
     infoMap[key].push({ guestId: g.id, tanto: g.tanto || '', name: (g.name || '').replace('△','').trim(), help: g.help || '' });
+  });
+  // 初回グループも対象にする（来店フラグが立っていて、まだ全員が飲直等に転換しきっていないもの）
+  (firstGroups || []).filter(g => g.tableNum && g.arrived).forEach(g => {
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
+    if (allDone) return;
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    if (!infoMap[key]) infoMap[key] = [];
+    const count = parseInt(g.count) || 0;
+    const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
+    infoMap[key].push({ guestId: 'first_' + g.id, tanto: photoNames.join('/'), name: `初回${count ? count+'名' : ''}`, help: '', isFirst: true });
   });
   const floors = ['V', 'A', 'B'];
   const colsHtml = floors.map(f => {
@@ -2866,7 +2880,9 @@ function buildTsukeFloorBoxesHtml() {
           <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--accent);font-weight:700;margin-top:3px;padding-top:3px;border-top:1px dashed #444;">
             <span>🚶${m.name}</span><span style="color:#7fd97f;" data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}分</span>
           </div>`).join('');
-        return `<div onclick="openTsukeTablePopup(${info.guestId})" style="background:${members.length ? '#2a2410' : 'var(--surface2)'};border:1px solid ${members.length ? 'var(--accent)' : 'var(--border)'};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
+        const boxBg = members.length ? '#2a2410' : (info.isFirst ? '#1a2a3a' : 'var(--surface2)');
+        const boxBorder = members.length ? 'var(--accent)' : (info.isFirst ? '#4a90d9' : 'var(--border)');
+        return `<div onclick="openTsukeTablePopup('${info.guestId}')" style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
           <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}</span><span style="font-size:8.5px;color:var(--text-dim);">${info.tanto}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
           ${info.help ? `<div style="font-size:8.5px;color:#e8954a;">H: ${info.help}</div>` : ''}
@@ -2886,8 +2902,9 @@ function buildTsukeKanbuStatsHtml() {
 
   const log = window.tsukeLog || {};
   const cardsHtml = kanbuList.map(name => {
-    // このスタッフのログを、対応順（古い記録から）に取り出す
-    const entries = Object.values(log).filter(e => e.kanbu === name).sort((a, b) => a.startedAt - b.startedAt);
+    // このスタッフのログを、対応順（古い記録から）に取り出す。
+    // 初回グループの分はデータとしては残すが、この幹部カードの表示・集計からは除外する
+    const entries = Object.values(log).filter(e => e.kanbu === name && !e.isFirst).sort((a, b) => a.startedAt - b.startedAt);
     // 担当・お客様名の組み合わせごとに合算する
     const pairs = [];
     const pairIndex = {};
@@ -2920,9 +2937,24 @@ function buildTsukeKanbuStatsHtml() {
 }
 
 // 卓（お客様）をタップした時のポップアップ：今ついている幹部一覧＋離席ボタン、＋自分も着く操作
+// guestId（通常ゲストの数値ID、または初回グループ由来の"first_◯"文字列）から、
+// 通常ゲスト・初回グループどちらでも同じ形（{tableNum, tanto, name, help}）にして返す共通処理
+function resolveTsukeGuest(guestId) {
+  if (typeof guestId === 'string' && guestId.indexOf('first_') === 0) {
+    const fgId = parseInt(guestId.slice(6), 10);
+    const fg = (firstGroups || []).find(g => g.id === fgId && g.arrived);
+    if (!fg) return null;
+    const count = parseInt(fg.count) || 0;
+    const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), name: `初回${count ? count+'名' : ''}`, help: '' };
+  }
+  const numId = Number(guestId);
+  return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
+}
+
 function openTsukeTablePopup(guestId) {
-  const guest = guests.find(g => g.id === guestId && g.arrived && !g.left);
-  if (!guest) return; // 空卓・初回のみの卓はタップしても何も起きない
+  const guest = resolveTsukeGuest(guestId);
+  if (!guest) return; // 空卓はタップしても何も起きない
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   const members = getTsukeMembersOnGuest(guestId);
   let overlay = document.getElementById('tsukeTableOverlay');
@@ -2966,7 +2998,7 @@ function openTsukeTablePopup(guestId) {
               const isHelpRequested = helpNames.includes(name);
               const pastCount = Object.values(log).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
               const color = isHelpRequested ? '#e8954a' : 'var(--accent)';
-              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}',${guestId})" style="background:none;border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}${pastCount > 0 ? `<span style="opacity:0.8;"> ${pastCount}</span>` : ''}</button>`;
+              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:none;border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}${pastCount > 0 ? `<span style="opacity:0.8;"> ${pastCount}</span>` : ''}</button>`;
             }).join('')}
           </div>
         </div>`
@@ -2975,7 +3007,7 @@ function openTsukeTablePopup(guestId) {
     // キャスト：自分がまだこの卓についていなければ、シンプルに「着卓する」の1ボタンだけ出す
     const alreadyHere = members.some(m => m.name === myName);
     addHtml = (!alreadyHere && myName)
-      ? `<button onclick="confirmJoinTsuke('${myName.replace(/'/g,"\\'")}',${guestId})" style="width:100%;margin-top:12px;padding:11px;background:var(--accent);border:none;border-radius:8px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">この卓に着卓する</button>`
+      ? `<button onclick="confirmJoinTsuke('${myName.replace(/'/g,"\\'")}','${guestId}')" style="width:100%;margin-top:12px;padding:11px;background:var(--accent);border:none;border-radius:8px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">この卓に着卓する</button>`
       : '';
   }
 
@@ -2999,14 +3031,14 @@ function promptJoinTsuke(name, guestId) {
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${name}さんを着卓させますか？</div>
     <div style="display:flex;gap:10px;">
       <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
-      <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none';confirmJoinTsuke('${name.replace(/'/g,"\\'")}',${guestId})" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">はい</button>
+      <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none';confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">はい</button>
     </div>
   </div>`;
   overlay.style.display='flex';
 }
 
 function confirmJoinTsuke(name, guestId) {
-  const guest = guests.find(g => g.id === guestId && g.arrived && !g.left);
+  const guest = resolveTsukeGuest(guestId);
   if (!guest) return;
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
