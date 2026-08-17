@@ -2627,7 +2627,7 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
     line3 = '';
   } else {
     const tanto = (info && info.tanto) || '';
-    const isTantoConflict = tanto && multiTantoNames.has(tanto);
+    const isTantoConflict = tanto && multiTantoNames.has(matchStaffName(tanto));
     const tantoHtml = tanto ? ` <span style="${isTantoConflict ? 'color:#e74c3c;font-weight:700;' : ''}">${normalizeStaffNamesInText(tanto)}</span>` : '';
     const leaveHtml = (info && info.leave && parseTimeText(info.leave)) ? ` <span style="color:${arrived?'#8b2f2f':'#e57373'};font-weight:700;">⏰${info.leave}</span>` : '';
     // 飲直転換後に卓移動していたら「元卓→現卓」の形で表示する
@@ -3893,8 +3893,13 @@ function tableNumSort(a, b) {
 function computeMultiTantoNames() {
   const active = guests.filter(g => !g.left);
   const tantoCount = {};
+  // 担当名は「そう」「蒼介くん」のような表記ゆれがありうるため、生の文字列のままではなく
+  // 正式なスタッフ名に解決してからカウントする（していないと、飲直の送り欄などから来た
+  // 表記ゆれのある担当名が、同一人物として数えられず被りを見逃してしまう）
   active.filter(g => g.tanto && g.tableNum && g.arrived).forEach(g => {
-    tantoCount[g.tanto] = (tantoCount[g.tanto] || 0) + 1;
+    const resolved = matchStaffName(g.tanto);
+    if (!resolved) return;
+    tantoCount[resolved] = (tantoCount[resolved] || 0) + 1;
   });
   return new Set(Object.entries(tantoCount).filter(([,n]) => n >= 2).map(([name]) => name));
 }
@@ -3904,7 +3909,7 @@ function updateTantoStats() {
   const multiTantoNames = computeMultiTantoNames();
   const multiTanto = [...multiTantoNames].map(name => {
     const active = guests.filter(g => !g.left);
-    const count = active.filter(g => g.tanto === name && g.tableNum && g.arrived).length;
+    const count = active.filter(g => matchStaffName(g.tanto) === name && g.tableNum && g.arrived).length;
     return [name, count];
   });
   const tantoStatsEl = document.getElementById('tantoStats');
