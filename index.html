@@ -2776,6 +2776,16 @@ function getKanbuStaffList() {
   return staffList.filter(name => kanbu[name]);
 }
 
+// 本日「休み」「有休」ではない、出勤している従業員の一覧を返す（付け回しの卓状況で選ぶ対象は
+// 幹部に絞らず全員にするための一覧。半休・予定未定・未報告は出勤扱いに含める）
+function getWorkingStaffList() {
+  const dayStatus = staffDayStatus || {};
+  return staffList.filter(name => {
+    const status = dayStatus[name] && dayStatus[name].status;
+    return status !== 'off' && status !== 'paid_off';
+  });
+}
+
 // この端末の付け回し操作を、内勤 or 幹部登録されている従業員だけに許可する
 function canUseTsukemawashi() {
   if (localStorage.getItem('rj_role') === 'admin') return true;
@@ -2943,8 +2953,10 @@ function openTsukeTablePopup(guestId) {
   let addHtml;
   if (isAdmin) {
     // 内勤：誰の分として着けるか、対象キャストの一覧からボタンで選ぶ。
+    // 卓状況で選べる対象は幹部に絞らず、本日出勤している従業員全員にする
+    // （「本日の幹部稼働」カードの集計対象は幹部だけのまま、こことは別の話）
     // ヘルプ指名されている人は色を変えて目立たせ、このお客様に過去何回付いたかも右横に数字で出す
-    const notOnThisGuest = getKanbuStaffList().filter(name => !members.some(m => m.name === name));
+    const notOnThisGuest = getWorkingStaffList().filter(name => !members.some(m => m.name === name));
     const log = window.tsukeLog || {};
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
