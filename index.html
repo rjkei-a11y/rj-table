@@ -2613,10 +2613,12 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
     : '';
   const arrived = !!(info && info.arrived);
   const isFirst = !!(info && info.isFirst);
-  // 初回は水色系、それ以外(来店済みの通常ゲスト)は今まで通りゴールド系
-  const boxBg = isFirst ? '#5dade2' : (arrived ? '#c9a84c' : 'transparent');
-  const boxText = isFirst ? '#000' : (arrived ? '#000' : 'var(--text)');
-  const boxDim = isFirst ? '#1a4a66' : (arrived ? '#5a4a1a' : '#a68a4a');
+  // お客様名に「体入」が含まれる卓は、体験入店のお客様として黄緑で目立たせる
+  const isTainyu = !!(info && info.name && info.name.includes('体入'));
+  // 初回は水色系、体入は黄緑系、それ以外(来店済みの通常ゲスト)は今まで通りゴールド系
+  const boxBg = isFirst ? '#5dade2' : (isTainyu ? '#9acd32' : (arrived ? '#c9a84c' : 'transparent'));
+  const boxText = isFirst ? '#000' : (isTainyu ? '#000' : (arrived ? '#000' : 'var(--text)'));
+  const boxDim = isFirst ? '#1a4a66' : (isTainyu ? '#4a5a1a' : (arrived ? '#5a4a1a' : '#a68a4a'));
   let line1, line2, line3;
   if (info && info.isFirst) {
     const arriveHtml = info.actualArrive ? ` <span style="color:${boxText};font-weight:700;">🕐${info.actualArrive}</span>` : '';
