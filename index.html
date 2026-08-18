@@ -3733,6 +3733,7 @@ function editFirstGroup(gid, field, td) {
   input.setSelectionRange(input.value.length, input.value.length);
   function save() {
     g[field] = input.value.trim();
+    if (field === 'tableNum') g[field] = toHalfWidthAlnum(g[field]);
     saveFirstData();
     withScrollPreserved(renderFirstTab, td.closest('tr'));
     // 卓番変更時は全行を再同期＋初回卓を反映
