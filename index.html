@@ -2783,9 +2783,17 @@ function getKanbuStaffList() {
 
 // 本日「休み」「有休」ではない、出勤している従業員の一覧を返す（付け回しの卓状況で選ぶ対象は
 // 幹部に絞らず全員にするための一覧。半休・予定未定・未報告は出勤扱いに含める）
+// 本日「休み」「有休」ではない、出勤している従業員の一覧を返す（付け回しの卓状況で選ぶ対象は
+// 幹部に絞らず全員にするための一覧。半休・予定未定・未報告は出勤扱いに含める）。
+// 報告状況欄の色分けと同じ考え方で、「実際に来店予定を報告済みかどうか」を休みフラグより優先する。
+// これをしないと、内勤が先に休みフラグを立てた後、そのキャスト本人が予定を追加報告しても、
+// 古い休みフラグが残ったままになり、この一覧に出てこなくなってしまう
 function getWorkingStaffList() {
   const dayStatus = staffDayStatus || {};
+  const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
   return staffList.filter(name => {
+    const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
+    if (done) return true;
     const status = dayStatus[name] && dayStatus[name].status;
     return status !== 'off' && status !== 'paid_off';
   });
