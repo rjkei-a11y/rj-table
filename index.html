@@ -3515,6 +3515,7 @@ function renderFirstTab() {
   if (statsEl) {
     const total = firstGroups.reduce((s,g) => s + (parseInt(g.count)||0), 0);
     const current = firstGroups.reduce((s,g) => {
+      if (!g.arrived) return s;
       const cnt = parseInt(g.count)||0;
       const rowCnt = (g.rows||[]).length || 1;
       const doneRows = (g.rows||[]).filter(r => isFirstRowDone(r)).length;
@@ -4507,6 +4508,7 @@ function updateTableStats() {
   const allRows = firstGroups.reduce((arr, g) => arr.concat(g.rows||[]), []);
   const firstTotal = firstGroups.reduce((sum, g) => sum + (parseInt(g.count)||0), 0);
   const firstCurrent = firstGroups.reduce((sum, g) => {
+    if (!g.arrived) return sum;
     return sum + (g.rows||[]).reduce((s, r) => s + (isFirstRowDone(r) ? 0 : (parseInt(g.count)||0) / (g.rows||[1]).length), 0);
   }, 0);
   const firstCurrentInt = Math.round(firstCurrent);
