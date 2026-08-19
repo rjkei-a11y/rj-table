@@ -1045,6 +1045,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(updateFixedTop, 100);
   // 来店予定・退店予定の時刻経過ハイライトを1分ごとに再評価する
   setInterval(() => {
+    updateDate();
     renderTables();
     renderFloorStatus();
   }, 60000);
