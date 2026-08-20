@@ -2915,6 +2915,7 @@ function buildTsukeKanbuStatsHtml() {
   if (!kanbuList.length) return `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">幹部が登録されていません（従業員設定から登録できます）</div>`;
 
   const log = window.tsukeLog || {};
+  const isAdmin = localStorage.getItem('rj_role') === 'admin';
   const cardsHtml = kanbuList.map(name => {
     // このスタッフのログを、対応順（古い記録から）に取り出す。
     // 初回グループの分はデータとしては残すが、この幹部カードの表示・集計からは除外する
@@ -2937,8 +2938,13 @@ function buildTsukeKanbuStatsHtml() {
       ? pairs.map(p => `<div style="font-size:10.5px;color:var(--text-dim);padding:2px 0;line-height:1.4;"><span style="color:var(--text);display:block;">${p.tanto}・${p.guestName}</span><span><b style="color:var(--accent);">${p.count}回</b>・<b style="color:var(--accent);">${p.total}分</b></span></div>`).join('')
       : `<div style="font-size:10.5px;color:var(--text-dim);">まだ記録がありません</div>`;
     const active = getTsukeActiveOf(name);
+    // 内勤は、卓を探さずともこのカードから直接その人を離席させられるようにする
+    const leaveBtn = (active && isAdmin) ? `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="flex-shrink:0;background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : '';
     const currentHtml = active
-      ? `<div style="font-size:10.5px;color:#7fd97f;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span data-tsuke-timer="${active.startedAt}">${tsukeElapsedMinutes(active.startedAt)}</span>分）</div>`
+      ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">
+           <span style="font-size:10.5px;color:#7fd97f;font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span data-tsuke-timer="${active.startedAt}">${tsukeElapsedMinutes(active.startedAt)}</span>分）</span>
+           ${leaveBtn}
+         </div>`
       : `<div style="font-size:10px;color:#666;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">現在ついていません</div>`;
     return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 11px;">
       <div style="font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:${active ? '#7fd97f' : '#555'};${active ? 'box-shadow:0 0 5px #7fd97f;' : ''}"></span>${name}</div>
@@ -3001,18 +3007,27 @@ function openTsukeTablePopup(guestId) {
     // 内勤：誰の分として着けるか、対象キャストの一覧からボタンで選ぶ。
     // 卓状況で選べる対象は幹部に絞らず、本日出勤している従業員全員にする
     // （「本日の幹部稼働」カードの集計対象は幹部だけのまま、こことは別の話）
-    // ヘルプ指名されている人は色を変えて目立たせ、このお客様に過去何回付いたかも右横に数字で出す
+    // ヘルプ指名されている人はピンクで目立たせる（オレンジは既定色のゴールドと紛らわしいため使わない）。
+    // このお客様（担当・お客様名の組）に同日中に何回付いたかは、右横の数字に加えて、
+    // 背景の濃さでも表現する（同じ色相の濃淡なので、ヘルプ指名の色と衝突しない）。
+    // 濃いほど何度も付いている人＝薄い（＝ついていない）人から優先して選びやすくする狙い
+    // ボタンは名前の長さに関わらず同じ大きさに揃え、誤タップしにくくする。
+    // グリッドで均等割りにし、行の右端に半端な余白ができないようにする
     const notOnThisGuest = getWorkingStaffList().filter(name => !members.some(m => m.name === name));
     const log = window.tsukeLog || {};
+    const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く<span style="color:var(--accent);">（オレンジ＝ヘルプ指名されている人）</span></div>
-          <div style="display:flex;flex-wrap:wrap;gap:5px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px;">
             ${notOnThisGuest.map(name => {
               const isHelpRequested = helpNames.includes(name);
               const pastCount = Object.values(log).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
-              const color = isHelpRequested ? '#e8954a' : 'var(--accent)';
-              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:none;border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">${name}${pastCount > 0 ? `<span style="opacity:0.8;"> ${pastCount}</span>` : ''}</button>`;
+              const color = isHelpRequested ? '#e05a9e' : 'var(--accent)';
+              const colorRgb = isHelpRequested ? '224,90,158' : '201,168,76';
+              const tier = Math.min(pastCount, 4);
+              const bg = tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none';
+              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${name}${pastCount > 0 ? `<span style="opacity:0.85;"> ${pastCount}</span>` : ''}</button>`;
             }).join('')}
           </div>
         </div>`
@@ -3062,7 +3077,9 @@ function confirmJoinTsuke(name, guestId) {
 
 function confirmLeaveTsuke(name) {
   doLeaveTsuke(name);
-  document.getElementById('tsukeTableOverlay').style.display = 'none';
+  // 幹部稼働カードからも呼ばれるため、卓ポップアップが開いていない場合もある
+  const overlay = document.getElementById('tsukeTableOverlay');
+  if (overlay) overlay.style.display = 'none';
   showToast(`${name}さんが離れました`);
 }
 
