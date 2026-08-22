@@ -3043,8 +3043,11 @@ function openTsukeTablePopup(guestId) {
   const isFirstGroup = typeof guestId === 'string' && guestId.indexOf('first_') === 0;
   // 初回の写真指名キャスト→席の色。選択画面のボタンを担当と同じ色（左=ピンク・中=青・右=緑）で目立たせるために使う
   const photoSeatInfo = guest.photoSeatInfo || {};
+  // tsukeLogはリセット操作のたびに空にされる（index.html:5279-5281）ため、日付での絞り込みなしで「本日分」として扱える
   const tsukeLogData = window.tsukeLog || {};
   const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
+  // 本日すでに何回初回卓に付いたか（組み合わせ問わず合計。初回卓のキャスト選択画面で回数バッジ・背景の濃さに使う）
+  const tsukeFirstCountToday = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.isFirst).length;
 
   // キャストロールは「自分」しか操作できないので、他の幹部の「離れる」ボタンは出さない
   // （内勤は代理で誰の分でも操作できるよう、全員分にボタンを出す）
@@ -3093,15 +3096,17 @@ function openTsukeTablePopup(guestId) {
             ${notOnThisGuest.map(name => {
               const isHelpRequested = helpNames.includes(name);
               const photoSeat = photoSeatInfo[name];
-              const pastCount = tsukePastCount(name);
+              // 指名卓は「この担当・お客様に何回付いたか」、初回卓は「本日すでに何回初回卓に付いたか」を回数として使う
+              // （初回卓では一度付いたキャストは既に選択肢から除外済みなので、pastCountは常に0になり意味を持たない）
+              const countForDisplay = isFirstGroup ? tsukeFirstCountToday(name) : tsukePastCount(name);
               const isSelected = selectedCasts.includes(name);
               const color = photoSeat ? photoSeat.hex : (isHelpRequested ? '#e05a9e' : 'var(--accent)');
               const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
-              const tier = Math.min(pastCount, 4);
+              const tier = Math.min(countForDisplay, 4);
               const bg = isSelected ? color : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none');
               const textColor = isSelected ? '#1a1a1a' : color;
               const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
-              return `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${pastCount > 0 ? `<span style="opacity:0.85;"> ${pastCount}</span>` : ''}</button>`;
+              return `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
             }).join('')}
           </div>
         </div>`
