@@ -3007,16 +3007,20 @@ function resolveTsukeGuest(guestId) {
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
 }
 
-// 卓ポップアップを閉じる（表示中の卓IDの記録もクリアする）
+// 卓ポップアップを閉じる（表示中の卓IDと、選択中キャストの記録もクリアする）
 function closeTsukeTablePopup() {
   const overlay = document.getElementById('tsukeTableOverlay');
   if (overlay) overlay.style.display = 'none';
   window._tsukeTablePopupGuestId = null;
+  window._tsukeSelectedCasts = new Set();
 }
 
 function openTsukeTablePopup(guestId) {
   const guest = resolveTsukeGuest(guestId);
   if (!guest) return; // 空卓はタップしても何も起きない
+  if (window._tsukeTablePopupGuestId !== guestId) {
+    window._tsukeSelectedCasts = new Set(); // 別の卓を開いた時は選択中キャストをリセットする
+  }
   window._tsukeTablePopupGuestId = guestId; // 着卓/離席のたびにこのIDで中身だけ更新できるよう記録しておく
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   const members = getTsukeMembersOnGuest(guestId);
@@ -3055,6 +3059,9 @@ function openTsukeTablePopup(guestId) {
       }).join('')
     : `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:10px 0;">まだ誰もついていません</div>`;
 
+  // 内勤側だけ、選択中（まだ着卓は確定していない）キャストの一覧を持つ
+  const selectedCasts = isAdmin ? [...(window._tsukeSelectedCasts || new Set())] : [];
+
   let addHtml;
   if (isAdmin) {
     // 内勤：誰の分として着けるか、対象キャストの一覧からボタンで選ぶ。
@@ -3066,6 +3073,7 @@ function openTsukeTablePopup(guestId) {
     // 濃いほど何度も付いている人＝薄い（＝ついていない）人から優先して選びやすくする狙い
     // ボタンは名前の長さに関わらず同じ大きさに揃え、誤タップしにくくする。
     // グリッドで均等割りにし、行の右端に半端な余白ができないようにする
+    // タップでは即着卓させず選択のトグルだけ行い、複数人選んでから卓番横の「着卓」ボタンでまとめて確定する
     const notOnThisGuest = getWorkingStaffList().filter(name => {
       if (members.some(m => m.name === name)) return false; // 既についている人は対象外
       if (!isFirstGroup && tantoNames.includes(name)) return false; // 指名客の担当本人は選ばせない（初回の写真指名は選択肢に残し、色で目立たせる）
@@ -3073,20 +3081,27 @@ function openTsukeTablePopup(guestId) {
       return true;
     });
     const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
+    // 指名卓（担当・ヘルプ指名）と初回卓（写真指名の席色）は見るべき情報が違うため、説明文を使い回さず分ける
+    const headingDesc = isFirstGroup
+      ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">）・色が濃いほど対応回数が多い）</span>`
+      : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span>${isFirstGroup ? `<span style="color:var(--text-dim);">・写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">）</span>` : ''}<span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span></div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}</div>
+          ${selectedCasts.length ? `<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px;">選択中: ${selectedCasts.join('・')}</div>` : ''}
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px;">
             ${notOnThisGuest.map(name => {
               const isHelpRequested = helpNames.includes(name);
               const photoSeat = photoSeatInfo[name];
               const pastCount = tsukePastCount(name);
+              const isSelected = selectedCasts.includes(name);
               const color = photoSeat ? photoSeat.hex : (isHelpRequested ? '#e05a9e' : 'var(--accent)');
               const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
               const tier = Math.min(pastCount, 4);
-              const bg = tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none';
+              const bg = isSelected ? color : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none');
+              const textColor = isSelected ? '#1a1a1a' : color;
               const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
-              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${name}${seatBadge}${pastCount > 0 ? `<span style="opacity:0.85;"> ${pastCount}</span>` : ''}</button>`;
+              return `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${pastCount > 0 ? `<span style="opacity:0.85;"> ${pastCount}</span>` : ''}</button>`;
             }).join('')}
           </div>
         </div>`
@@ -3101,7 +3116,10 @@ function openTsukeTablePopup(guestId) {
   }
 
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:75vh;overflow-y:auto;">
-    <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:2px;">${tableKey}卓</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;">
+      <div style="font-size:15px;font-weight:700;color:var(--accent);">${tableKey}卓</div>
+      ${isAdmin ? `<button onclick="promptJoinSelectedTsuke('${guestId}')" style="flex-shrink:0;background:${selectedCasts.length ? 'var(--accent)' : 'transparent'};border:1px solid var(--accent);border-radius:6px;color:${selectedCasts.length ? '#1a1a1a' : 'var(--accent)'};font-size:12px;font-weight:700;padding:5px 12px;cursor:pointer;font-family:var(--font-main);">着卓${selectedCasts.length ? `(${selectedCasts.length})` : ''}</button>` : ''}
+    </div>
     <div style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">${guest.tantoDisplay || pairTanto}・${pairGuestName}</div>
     ${guest.help ? `<div style="font-size:10.5px;color:#e8954a;margin-bottom:12px;">ヘルプ指名: ${guest.help}</div>` : `<div style="margin-bottom:12px;"></div>`}
     ${membersHtml}
@@ -3111,28 +3129,53 @@ function openTsukeTablePopup(guestId) {
   overlay.style.display = 'flex';
 }
 
-// 内勤が代理でキャストを着席させる時、誤タップ防止のため確認ダイアログを一度挟む
-// （キャスト自身が押す「この卓に着卓する」ボタンは、それ自体が意思確認になっているので対象外）
-function promptJoinTsuke(name, guestId) {
+// 内勤がキャスト選択欄で名前をタップした時、その場では着卓させず「選択中」の状態をトグルするだけにする
+// （複数人まとめて選んでから、卓番横の「着卓」ボタンで一括確定する）
+function toggleTsukeCastSelection(name, guestId) {
+  if (!window._tsukeSelectedCasts) window._tsukeSelectedCasts = new Set();
+  if (window._tsukeSelectedCasts.has(name)) window._tsukeSelectedCasts.delete(name);
+  else window._tsukeSelectedCasts.add(name);
+  openTsukeTablePopup(guestId); // 選択状態をボタンの塗りつぶし・上部の一覧に反映するため再描画する
+}
+
+// 選択中のキャストをまとめて着卓させる前に、誤タップ防止の確認ダイアログを一度挟む
+function promptJoinSelectedTsuke(guestId) {
+  const selected = [...(window._tsukeSelectedCasts || new Set())];
+  if (!selected.length) { showToast('キャストを選択してください'); return; }
   let overlay = document.getElementById('tsukeJoinConfirmOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeJoinConfirmOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1003;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:280px;width:100%;text-align:center;">
-    <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${name}さんを着卓させますか？</div>
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${selected.join('・')}さんを着卓させますか？</div>
     <div style="display:flex;gap:10px;">
       <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
-      <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none';confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">はい</button>
+      <button onclick="document.getElementById('tsukeJoinConfirmOverlay').style.display='none';confirmJoinSelectedTsuke('${guestId}')" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">はい</button>
     </div>
   </div>`;
   overlay.style.display='flex';
 }
 
+// 選択中のキャスト全員を、まとめて着卓させる（内勤用）
+function confirmJoinSelectedTsuke(guestId) {
+  const guest = resolveTsukeGuest(guestId);
+  if (!guest) return;
+  const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
+  const guestName = (guest.name || '').replace('△','').trim();
+  const selected = [...(window._tsukeSelectedCasts || new Set())];
+  if (!selected.length) return;
+  selected.forEach(name => doJoinTsuke(name, guestId, tableKey, guest.tanto || '', guestName));
+  showToast(`${selected.join('・')}さんが${tableKey}卓に着きました`);
+  window._tsukeSelectedCasts = new Set();
+  if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
+}
+
+// キャスト自身が「この卓に着卓する」を押した時に使う（内勤の代理操作はconfirmJoinSelectedTsukeを使う）
 function confirmJoinTsuke(name, guestId) {
   const guest = resolveTsukeGuest(guestId);
   if (!guest) return;
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
   showToast(`${name}さんが${tableKey}卓に着きました`);
-  // 複数人を続けて着卓させられるよう、ポップアップは閉じずに中身だけ更新する
+  // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
 }
 
