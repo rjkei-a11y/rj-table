@@ -2991,8 +2991,15 @@ function openTsukeTablePopup(guestId) {
   // このお客様の「担当・お客様名」ペア（卓移動があっても、この組み合わせで過去の実績を追う）
   const pairTanto = guest.tanto || '';
   const pairGuestName = (guest.name || '').replace('△','').trim();
+  const aliasIndexForTsuke = buildAliasIndex();
   // ヘルプ指名欄に書かれているキャスト名を抽出する（担当が来てほしいと書いた人を、選択時に目立たせるため）
-  const helpNames = extractStaffNames(guest.help || '', buildAliasIndex());
+  const helpNames = extractStaffNames(guest.help || '', aliasIndexForTsuke);
+  // 担当欄（指名客の指名先、初回なら写真指名）に書かれているキャスト名。この人はキャスト選択画面には出さない
+  const tantoNames = extractStaffNames(pairTanto, aliasIndexForTsuke);
+  // 初回の卓かどうか（初回は同じキャストが同じ組に何度も付くことはないため、一度付いたら選択肢から外す）
+  const isFirstGroup = typeof guestId === 'string' && guestId.indexOf('first_') === 0;
+  const tsukeLogData = window.tsukeLog || {};
+  const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
 
   // キャストロールは「自分」しか操作できないので、他の幹部の「離れる」ボタンは出さない
   // （内勤は代理で誰の分でも操作できるよう、全員分にボタンを出す）
@@ -3018,8 +3025,12 @@ function openTsukeTablePopup(guestId) {
     // 濃いほど何度も付いている人＝薄い（＝ついていない）人から優先して選びやすくする狙い
     // ボタンは名前の長さに関わらず同じ大きさに揃え、誤タップしにくくする。
     // グリッドで均等割りにし、行の右端に半端な余白ができないようにする
-    const notOnThisGuest = getWorkingStaffList().filter(name => !members.some(m => m.name === name));
-    const log = window.tsukeLog || {};
+    const notOnThisGuest = getWorkingStaffList().filter(name => {
+      if (members.some(m => m.name === name)) return false; // 既についている人は対象外
+      if (tantoNames.includes(name)) return false; // 指名客の担当（初回は写真指名）本人は選ばせない
+      if (isFirstGroup && tsukePastCount(name) > 0) return false; // 初回は一度付いたら選択肢から外す
+      return true;
+    });
     const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
@@ -3027,7 +3038,7 @@ function openTsukeTablePopup(guestId) {
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px;">
             ${notOnThisGuest.map(name => {
               const isHelpRequested = helpNames.includes(name);
-              const pastCount = Object.values(log).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
+              const pastCount = tsukePastCount(name);
               const color = isHelpRequested ? '#e05a9e' : 'var(--accent)';
               const colorRgb = isHelpRequested ? '224,90,158' : '201,168,76';
               const tier = Math.min(pastCount, 4);
@@ -3039,7 +3050,8 @@ function openTsukeTablePopup(guestId) {
       : '';
   } else {
     // キャスト：自分がまだこの卓についていなければ、シンプルに「着卓する」の1ボタンだけ出す
-    const alreadyHere = members.some(m => m.name === myName);
+    // （初回は一度付いたら、既に離席済みでも同じ組には再度付けない）
+    const alreadyHere = members.some(m => m.name === myName) || (isFirstGroup && !!myName && tsukePastCount(myName) > 0);
     addHtml = (!alreadyHere && myName)
       ? `<button onclick="confirmJoinTsuke('${myName.replace(/'/g,"\\'")}','${guestId}')" style="width:100%;margin-top:12px;padding:11px;background:var(--accent);border:none;border-radius:8px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">この卓に着卓する</button>`
       : '';
