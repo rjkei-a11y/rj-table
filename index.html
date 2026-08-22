@@ -3051,9 +3051,10 @@ function openTsukeTablePopup(guestId) {
 
   // キャストロールは「自分」しか操作できないので、他の幹部の「離れる」ボタンは出さない
   // （内勤は代理で誰の分でも操作できるよう、全員分にボタンを出す）
+  // 初回卓は内勤が全て着卓・離席を指示するため、キャストロールは自分の分であっても操作できないようにする
   const membersHtml = members.length
     ? members.map(m => {
-        const canLeaveThis = isAdmin || m.name === myName;
+        const canLeaveThis = isAdmin || (m.name === myName && !isFirstGroup);
         return `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
           <span style="font-size:13px;color:var(--text);">${m.name}（<span data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}</span>分）</span>
@@ -3112,10 +3113,12 @@ function openTsukeTablePopup(guestId) {
           </div>
         </div>`
       : '';
+  } else if (isFirstGroup) {
+    // 初回卓は内勤が全て着卓・離席を指示するため、キャストロールからは着卓操作をさせない
+    addHtml = `<div style="font-size:11px;color:var(--text-dim);text-align:center;margin-top:12px;">初回卓の着卓・離席は内勤が行います</div>`;
   } else {
     // キャスト：自分がまだこの卓についていなければ、シンプルに「着卓する」の1ボタンだけ出す
-    // （初回は一度付いたら、既に離席済みでも同じ組には再度付けない）
-    const alreadyHere = members.some(m => m.name === myName) || (isFirstGroup && !!myName && tsukePastCount(myName) > 0);
+    const alreadyHere = members.some(m => m.name === myName);
     addHtml = (!alreadyHere && myName)
       ? `<button onclick="confirmJoinTsuke('${myName.replace(/'/g,"\\'")}','${guestId}')" style="width:100%;margin-top:12px;padding:11px;background:var(--accent);border:none;border-radius:8px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">この卓に着卓する</button>`
       : '';
