@@ -2866,6 +2866,19 @@ function doLeaveTsuke(kanbuName, shouldRender) {
   }
 }
 
+// 初回の写真指名を、席（左/中/右）ラベル付き・席ごとの色で表示用HTMLにする（tanto照合用の生データとは別に表示専用で使う）
+// 左=ピンク・中=青・右=緑（席未設定の1名グループはピンクを既定色にする）
+const TSUKE_SEAT_COLORS = { '左': '#e05a9e', '中': '#4a90d9', '右': '#7fd97f' };
+function buildFirstGroupPhotoDisplay(rows) {
+  return (rows || []).map(r => {
+    const names = [r.photo1, r.photo2].filter(Boolean).map(n => normalizeStaffNamesInText(n)).join('/');
+    if (!names) return '';
+    const seatLabel = r.seat ? `<span style="color:var(--text-dim);">${r.seat}:</span>` : '';
+    const color = TSUKE_SEAT_COLORS[r.seat] || '#e05a9e';
+    return seatLabel + `<span style="color:${color};">${names}</span>`;
+  }).filter(Boolean).join('<span style="color:var(--text-dim);"> ・ </span>');
+}
+
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
 // 同じ卓番に複数のお客様がいる場合は、卓状況欄と同じように、その分だけBOXを並べて表示する
 function buildTsukeFloorBoxesHtml() {
@@ -2883,7 +2896,7 @@ function buildTsukeFloorBoxesHtml() {
     if (!infoMap[key]) infoMap[key] = [];
     const count = parseInt(g.count) || 0;
     const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    infoMap[key].push({ guestId: 'first_' + g.id, tanto: photoNames.join('/'), name: `初回${count ? count+'名' : ''}`, help: '', isFirst: true });
+    infoMap[key].push({ guestId: 'first_' + g.id, tanto: photoNames.join('/'), photoDisplay: buildFirstGroupPhotoDisplay(g.rows), name: `初回${count ? count+'名' : ''}`, help: '', isFirst: true });
   });
   const floors = ['V', 'A', 'B'];
   const colsHtml = floors.map(f => {
@@ -2902,7 +2915,7 @@ function buildTsukeFloorBoxesHtml() {
         const boxBg = members.length ? '#2a2410' : (info.isFirst ? '#1a2a3a' : 'var(--surface2)');
         const boxBorder = members.length ? 'var(--accent)' : (info.isFirst ? '#4a90d9' : 'var(--border)');
         return `<div onclick="openTsukeTablePopup('${info.guestId}')" style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
-          <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}</span><span style="font-size:8.5px;color:var(--text-dim);">${info.tanto}</span></div>
+          <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}</span><span style="font-size:8.5px;">${info.photoDisplay || `<span style="color:var(--text-dim);">${info.tanto}</span>`}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
           ${info.help ? `<div style="font-size:8.5px;color:#e8954a;">H: ${info.help}</div>` : ''}
           ${memberHtml}
@@ -2971,7 +2984,7 @@ function resolveTsukeGuest(guestId) {
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), name: `初回${count ? count+'名' : ''}`, help: '' };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '' };
   }
   const numId = Number(guestId);
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3059,7 +3072,7 @@ function openTsukeTablePopup(guestId) {
 
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:75vh;overflow-y:auto;">
     <div style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:2px;">${tableKey}卓</div>
-    <div style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">${pairTanto}・${pairGuestName}</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">${guest.tantoDisplay || pairTanto}・${pairGuestName}</div>
     ${guest.help ? `<div style="font-size:10.5px;color:#e8954a;margin-bottom:12px;">ヘルプ指名: ${guest.help}</div>` : `<div style="margin-bottom:12px;"></div>`}
     ${membersHtml}
     ${addHtml}
