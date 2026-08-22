@@ -3086,7 +3086,7 @@ function openTsukeTablePopup(guestId) {
     const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
     // 指名卓（担当・ヘルプ指名）と初回卓（写真指名の席色）は見るべき情報が違うため、説明文を使い回さず分ける
     const headingDesc = isFirstGroup
-      ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">）・色が濃いほど対応回数が多い）</span>`
+      ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">）・数字＝本日の初回卓対応回数）</span>`
       : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
@@ -3102,7 +3102,8 @@ function openTsukeTablePopup(guestId) {
               const isSelected = selectedCasts.includes(name);
               const color = photoSeat ? photoSeat.hex : (isHelpRequested ? '#e05a9e' : 'var(--accent)');
               const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
-              const tier = Math.min(countForDisplay, 4);
+              // 初回卓は背景の濃淡で回数を示唆しない（数字バッジのみで示す）。指名卓は従来通り濃淡で示す
+              const tier = isFirstGroup ? 0 : Math.min(countForDisplay, 4);
               const bg = isSelected ? color : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none');
               const textColor = isSelected ? '#1a1a1a' : color;
               const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
