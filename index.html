@@ -3007,14 +3007,22 @@ function resolveTsukeGuest(guestId) {
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
 }
 
+// 卓ポップアップを閉じる（表示中の卓IDの記録もクリアする）
+function closeTsukeTablePopup() {
+  const overlay = document.getElementById('tsukeTableOverlay');
+  if (overlay) overlay.style.display = 'none';
+  window._tsukeTablePopupGuestId = null;
+}
+
 function openTsukeTablePopup(guestId) {
   const guest = resolveTsukeGuest(guestId);
   if (!guest) return; // 空卓はタップしても何も起きない
+  window._tsukeTablePopupGuestId = guestId; // 着卓/離席のたびにこのIDで中身だけ更新できるよう記録しておく
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   const members = getTsukeMembersOnGuest(guestId);
   let overlay = document.getElementById('tsukeTableOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeTableOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1002;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
-  overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
+  overlay.onclick = (e) => { if (e.target === overlay) closeTsukeTablePopup(); };
 
   const isAdmin = localStorage.getItem('rj_role') === 'admin';
   const myName = getMyIdentity();
@@ -3098,7 +3106,7 @@ function openTsukeTablePopup(guestId) {
     ${guest.help ? `<div style="font-size:10.5px;color:#e8954a;margin-bottom:12px;">ヘルプ指名: ${guest.help}</div>` : `<div style="margin-bottom:12px;"></div>`}
     ${membersHtml}
     ${addHtml}
-    <button onclick="document.getElementById('tsukeTableOverlay').style.display='none'" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
+    <button onclick="closeTsukeTablePopup()" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
   </div>`;
   overlay.style.display = 'flex';
 }
@@ -3123,16 +3131,16 @@ function confirmJoinTsuke(name, guestId) {
   if (!guest) return;
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
-  document.getElementById('tsukeTableOverlay').style.display = 'none';
   showToast(`${name}さんが${tableKey}卓に着きました`);
+  // 複数人を続けて着卓させられるよう、ポップアップは閉じずに中身だけ更新する
+  if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
 }
 
 function confirmLeaveTsuke(name) {
   doLeaveTsuke(name);
-  // 幹部稼働カードからも呼ばれるため、卓ポップアップが開いていない場合もある
-  const overlay = document.getElementById('tsukeTableOverlay');
-  if (overlay) overlay.style.display = 'none';
   showToast(`${name}さんが離れました`);
+  // 卓ポップアップが開いている場合は閉じずに中身だけ更新する（幹部稼働カードから呼ばれた時は開いていないので何もしない）
+  if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
 }
 
 // 付け回し専用のポップアップを開く（内勤・幹部登録済みの従業員のみ）
