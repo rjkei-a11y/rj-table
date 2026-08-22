@@ -2868,15 +2868,32 @@ function doLeaveTsuke(kanbuName, shouldRender) {
 
 // 初回の写真指名を、席（左/中/右）ラベル付き・席ごとの色で表示用HTMLにする（tanto照合用の生データとは別に表示専用で使う）
 // 左=ピンク・中=青・右=緑（席未設定の1名グループはピンクを既定色にする）
-const TSUKE_SEAT_COLORS = { '左': '#e05a9e', '中': '#4a90d9', '右': '#7fd97f' };
+const TSUKE_SEAT_COLORS = {
+  '左': { hex: '#e05a9e', rgb: '224,90,158' },
+  '中': { hex: '#4a90d9', rgb: '74,144,217' },
+  '右': { hex: '#7fd97f', rgb: '127,217,127' },
+};
 function buildFirstGroupPhotoDisplay(rows) {
   return (rows || []).map(r => {
     const names = [r.photo1, r.photo2].filter(Boolean).map(n => normalizeStaffNamesInText(n)).join('/');
     if (!names) return '';
     const seatLabel = r.seat ? `<span style="color:var(--text-dim);">${r.seat}:</span>` : '';
-    const color = TSUKE_SEAT_COLORS[r.seat] || '#e05a9e';
+    const color = (TSUKE_SEAT_COLORS[r.seat] || TSUKE_SEAT_COLORS['左']).hex;
     return seatLabel + `<span style="color:${color};">${names}</span>`;
   }).filter(Boolean).join('<span style="color:var(--text-dim);"> ・ </span>');
+}
+
+// 初回の各写真指名（キャスト名）が、どの席の色に対応するかを引ける表にする
+// （キャスト選択画面のボタンを、担当と同じ色で目立たせるために使う。同じ人が複数席で指名されていれば先に見つかった席を採用）
+function buildFirstGroupPhotoSeatInfo(rows) {
+  const info = {};
+  (rows || []).forEach(r => {
+    const color = TSUKE_SEAT_COLORS[r.seat] || TSUKE_SEAT_COLORS['左'];
+    [r.photo1, r.photo2].filter(Boolean).map(n => normalizeStaffNamesInText(n)).forEach(name => {
+      if (!info[name]) info[name] = { seat: r.seat || '', hex: color.hex, rgb: color.rgb };
+    });
+  });
+  return info;
 }
 
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
@@ -2984,7 +3001,7 @@ function resolveTsukeGuest(guestId) {
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '' };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '' };
   }
   const numId = Number(guestId);
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3007,10 +3024,13 @@ function openTsukeTablePopup(guestId) {
   const aliasIndexForTsuke = buildAliasIndex();
   // ヘルプ指名欄に書かれているキャスト名を抽出する（担当が来てほしいと書いた人を、選択時に目立たせるため）
   const helpNames = extractStaffNames(guest.help || '', aliasIndexForTsuke);
-  // 担当欄（指名客の指名先、初回なら写真指名）に書かれているキャスト名。この人はキャスト選択画面には出さない
+  // 担当欄（指名客の指名先）に書かれているキャスト名。指名客本人はキャスト選択画面には出さない
+  // （初回の写真指名は「非表示」ではなく、下のphotoSeatInfoで選択画面上に色付きで出す扱いにする）
   const tantoNames = extractStaffNames(pairTanto, aliasIndexForTsuke);
   // 初回の卓かどうか（初回は同じキャストが同じ組に何度も付くことはないため、一度付いたら選択肢から外す）
   const isFirstGroup = typeof guestId === 'string' && guestId.indexOf('first_') === 0;
+  // 初回の写真指名キャスト→席の色。選択画面のボタンを担当と同じ色（左=ピンク・中=青・右=緑）で目立たせるために使う
+  const photoSeatInfo = guest.photoSeatInfo || {};
   const tsukeLogData = window.tsukeLog || {};
   const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
 
@@ -3040,23 +3060,25 @@ function openTsukeTablePopup(guestId) {
     // グリッドで均等割りにし、行の右端に半端な余白ができないようにする
     const notOnThisGuest = getWorkingStaffList().filter(name => {
       if (members.some(m => m.name === name)) return false; // 既についている人は対象外
-      if (tantoNames.includes(name)) return false; // 指名客の担当（初回は写真指名）本人は選ばせない
+      if (!isFirstGroup && tantoNames.includes(name)) return false; // 指名客の担当本人は選ばせない（初回の写真指名は選択肢に残し、色で目立たせる）
       if (isFirstGroup && tsukePastCount(name) > 0) return false; // 初回は一度付いたら選択肢から外す
       return true;
     });
     const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span></div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span>${isFirstGroup ? `<span style="color:var(--text-dim);">・写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">）</span>` : ''}<span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span></div>
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px;">
             ${notOnThisGuest.map(name => {
               const isHelpRequested = helpNames.includes(name);
+              const photoSeat = photoSeatInfo[name];
               const pastCount = tsukePastCount(name);
-              const color = isHelpRequested ? '#e05a9e' : 'var(--accent)';
-              const colorRgb = isHelpRequested ? '224,90,158' : '201,168,76';
+              const color = photoSeat ? photoSeat.hex : (isHelpRequested ? '#e05a9e' : 'var(--accent)');
+              const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
               const tier = Math.min(pastCount, 4);
               const bg = tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none';
-              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${name}${pastCount > 0 ? `<span style="opacity:0.85;"> ${pastCount}</span>` : ''}</button>`;
+              const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
+              return `<button onclick="promptJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${color};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${name}${seatBadge}${pastCount > 0 ? `<span style="opacity:0.85;"> ${pastCount}</span>` : ''}</button>`;
             }).join('')}
           </div>
         </div>`
