@@ -2827,6 +2827,11 @@ function tsukeElapsedMinutes(startedAt) {
   return Math.max(0, Math.floor((Date.now() - startedAt) / 60000));
 }
 
+// 着卓からの経過時間に応じた表示色（15分以上経過で赤）
+function tsukeTimerColor(startedAt) {
+  return tsukeElapsedMinutes(startedAt) >= 15 ? '#c0392b' : '#7fd97f';
+}
+
 // 着席する：既に他のお客様についていれば、まずそちらを自動で離席させてから、新しいお客様に着く
 function doJoinTsuke(kanbuName, guestId, tableKey, tanto, guestName) {
   const idStr = String(guestId); // 通常ゲスト(数値)・初回グループ("first_◯"文字列)どちらも、以後は文字列として統一して扱う
@@ -2892,7 +2897,7 @@ function buildTsukeFloorBoxesHtml() {
         const members = getTsukeMembersOnGuest(info.guestId);
         const memberHtml = members.map(m => `
           <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--accent);font-weight:700;margin-top:3px;padding-top:3px;border-top:1px dashed #444;">
-            <span>🚶${m.name}</span><span style="color:#7fd97f;" data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}分</span>
+            <span>🚶${m.name}</span><span style="color:${tsukeTimerColor(m.startedAt)};" data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}分</span>
           </div>`).join('');
         const boxBg = members.length ? '#2a2410' : (info.isFirst ? '#1a2a3a' : 'var(--surface2)');
         const boxBorder = members.length ? 'var(--accent)' : (info.isFirst ? '#4a90d9' : 'var(--border)');
@@ -2942,7 +2947,7 @@ function buildTsukeKanbuStatsHtml() {
     const leaveBtn = (active && isAdmin) ? `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="flex-shrink:0;background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : '';
     const currentHtml = active
       ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">
-           <span style="font-size:10.5px;color:#7fd97f;font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span data-tsuke-timer="${active.startedAt}">${tsukeElapsedMinutes(active.startedAt)}</span>分）</span>
+           <span style="font-size:10.5px;color:var(--text);font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span style="color:${tsukeTimerColor(active.startedAt)};" data-tsuke-timer="${active.startedAt}">${tsukeElapsedMinutes(active.startedAt)}</span>分）</span>
            ${leaveBtn}
          </div>`
       : `<div style="font-size:10px;color:#666;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">現在ついていません</div>`;
@@ -3094,7 +3099,9 @@ function openTsukemawashiModal() {
     // 経過時間の表示を1分おきに自動更新する（ポップアップが開いている間だけ）
     window._tsukeTimerInterval = setInterval(() => {
       document.querySelectorAll('[data-tsuke-timer]').forEach(el => {
-        el.textContent = tsukeElapsedMinutes(Number(el.getAttribute('data-tsuke-timer')));
+        const startedAt = Number(el.getAttribute('data-tsuke-timer'));
+        el.textContent = tsukeElapsedMinutes(startedAt);
+        el.style.color = tsukeTimerColor(startedAt);
       });
     }, 60000);
   }
