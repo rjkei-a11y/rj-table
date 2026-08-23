@@ -3130,12 +3130,18 @@ function openTsukeTablePopup(guestId) {
     const headingDesc = isFirstGroup
       ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">）・数字＝本日の初回卓対応回数）</span>`
       : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
+    // まだ出勤・同伴の目安時刻前（点線ボタンになる）の人は、選びやすいよう一覧の下の方に寄せる
+    const isPendingName = (name) => {
+      const threshold = getShiftThresholdFor(name);
+      return !!(threshold && !isTimeOverdue(threshold.time) && !getTsukeActiveOf(name));
+    };
+    const sortedNotOnThisGuest = [...notOnThisGuest].sort((a, b) => isPendingName(a) - isPendingName(b));
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
           <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}</div>
           ${selectedCasts.length ? `<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px;">選択中: ${selectedCasts.join('・')}</div>` : ''}
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:13px 5px;">
-            ${notOnThisGuest.map(name => {
+            ${sortedNotOnThisGuest.map(name => {
               const isHelpRequested = helpNames.includes(name);
               const photoSeat = photoSeatInfo[name];
               // 指名卓は「この担当・お客様に何回付いたか」、初回卓は「本日すでに何回初回卓に付いたか」を回数として使う
