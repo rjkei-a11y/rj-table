@@ -3134,11 +3134,12 @@ function openTsukeTablePopup(guestId) {
     // ボタンは名前の長さに関わらず同じ大きさに揃え、誤タップしにくくする。
     // グリッドで均等割りにし、行の右端に半端な余白ができないようにする
     // タップでは即着卓させず選択のトグルだけ行い、複数人選んでから卓番横の「着卓」ボタンでまとめて確定する
+    // 初回は同じ卓（同じguestId）に一度着いた（今は離席済みの）キャストは、次回の選択肢から外す
+    const hasBeenOnThisFirstTable = (name) => Object.values(tsukeLogData).some(e => e.kanbu === name && String(e.guestId) === String(guestId));
     const notOnThisGuest = getWorkingStaffList().filter(name => {
       if (members.some(m => m.name === name)) return false; // 既についている人は対象外
       if (!isFirstGroup && tantoNames.includes(name)) return false; // 指名客の担当本人は選ばせない（初回の写真指名は選択肢に残し、色で目立たせる）
-      // 初回は一度付いたキャストも、選択肢からは外さない（たまにもう一度付くことがあるため）。
-      // 対応回数はボタンの数字バッジ（tsukeFirstCountToday）で見えるようにする
+      if (isFirstGroup && hasBeenOnThisFirstTable(name)) return false; // 同じ初回卓に一度着いた人は非表示にする
       return true;
     });
     const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
@@ -3613,9 +3614,11 @@ function demoOpenTsukeTablePopup(guestId) {
 
   let addHtml;
   if (isAdmin) {
+    const hasBeenOnThisFirstTable = (name) => Object.values(tsukeLogData).some(e => e.kanbu === name && String(e.guestId) === String(guestId));
     const notOnThisGuest = demoGetWorkingStaffList().filter(name => {
       if (members.some(m => m.name === name)) return false;
       if (!isFirstGroup && tantoNames.includes(name)) return false;
+      if (isFirstGroup && hasBeenOnThisFirstTable(name)) return false;
       return true;
     });
     const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
