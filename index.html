@@ -3074,8 +3074,10 @@ function openTsukeTablePopup(guestId) {
   // 本日すでに何回初回卓に付いたか（組み合わせ問わず合計。初回卓のキャスト選択画面で回数バッジ・背景の濃さに使う）
   const tsukeFirstCountToday = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.isFirst).length;
   // 今日、来店予定が「同伴」になっているお客様の担当キャスト名一覧（1回だけ計算しておく）
+  // 「同伴」の文言は来店時間欄だけでなく、お客様名・備考欄に書かれることもあるため、いずれかに含まれていれば拾う
   const dohanCastNamesToday = new Set(
-    guests.filter(g => g.arrived && !g.left && (g.arrive || '').includes('同伴'))
+    guests.filter(g => g.arrived && !g.left &&
+      [g.arrive, g.name, g.note].some(text => (text || '').includes('同伴')))
           .map(g => matchStaffName(g.tanto))
           .filter(Boolean)
   );
