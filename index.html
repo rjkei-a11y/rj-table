@@ -3124,7 +3124,8 @@ function openTsukeTablePopup(guestId) {
     const notOnThisGuest = getWorkingStaffList().filter(name => {
       if (members.some(m => m.name === name)) return false; // 既についている人は対象外
       if (!isFirstGroup && tantoNames.includes(name)) return false; // 指名客の担当本人は選ばせない（初回の写真指名は選択肢に残し、色で目立たせる）
-      if (isFirstGroup && tsukePastCount(name) > 0) return false; // 初回は一度付いたら選択肢から外す
+      // 初回は一度付いたキャストも、選択肢からは外さない（たまにもう一度付くことがあるため）。
+      // 対応回数はボタンの数字バッジ（tsukeFirstCountToday）で見えるようにする
       return true;
     });
     const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
