@@ -6404,22 +6404,24 @@ function openStaffSettings() {
     document.body.appendChild(modal);
   }
   modal.innerHTML = `
-    <div class="modal">
+    <div class="modal" style="max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <span>在籍スタッフ登録</span>
         <button onclick="document.getElementById('staffModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" style="overflow-y:auto;">
         <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">1行に1名ずつ入力してください</p>
         <textarea id="staffInput" style="width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:10px;outline:none;">${staffList.join('\n')}</textarea>
 
         <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-size:12px;color:var(--text-dim);font-weight:700;">出勤時間・同伴時間</span>
-            <button id="shiftLoadBtn" class="btn btn-ghost btn-sm" onclick="loadStaffShiftFromSheet()">📥 出勤時間を読み込む</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleStaffShiftSection()">
+            <span style="font-size:12px;color:var(--text-dim);font-weight:700;"><span id="shiftSectionArrow">▶</span> 出勤時間・同伴時間</span>
+            <button id="shiftLoadBtn" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();loadStaffShiftFromSheet()">📥 出勤時間を読み込む</button>
           </div>
-          <div id="shiftLoadStatus" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;"></div>
-          <div id="shiftPreviewList"></div>
+          <div id="shiftSectionBody" style="display:none;margin-top:8px;">
+            <div id="shiftLoadStatus" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;"></div>
+            <div id="shiftPreviewList"></div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -6433,6 +6435,16 @@ function openStaffSettings() {
 
 // 出勤確認票スプレッドシート（出勤時間・同伴時間）のID
 const SHIFT_SHEET_ID = '1e0ICZgnsfL8BAardaie5MaE4sZHXcqpRrojauzh9uP4';
+
+// 出勤時間・同伴時間セクションの開閉（人数分あると縦に長くなるため、既定では畳んでおく）
+function toggleStaffShiftSection() {
+  const body = document.getElementById('shiftSectionBody');
+  const arrow = document.getElementById('shiftSectionArrow');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+}
 
 // 在籍スタッフ登録モーダル内に、現在保存されている出勤時間・同伴時間の一覧を表示する
 function renderStaffShiftPreview() {
@@ -6477,6 +6489,10 @@ async function loadStaffShiftFromSheet() {
       localStorage.setItem('tableManager_staffDohanTime', JSON.stringify(dohanTime));
     } catch(e) {}
     renderStaffShiftPreview();
+    // 読み込み結果をすぐ確認できるよう、畳んでいた場合は開く
+    const body = document.getElementById('shiftSectionBody');
+    const arrow = document.getElementById('shiftSectionArrow');
+    if (body && body.style.display === 'none') { body.style.display = 'block'; if (arrow) arrow.textContent = '▼'; }
     const warnHtml = unknownNames.length ? `<br><span style="color:#e0524a;">⚠ スタッフ名簿にない名前: ${unknownNames.join('・')}</span>` : '';
     statusEl.innerHTML = `<span style="color:#7fd97f;">✓ ${Object.keys(shiftStart).length}件を取得しました（${sheetName}）</span>${warnHtml}`;
   } catch (e) {
