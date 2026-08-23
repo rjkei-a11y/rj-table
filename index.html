@@ -3771,6 +3771,23 @@ function resetDemoClock() {
   window._demoOffsetMs = 0;
   demoRefreshAfterClockChange();
 }
+function promptEditDemoClock() {
+  const now = new Date(demoNow());
+  const currentText = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  const input = prompt('デモの時刻を入力してください（例: 21:30）', currentText);
+  if (input == null) return;
+  const m = String(input).trim().match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!m || parseInt(m[1],10) > 23 || parseInt(m[2],10) > 59) {
+    showToast('時刻はHH:MMの形式で入力してください（例: 21:30）');
+    return;
+  }
+  const target = new Date(now);
+  target.setHours(parseInt(m[1],10), parseInt(m[2],10), 0, 0);
+  // 現在より12時間以上前になる指定は日をまたいだ翌日とみなす（深夜帯の編集を自然にするため）
+  if (target.getTime() < now.getTime() - 12 * 3600000) target.setDate(target.getDate() + 1);
+  window._demoOffsetMs += target.getTime() - now.getTime();
+  demoRefreshAfterClockChange();
+}
 
 // 時間の経過を自動で進める（実時間1秒ごとに、倍率分だけデモの時計を進める）。0で停止
 let demoAutoPlaySpeed = 0;
@@ -3871,7 +3888,7 @@ function demoRenderTsukeModalIfOpen() {
             <button onclick="resetTsukeDemoData()" style="background:none;border:1px solid #666;border-radius:6px;color:#aaa;font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">🔄 データをリセット</button>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="font-variant-numeric:tabular-nums;font-size:15px;font-weight:700;color:#c9a8ec;background:#1a1428;border-radius:6px;padding:3px 10px;">🕒 ${clockText}</span>
+            <span onclick="promptEditDemoClock()" title="タップして時刻を編集" style="cursor:pointer;font-variant-numeric:tabular-nums;font-size:15px;font-weight:700;color:#c9a8ec;background:#1a1428;border-radius:6px;padding:3px 10px;">🕒 ${clockText} <span style="font-size:11px;opacity:0.7;">✏️</span></span>
             <button onclick="advanceDemoClock(15)" style="background:none;border:1px solid #8e6fd9;border-radius:999px;color:#c9a8ec;font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">+15分</button>
             <button onclick="advanceDemoClock(60)" style="background:none;border:1px solid #8e6fd9;border-radius:999px;color:#c9a8ec;font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">+1時間</button>
             <button onclick="resetDemoClock()" style="background:none;border:1px solid #8e6fd9;border-radius:999px;color:#c9a8ec;font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">実時刻に戻す</button>
