@@ -386,6 +386,9 @@
     const data = snapshot.val();
     // 1件ずつ 'g'+id キーで保存された形式に対応（配列としてもオブジェクトとしても受け取れるようにする）
     const list = Array.isArray(data) ? data.filter(Boolean) : (data && typeof data === 'object' ? Object.values(data).filter(Boolean) : []);
+    // 'g'+idキー単位で保存しているため、Firebaseから返る順序はキーの文字列辞書順（例: g10がg2より前）になる。
+    // 表示のNo.順は追加した順（=id昇順）であってほしいので、ここでidの数値順に並べ直しておく
+    list.sort((a, b) => (a.id || 0) - (b.id || 0));
     window._fbFirstGroups = list;
     if (typeof firstGroups !== 'undefined' && typeof renderFirstTab === 'function') {
       firstGroups = list;
@@ -4206,6 +4209,7 @@ function loadFirstData() {
     if (raw) {
       const parsed = JSON.parse(raw);
       firstGroups = Array.isArray(parsed) ? parsed : [];
+      firstGroups.sort((a, b) => (a.id || 0) - (b.id || 0));
       if (firstGroups.length) {
         firstGid = firstGroups.reduce((m,g)=>Math.max(m,(g.id||0)+1),1);
         firstGroups.forEach(g => {
@@ -6199,6 +6203,7 @@ function doUndoReset() {
   saveToStorage();
 
   firstGroups = Array.isArray(backup.firstGroups) ? backup.firstGroups : [];
+  firstGroups.sort((a, b) => (a.id || 0) - (b.id || 0));
   firstGid = firstGroups.reduce((m,g)=>Math.max(m,(g.id||0)+1), 1);
   firstRid = 1;
   firstGroups.forEach(g => {
