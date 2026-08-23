@@ -3838,12 +3838,12 @@ function closeTsukeDemoModal() {
   setDemoAutoPlaySpeed(0); // 閉じたら自動再生も止めておく
 }
 
-// 時間経過の自動再生スピードのプリセット。倍率＝実時間1秒あたりデモ時計を何分進めるか
+// 時間経過の自動再生スピードのプリセット。倍率＝実時間の何倍の速さでデモ時計を進めるか
 const DEMO_AUTOPLAY_PRESETS = [
   { multiplier: 0, label: '⏸ 停止' },
-  { multiplier: 60, label: '▶ ×60（1秒=1分）' },
-  { multiplier: 300, label: '▶▶ ×300（1秒=5分）' },
-  { multiplier: 3600, label: '▶▶▶ ×3600（1秒=1時間）' },
+  { multiplier: 15, label: '▶ ×15' },
+  { multiplier: 30, label: '▶▶ ×30' },
+  { multiplier: 60, label: '▶▶▶ ×60' },
 ];
 function demoRenderTsukeModalIfOpen() {
   const overlay = document.getElementById('tsukeDemoModal');
