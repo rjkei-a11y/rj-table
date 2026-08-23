@@ -614,6 +614,7 @@
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">卓状況</span>
         <button id="tsukeEntryBtn" onclick="openTsukemawashiModal()" style="display:none;background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);font-weight:700;">🚶 付け回し</button>
+        <button id="tsukeDemoEntryBtn" onclick="openTsukeDemoModal()" title="ダミーデータで動く練習用モードです。本番データには一切影響しません" style="display:none;background:none;border:1px solid #8e6fd9;border-radius:4px;color:#8e6fd9;font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);font-weight:700;">🧪 デモ</button>
       </div>
       <button onclick="openFloorSettings()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:10px;padding:2px 8px;cursor:pointer;font-family:var(--font-main);">⚙ 編集</button>
     </div>
@@ -942,8 +943,10 @@ function updateMainPassBtn() {
 // 付け回し入り口ボタンは、内勤 or 幹部登録されている従業員だけに見せる
 function updateTsukeEntryBtn() {
   const btn = document.getElementById('tsukeEntryBtn');
-  if (!btn) return;
-  btn.style.display = (typeof canUseTsukemawashi === 'function' && canUseTsukemawashi()) ? 'inline-block' : 'none';
+  const demoBtn = document.getElementById('tsukeDemoEntryBtn');
+  const canUse = typeof canUseTsukemawashi === 'function' && canUseTsukemawashi();
+  if (btn) btn.style.display = canUse ? 'inline-block' : 'none';
+  if (demoBtn) demoBtn.style.display = canUse ? 'inline-block' : 'none';
 }
 
 // 閲覧専用モードのボタン表示（内勤専用）。ONの間は保存が一切できなくなるので、見た目でひと目で分かるようにする
@@ -3303,6 +3306,547 @@ function renderTsukeModalIfOpen() {
         ${buildTsukeFloorBoxesHtml()}
         <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">本日の幹部稼働</div>
         ${buildTsukeKanbuStatsHtml()}
+      </div>
+    </div>`;
+}
+
+/* ============================================================================
+   付け回し「デモモード」: ダミーデータで動く練習用の完全に独立した機能一式。
+   本番の guests / firstGroups / staffList / tsukeActive / tsukeLog / rj_role /
+   rj_myIdentity / Firebase保存関数には一切触れない（demo* という名前で完全に別物にしてある）。
+   時刻を進める操作もグローバルのDateには触れず、demoNow()経由で本番の時刻表示に影響しないようにしている。
+   ============================================================================ */
+
+let demoGuests = [];
+let demoFirstGroups = [];
+let demoStaffList = [];
+let demoStaffAliases = {};
+let demoStaffDayStatus = {};
+let demoFloorData = {};
+let demoRole = 'admin'; // 'admin' または 'host'（本番のrj_roleとは別の、デモ専用のロール状態）
+let demoIdentity = '';
+window._demoOffsetMs = 0;
+
+function demoNow() { return Date.now() + window._demoOffsetMs; }
+
+function demoIsTimeOverdue(timeText, thresholdMinutesBefore = 0) {
+  const t = parseTimeText(timeText);
+  if (!t) return false;
+  const now = new Date(demoNow());
+  const nowShift = toShiftMinutes(now.getHours(), now.getMinutes());
+  const targetShift = toShiftMinutes(t.hour, t.minute) - thresholdMinutesBefore;
+  return nowShift >= targetShift;
+}
+function demoTsukeElapsedMinutes(startedAt) {
+  return Math.max(0, Math.floor((demoNow() - startedAt) / 60000));
+}
+function demoTsukeTimerColor(startedAt) {
+  return demoTsukeElapsedMinutes(startedAt) >= 15 ? '#c0392b' : '#7fd97f';
+}
+
+function demoBuildAliasIndex() {
+  const index = [];
+  demoStaffList.forEach(name => {
+    index.push({ text: name, norm: toHiragana(name), name });
+    (demoStaffAliases[name] || []).forEach(a => { if (a) index.push({ text: a, norm: toHiragana(a), name }); });
+  });
+  index.sort((a, b) => b.text.length - a.text.length);
+  return index;
+}
+function demoMatchStaffName(rawText) {
+  if (!rawText) return null;
+  const text = rawText.trim();
+  if (!text) return null;
+  const aliasIndex = demoBuildAliasIndex();
+  const normText = toHiragana(text);
+  const exact = demoStaffList.find(s => toHiragana(s) === normText) ||
+    Object.keys(demoStaffAliases).find(name => (demoStaffAliases[name] || []).some(a => toHiragana(a) === normText));
+  if (exact) return exact;
+  const partial = demoStaffList.find(s => normText.includes(toHiragana(s)) || toHiragana(s).includes(normText));
+  if (partial) return partial;
+  const aliasPartial = aliasIndex.find(entry => normText.includes(entry.norm) || entry.norm.includes(normText));
+  return aliasPartial ? aliasPartial.name : text;
+}
+function demoNormalizeStaffNamesInText(text) {
+  if (!text) return text;
+  const aliasIndex = demoBuildAliasIndex();
+  const parts = text.split(/([\/,、,・\s]+)/);
+  return parts.map(part => {
+    if (!part || /^[\/,、,・\s]+$/.test(part)) return part;
+    const norm = toHiragana(part.trim());
+    const match = aliasIndex.find(entry => entry.norm === norm);
+    return match ? match.name : part;
+  }).join('');
+}
+
+function demoGetKanbuStaffList() {
+  const kanbu = window.demoStaffKanbu || {};
+  return demoStaffList.filter(name => kanbu[name]);
+}
+function demoGetWorkingStaffList() {
+  const dayStatus = demoStaffDayStatus || {};
+  const reportedTantos = demoGuests.map(g => g.tanto).filter(Boolean);
+  return demoStaffList.filter(name => {
+    const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
+    if (done) return true;
+    const status = dayStatus[name] && dayStatus[name].status;
+    return status !== 'off' && status !== 'paid_off';
+  });
+}
+function demoGetTsukeActiveOf(kanbuName) {
+  return (window.demoTsukeActive || {})[kanbuName] || null;
+}
+function demoGetTsukeMembersOnGuest(guestId) {
+  const active = window.demoTsukeActive || {};
+  const key = String(guestId);
+  return Object.keys(active).filter(name => String(active[name].guestId) === key).map(name => ({ name, startedAt: active[name].startedAt }));
+}
+function demoDoJoinTsuke(kanbuName, guestId, tableKey, tanto, guestName) {
+  const idStr = String(guestId);
+  const isFirst = idStr.indexOf('first_') === 0;
+  const prev = demoGetTsukeActiveOf(kanbuName);
+  if (prev && String(prev.guestId) !== idStr) demoDoLeaveTsuke(kanbuName, false);
+  if (!window.demoTsukeActive) window.demoTsukeActive = {};
+  window.demoTsukeActive[kanbuName] = { guestId: idStr, tableKey, tanto: tanto || '', guestName: guestName || '', startedAt: demoNow(), isFirst };
+  demoRenderTsukeModalIfOpen();
+}
+function demoDoLeaveTsuke(kanbuName, shouldRender) {
+  const active = demoGetTsukeActiveOf(kanbuName);
+  if (!active) return;
+  const minutes = demoTsukeElapsedMinutes(active.startedAt);
+  const logId = demoNow() + '_' + kanbuName.replace(/[^a-zA-Z0-9ぁ-んァ-ヶ一-龠]/g, '');
+  const entry = { kanbu: kanbuName, guestId: active.guestId, tanto: active.tanto, guestName: active.guestName, startedAt: active.startedAt, endedAt: demoNow(), minutes, isFirst: !!active.isFirst };
+  if (!window.demoTsukeLog) window.demoTsukeLog = {};
+  window.demoTsukeLog[logId] = entry;
+  delete window.demoTsukeActive[kanbuName];
+  if (shouldRender !== false) demoRenderTsukeModalIfOpen();
+}
+
+function demoBuildFirstGroupPhotoDisplay(rows) {
+  return (rows || []).map(r => {
+    const names = [r.photo1, r.photo2].filter(Boolean).map(n => demoNormalizeStaffNamesInText(n)).join('/');
+    if (!names) return '';
+    const seatLabel = r.seat ? `<span style="color:var(--text-dim);">${r.seat}:</span>` : '';
+    const color = (TSUKE_SEAT_COLORS[r.seat] || TSUKE_SEAT_COLORS['左']).hex;
+    return seatLabel + `<span style="color:${color};">${names}</span>`;
+  }).filter(Boolean).join('<span style="color:var(--text-dim);"> ・ </span>');
+}
+function demoBuildFirstGroupPhotoSeatInfo(rows) {
+  const info = {};
+  (rows || []).forEach(r => {
+    const color = TSUKE_SEAT_COLORS[r.seat] || TSUKE_SEAT_COLORS['左'];
+    [r.photo1, r.photo2].filter(Boolean).map(n => demoNormalizeStaffNamesInText(n)).forEach(name => {
+      if (!info[name]) info[name] = { seat: r.seat || '', hex: color.hex, rgb: color.rgb };
+    });
+  });
+  return info;
+}
+
+function demoBuildTsukeFloorBoxesHtml() {
+  const infoMap = {};
+  demoGuests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    if (!infoMap[key]) infoMap[key] = [];
+    infoMap[key].push({ guestId: g.id, tanto: g.tanto || '', name: (g.name || '').replace('△','').trim(), help: g.help || '' });
+  });
+  (demoFirstGroups || []).filter(g => g.tableNum && g.arrived).forEach(g => {
+    const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
+    if (allDone) return;
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    if (!infoMap[key]) infoMap[key] = [];
+    const count = parseInt(g.count) || 0;
+    const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => demoNormalizeStaffNamesInText(n)))];
+    infoMap[key].push({ guestId: 'first_' + g.id, tanto: photoNames.join('/'), photoDisplay: demoBuildFirstGroupPhotoDisplay(g.rows), name: `初回${count ? count+'名' : ''}`, help: '', isFirst: true });
+  });
+  const floors = ['V', 'A', 'B'];
+  const colsHtml = floors.map(f => {
+    const nums = (demoFloorData[f] || []).slice();
+    const boxesHtml = nums.map(t => {
+      const infoList = infoMap[t];
+      if (!infoList || !infoList.length) {
+        return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 6px;min-height:34px;color:#555;font-size:10px;display:flex;align-items:center;">${t}</div>`;
+      }
+      return infoList.map(info => {
+        const members = demoGetTsukeMembersOnGuest(info.guestId);
+        const memberHtml = members.map(m => `
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--accent);font-weight:700;margin-top:3px;padding-top:3px;border-top:1px dashed #444;">
+            <span>🚶${m.name}</span><span style="color:${demoTsukeTimerColor(m.startedAt)};" data-demo-tsuke-timer="${m.startedAt}">${demoTsukeElapsedMinutes(m.startedAt)}分</span>
+          </div>`).join('');
+        const boxBg = info.isFirst ? '#1a2a3a' : '#2a2410';
+        const boxBorder = info.isFirst ? '#4a90d9' : 'var(--accent)';
+        return `<div onclick="demoOpenTsukeTablePopup('${info.guestId}')" style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
+          <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}</span><span style="font-size:8.5px;">${info.photoDisplay || `<span style="color:var(--text-dim);">${info.tanto}</span>`}</span></div>
+          <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
+          ${info.help ? `<div style="font-size:8.5px;color:#e8954a;">H: ${info.help}</div>` : ''}
+          ${memberHtml}
+        </div>`;
+      }).join('<div style="height:4px;"></div>');
+    }).join('');
+    return `<div><div style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:5px;">${f}フロア</div><div style="display:flex;flex-direction:column;gap:5px;">${boxesHtml}</div></div>`;
+  }).join('');
+  return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">${colsHtml}</div>`;
+}
+
+function demoBuildTsukeKanbuStatsHtml() {
+  const kanbuList = demoGetKanbuStaffList();
+  if (!kanbuList.length) return `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">幹部が登録されていません</div>`;
+  const log = window.demoTsukeLog || {};
+  const isAdmin = demoRole === 'admin';
+  const cardsHtml = kanbuList.map(name => {
+    const entries = Object.values(log).filter(e => e.kanbu === name && !e.isFirst).sort((a, b) => a.startedAt - b.startedAt);
+    const pairs = [];
+    const pairIndex = {};
+    entries.forEach(e => {
+      const pairKey = e.tanto + '　' + e.guestName;
+      if (pairIndex[pairKey] == null) { pairIndex[pairKey] = pairs.length; pairs.push({ tanto: e.tanto, guestName: e.guestName, count: 0, total: 0 }); }
+      const p = pairs[pairIndex[pairKey]];
+      p.count++; p.total += e.minutes;
+    });
+    const total = pairs.reduce((s, p) => s + p.total, 0);
+    const pairsHtml = pairs.length
+      ? pairs.map(p => `<div style="font-size:10.5px;color:var(--text-dim);padding:2px 0;line-height:1.4;"><span style="color:var(--text);display:block;">${p.tanto}・${p.guestName}</span><span><b style="color:var(--accent);">${p.count}回</b>・<b style="color:var(--accent);">${p.total}分</b></span></div>`).join('')
+      : `<div style="font-size:10.5px;color:var(--text-dim);">まだ記録がありません</div>`;
+    const active = demoGetTsukeActiveOf(name);
+    const leaveBtn = (active && isAdmin) ? `<button onclick="demoConfirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="flex-shrink:0;background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : '';
+    const currentHtml = active
+      ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">
+           <span style="font-size:10.5px;color:var(--text);font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span style="color:${demoTsukeTimerColor(active.startedAt)};" data-demo-tsuke-timer="${active.startedAt}">${demoTsukeElapsedMinutes(active.startedAt)}</span>分）</span>
+           ${leaveBtn}
+         </div>`
+      : `<div style="font-size:10px;color:#666;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">現在ついていません</div>`;
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 11px;">
+      <div style="font-size:12.5px;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:${active ? '#7fd97f' : '#555'};${active ? 'box-shadow:0 0 5px #7fd97f;' : ''}"></span>${name}</div>
+      ${pairsHtml}
+      <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;padding-top:5px;margin-top:3px;border-top:1px dashed #3a3a3a;"><span>トータル</span><b style="color:var(--accent);">${total}分</b></div>
+      ${currentHtml}
+    </div>`;
+  }).join('');
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">${cardsHtml}</div>`;
+}
+
+function demoResolveTsukeGuest(guestId) {
+  if (typeof guestId === 'string' && guestId.indexOf('first_') === 0) {
+    const fgId = parseInt(guestId.slice(6), 10);
+    const fg = (demoFirstGroups || []).find(g => g.id === fgId && g.arrived);
+    if (!fg) return null;
+    const count = parseInt(fg.count) || 0;
+    const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => demoNormalizeStaffNamesInText(n)))];
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: demoBuildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: demoBuildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '' };
+  }
+  const numId = Number(guestId);
+  return demoGuests.find(g => g.id === numId && g.arrived && !g.left) || null;
+}
+
+function demoCloseTsukeTablePopup() {
+  const overlay = document.getElementById('tsukeDemoTableOverlay');
+  if (overlay) overlay.style.display = 'none';
+  window._demoTsukeTablePopupGuestId = null;
+  window._demoTsukeSelectedCasts = new Set();
+}
+
+function demoOpenTsukeTablePopup(guestId) {
+  const guest = demoResolveTsukeGuest(guestId);
+  if (!guest) return;
+  if (window._demoTsukeTablePopupGuestId !== guestId) window._demoTsukeSelectedCasts = new Set();
+  window._demoTsukeTablePopupGuestId = guestId;
+  const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
+  const members = demoGetTsukeMembersOnGuest(guestId);
+  let overlay = document.getElementById('tsukeDemoTableOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeDemoTableOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1012;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.onclick = (e) => { if (e.target === overlay) demoCloseTsukeTablePopup(); };
+
+  const isAdmin = demoRole === 'admin';
+  const myName = demoIdentity;
+  const pairTanto = guest.tanto || '';
+  const pairGuestName = (guest.name || '').replace('△','').trim();
+  const aliasIndexForTsuke = demoBuildAliasIndex();
+  const helpNames = extractStaffNames(guest.help || '', aliasIndexForTsuke);
+  const tantoNames = extractStaffNames(pairTanto, aliasIndexForTsuke);
+  const isFirstGroup = typeof guestId === 'string' && guestId.indexOf('first_') === 0;
+  const photoSeatInfo = guest.photoSeatInfo || {};
+  const tsukeLogData = window.demoTsukeLog || {};
+  const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
+  const tsukeFirstCountToday = (name) => {
+    const tableIds = new Set();
+    Object.values(tsukeLogData).forEach(e => { if (e.kanbu === name && e.isFirst) tableIds.add(e.guestId || (e.tanto + '　' + e.guestName)); });
+    const active = (window.demoTsukeActive || {})[name];
+    if (active && active.isFirst) tableIds.add(active.guestId || (active.tanto + '　' + active.guestName));
+    return tableIds.size;
+  };
+  const dohanCastNamesToday = new Set(
+    demoGuests.filter(g => g.arrived && !g.left && [g.arrive, g.name, g.note].some(text => (text || '').includes('同伴')))
+      .map(g => demoMatchStaffName(g.tanto)).filter(Boolean)
+  );
+  const getShiftThresholdFor = (name) => {
+    if (dohanCastNamesToday.has(name) && (window.demoStaffDohanTime || {})[name]) return { time: window.demoStaffDohanTime[name], label: '同伴' };
+    const shiftStart = (window.demoStaffShiftStart || {})[name];
+    return shiftStart ? { time: shiftStart, label: '出勤' } : null;
+  };
+
+  const membersHtml = members.length
+    ? members.map(m => {
+        const canLeaveThis = isAdmin || (m.name === myName && !isFirstGroup);
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
+          <span style="font-size:13px;color:var(--text);">${m.name}（<span data-demo-tsuke-timer="${m.startedAt}">${demoTsukeElapsedMinutes(m.startedAt)}</span>分）</span>
+          ${canLeaveThis ? `<button onclick="demoConfirmLeaveTsuke('${m.name.replace(/'/g,"\\'")}')" style="background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : ''}
+        </div>`;
+      }).join('')
+    : `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:10px 0;">まだ誰もついていません</div>`;
+
+  const selectedCasts = isAdmin ? [...(window._demoTsukeSelectedCasts || new Set())] : [];
+
+  let addHtml;
+  if (isAdmin) {
+    const notOnThisGuest = demoGetWorkingStaffList().filter(name => {
+      if (members.some(m => m.name === name)) return false;
+      if (!isFirstGroup && tantoNames.includes(name)) return false;
+      return true;
+    });
+    const countFillAlpha = [0, 0.14, 0.28, 0.42, 0.6];
+    const headingDesc = isFirstGroup
+      ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">）・数字＝本日の初回卓対応回数）</span>`
+      : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
+    const isPendingName = (name) => {
+      const threshold = getShiftThresholdFor(name);
+      return !!(threshold && !demoIsTimeOverdue(threshold.time) && !demoGetTsukeActiveOf(name));
+    };
+    const sortedNotOnThisGuest = [...notOnThisGuest].sort((a, b) => isPendingName(a) - isPendingName(b));
+    addHtml = notOnThisGuest.length
+      ? `<div style="margin-top:12px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}</div>
+          ${selectedCasts.length ? `<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px;">選択中: ${selectedCasts.join('・')}</div>` : ''}
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:13px 5px;">
+            ${sortedNotOnThisGuest.map(name => {
+              const isHelpRequested = helpNames.includes(name);
+              const photoSeat = photoSeatInfo[name];
+              const countForDisplay = isFirstGroup ? tsukeFirstCountToday(name) : tsukePastCount(name);
+              const isSelected = selectedCasts.includes(name);
+              const color = photoSeat ? photoSeat.hex : (isHelpRequested ? '#e05a9e' : 'var(--accent)');
+              const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
+              const tier = isFirstGroup ? 0 : Math.min(countForDisplay, 4);
+              const threshold = getShiftThresholdFor(name);
+              const isPending = threshold && !demoIsTimeOverdue(threshold.time) && !demoGetTsukeActiveOf(name);
+              const borderColor = isPending && !photoSeat ? '#4a4a4a' : color;
+              const textColor = isSelected ? '#1a1a1a' : (isPending && !photoSeat ? '#5c5c5c' : color);
+              const bg = isSelected ? color : (isPending ? 'none' : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none'));
+              const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
+              const pendingTag = isPending ? `<span style="position:absolute;left:0;right:0;bottom:-7px;text-align:center;font-size:8px;color:#d8b968;background:#3a2f14;border-radius:3px;padding:1px 4px;white-space:nowrap;">${threshold.label} ${threshold.time}〜</span>` : '';
+              const btnHtml = `<button onclick="demoToggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
+              return isPending ? `<div style="position:relative;">${btnHtml}${pendingTag}</div>` : btnHtml;
+            }).join('')}
+          </div>
+        </div>`
+      : '';
+  } else if (isFirstGroup) {
+    addHtml = `<div style="font-size:11px;color:var(--text-dim);text-align:center;margin-top:12px;">初回卓の着卓・離席は内勤が行います</div>`;
+  } else {
+    const alreadyHere = members.some(m => m.name === myName);
+    addHtml = (!alreadyHere && myName)
+      ? `<button onclick="demoConfirmJoinTsuke('${myName.replace(/'/g,"\\'")}','${guestId}')" style="width:100%;margin-top:12px;padding:11px;background:var(--accent);border:none;border-radius:8px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">この卓に着卓する</button>`
+      : '';
+  }
+
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:75vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;">
+      <div style="font-size:15px;font-weight:700;color:var(--accent);">${tableKey}卓</div>
+      ${isAdmin ? `<button onclick="demoPromptJoinSelectedTsuke('${guestId}')" style="flex-shrink:0;background:${selectedCasts.length ? 'var(--accent)' : 'transparent'};border:1px solid var(--accent);border-radius:6px;color:${selectedCasts.length ? '#1a1a1a' : 'var(--accent)'};font-size:12px;font-weight:700;padding:5px 12px;cursor:pointer;font-family:var(--font-main);">着卓${selectedCasts.length ? `(${selectedCasts.length})` : ''}</button>` : ''}
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">${guest.tantoDisplay || pairTanto}・${pairGuestName}</div>
+    ${guest.help ? `<div style="font-size:10.5px;color:#e8954a;margin-bottom:12px;">ヘルプ指名: ${guest.help}</div>` : `<div style="margin-bottom:12px;"></div>`}
+    ${membersHtml}
+    ${addHtml}
+    <button onclick="demoCloseTsukeTablePopup()" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
+  </div>`;
+  overlay.style.display = 'flex';
+}
+
+function demoToggleTsukeCastSelection(name, guestId) {
+  if (!window._demoTsukeSelectedCasts) window._demoTsukeSelectedCasts = new Set();
+  if (window._demoTsukeSelectedCasts.has(name)) window._demoTsukeSelectedCasts.delete(name);
+  else window._demoTsukeSelectedCasts.add(name);
+  demoOpenTsukeTablePopup(guestId);
+}
+
+function demoPromptJoinSelectedTsuke(guestId) {
+  const selected = [...(window._demoTsukeSelectedCasts || new Set())];
+  if (!selected.length) { showToast('🧪 キャストを選択してください'); return; }
+  let overlay = document.getElementById('tsukeDemoJoinConfirmOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeDemoJoinConfirmOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1013;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:280px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${selected.join('・')}さんを着卓させますか？</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('tsukeDemoJoinConfirmOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
+      <button onclick="document.getElementById('tsukeDemoJoinConfirmOverlay').style.display='none';demoConfirmJoinSelectedTsuke('${guestId}')" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">はい</button>
+    </div>
+  </div>`;
+  overlay.style.display='flex';
+}
+
+function demoConfirmJoinSelectedTsuke(guestId) {
+  const guest = demoResolveTsukeGuest(guestId);
+  if (!guest) return;
+  const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
+  const guestName = (guest.name || '').replace('△','').trim();
+  const selected = [...(window._demoTsukeSelectedCasts || new Set())];
+  if (!selected.length) return;
+  selected.forEach(name => demoDoJoinTsuke(name, guestId, tableKey, guest.tanto || '', guestName));
+  showToast(`🧪 ${selected.join('・')}さんが${tableKey}卓に着きました`);
+  window._demoTsukeSelectedCasts = new Set();
+  if (window._demoTsukeTablePopupGuestId != null) demoOpenTsukeTablePopup(guestId);
+}
+
+function demoConfirmJoinTsuke(name, guestId) {
+  const guest = demoResolveTsukeGuest(guestId);
+  if (!guest) return;
+  const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
+  demoDoJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
+  showToast(`🧪 ${name}さんが${tableKey}卓に着きました`);
+  if (window._demoTsukeTablePopupGuestId != null) demoOpenTsukeTablePopup(guestId);
+}
+
+function demoConfirmLeaveTsuke(name) {
+  demoDoLeaveTsuke(name);
+  showToast(`🧪 ${name}さんが離れました`);
+  if (window._demoTsukeTablePopupGuestId != null) demoOpenTsukeTablePopup(window._demoTsukeTablePopupGuestId);
+}
+
+/* ---- デモ用のダミーデータ ---- */
+function seedTsukeDemoData() {
+  demoStaffList = ['翼','旬','天音','ねる','綺羅','つかさ','ゆうき','JESSE','縁','ひろき','なる','永愛','翔丸','波瑠','カルマ','ジヌ','蒼介','風磨','明日華','稜','みやび','ハルヤ'];
+  demoStaffAliases = {};
+  demoStaffDayStatus = {};
+  window.demoStaffKanbu = { '翼': true, '綺羅': true, '永愛': true };
+  window.demoStaffShiftStart = {
+    '翼':'18:00','旬':'18:00','天音':'18:00','ねる':'18:00','綺羅':'18:00','つかさ':'18:00','ゆうき':'18:00','JESSE':'18:00',
+    '縁':'18:30','ひろき':'19:00','なる':'19:00','永愛':'19:00','翔丸':'19:00','波瑠':'19:00','カルマ':'19:00','ジヌ':'19:00',
+    '蒼介':'19:15','風磨':'19:30','明日華':'19:30','稜':'20:15','みやび':'20:15','ハルヤ':'20:30',
+  };
+  window.demoStaffDohanTime = { '風磨':'20:30','ハルヤ':'21:00','永愛':'20:00','カルマ':'20:00' };
+  demoFloorData = { V: ['V1','V2','V3'], A: ['A1','A2','A3','A4','A5','A6'], B: ['B1','B2','B3','B4','B5','B6'] };
+  demoGuests = [
+    { id: 1, tableNum: 'A1', arrived: true, left: false, tanto: '永愛', name: '田中', help: '', arrive: '21:00', note: '' },
+    { id: 2, tableNum: 'A2', arrived: true, left: false, tanto: 'カルマ', name: '鈴木', help: '翔丸', arrive: '20:00', note: '' },
+    { id: 3, tableNum: 'B1', arrived: true, left: false, tanto: '風磨', name: '佐藤', help: '', arrive: '同伴', note: '' },
+    { id: 4, tableNum: 'B4', arrived: true, left: false, tanto: 'なる', name: '高橋', help: '', arrive: '21:30', note: '2回目' },
+  ];
+  demoFirstGroups = [
+    { id: 1, tableNum: 'A6', arrived: true, count: '3', rows: [
+      { id: 1, seat: '左', photo1: '永愛', photo2: '成', okuri: '', nominaoshi: '', plan: '' },
+      { id: 2, seat: '中', photo1: 'カルマ', photo2: '稜', okuri: '', nominaoshi: '', plan: '' },
+      { id: 3, seat: '右', photo1: '波瑠', photo2: '', okuri: '', nominaoshi: '', plan: '' },
+    ] },
+    { id: 2, tableNum: 'B6', arrived: true, count: '2', rows: [
+      { id: 4, seat: '左', photo1: '明日華', photo2: '', okuri: '', nominaoshi: '', plan: '' },
+      { id: 5, seat: '右', photo1: '風磨', photo2: '', okuri: '', nominaoshi: '', plan: '' },
+    ] },
+  ];
+  window.demoTsukeActive = { '翼': { guestId: '2', tableKey: 'A2', tanto: 'カルマ', guestName: '鈴木', startedAt: demoNow() - 20 * 60000, isFirst: false } };
+  window.demoTsukeLog = {};
+  window._demoTsukeSelectedCasts = new Set();
+  window._demoTsukeTablePopupGuestId = null;
+  demoRole = 'admin';
+  demoIdentity = '';
+  window._demoOffsetMs = 0;
+}
+
+/* ---- デモ用の操作パネル ---- */
+const DEMO_ROLE_PRESETS = [
+  { key: 'admin', label: '内勤', role: 'admin', identity: '' },
+  { key: 'kanbu', label: '幹部キャスト（翼）', role: 'host', identity: '翼' },
+  { key: 'cast', label: '一般キャスト（旬）', role: 'host', identity: '旬' },
+];
+function setDemoTsukeRole(key) {
+  const preset = DEMO_ROLE_PRESETS.find(p => p.key === key);
+  demoRole = preset.role;
+  demoIdentity = preset.identity;
+  demoRenderTsukeModalIfOpen();
+}
+function advanceDemoClock(minutes) {
+  window._demoOffsetMs += minutes * 60000;
+  demoRefreshAfterClockChange();
+}
+function resetDemoClock() {
+  window._demoOffsetMs = 0;
+  demoRefreshAfterClockChange();
+}
+function demoRefreshAfterClockChange() {
+  demoRenderTsukeModalIfOpen();
+  if (window._demoTsukeTablePopupGuestId != null) demoOpenTsukeTablePopup(window._demoTsukeTablePopupGuestId);
+}
+function toggleDemoDayOff(name) {
+  const isOff = demoStaffDayStatus[name] && demoStaffDayStatus[name].status === 'off';
+  if (isOff) delete demoStaffDayStatus[name]; else demoStaffDayStatus[name] = { status: 'off' };
+  demoRefreshAfterClockChange();
+  showToast(isOff ? `🧪 ${name}を出勤扱いに戻しました` : `🧪 ${name}を本日休みにしました`);
+}
+function resetTsukeDemoData() {
+  seedTsukeDemoData();
+  demoRenderTsukeModalIfOpen();
+  showToast('🧪 デモデータを初期状態に戻しました');
+}
+
+function openTsukeDemoModal() {
+  if (!canUseTsukemawashi()) { showToast('この機能は内勤・幹部のみ利用できます'); return; }
+  let overlay = document.getElementById('tsukeDemoModal');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'tsukeDemoModal';
+    document.body.appendChild(overlay);
+    seedTsukeDemoData();
+  }
+  overlay.classList.add('show');
+  demoRenderTsukeModalIfOpen();
+  if (!window._demoTsukeTimerInterval) {
+    window._demoTsukeTimerInterval = setInterval(() => {
+      document.querySelectorAll('[data-demo-tsuke-timer]').forEach(el => {
+        const startedAt = Number(el.getAttribute('data-demo-tsuke-timer'));
+        el.textContent = demoTsukeElapsedMinutes(startedAt);
+        el.style.color = demoTsukeTimerColor(startedAt);
+      });
+    }, 60000);
+  }
+}
+function closeTsukeDemoModal() {
+  const overlay = document.getElementById('tsukeDemoModal');
+  if (overlay) overlay.classList.remove('show');
+  if (window._demoTsukeTimerInterval) { clearInterval(window._demoTsukeTimerInterval); window._demoTsukeTimerInterval = null; }
+}
+
+function demoRenderTsukeModalIfOpen() {
+  const overlay = document.getElementById('tsukeDemoModal');
+  if (!overlay || !overlay.classList.contains('show')) return;
+  const now = new Date(demoNow());
+  const clockText = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  const roleRowHtml = DEMO_ROLE_PRESETS.map(p => {
+    const active = (demoRole === p.role && demoIdentity === p.identity);
+    return `<button onclick="setDemoTsukeRole('${p.key}')" style="background:${active ? '#8e6fd9' : 'transparent'};border:1px solid #8e6fd9;border-radius:999px;color:${active ? '#fff' : '#8e6fd9'};font-size:11px;font-weight:700;padding:5px 11px;cursor:pointer;font-family:var(--font-main);">${p.label}</button>`;
+  }).join('');
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;width:96vw;max-height:88vh;display:flex;flex-direction:column;">
+      <div class="modal-header" style="background:#2a2140;border-bottom-color:#8e6fd9;">
+        <span style="color:#c9a8ec;">🧪 付け回しデモ（ダミーデータ・本番には影響しません）</span>
+        <button onclick="closeTsukeDemoModal()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;">
+        <div style="background:#2a2140;border:1px solid #8e6fd9;border-radius:8px;padding:10px 12px;margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+            <div style="display:flex;flex-wrap:wrap;gap:5px;">${roleRowHtml}</div>
+            <button onclick="resetTsukeDemoData()" style="background:none;border:1px solid #666;border-radius:6px;color:#aaa;font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font-main);">🔄 データをリセット</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-variant-numeric:tabular-nums;font-size:15px;font-weight:700;color:#c9a8ec;background:#1a1428;border-radius:6px;padding:3px 10px;">🕒 ${clockText}</span>
+            <button onclick="advanceDemoClock(15)" style="background:none;border:1px solid #8e6fd9;border-radius:999px;color:#c9a8ec;font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">+15分</button>
+            <button onclick="advanceDemoClock(60)" style="background:none;border:1px solid #8e6fd9;border-radius:999px;color:#c9a8ec;font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">+1時間</button>
+            <button onclick="resetDemoClock()" style="background:none;border:1px solid #8e6fd9;border-radius:999px;color:#c9a8ec;font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">実時刻に戻す</button>
+            <button onclick="toggleDemoDayOff('ハルヤ')" style="background:none;border:1px solid #8e6fd9;border-radius:999px;color:#c9a8ec;font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">ハルヤの休み切替</button>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">卓状況</div>
+        ${demoBuildTsukeFloorBoxesHtml()}
+        <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">本日の幹部稼働</div>
+        ${demoBuildTsukeKanbuStatsHtml()}
       </div>
     </div>`;
 }
