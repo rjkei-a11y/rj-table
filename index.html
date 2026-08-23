@@ -3071,8 +3071,16 @@ function openTsukeTablePopup(guestId) {
   // tsukeLogはリセット操作のたびに空にされる（index.html:5279-5281）ため、日付での絞り込みなしで「本日分」として扱える
   const tsukeLogData = window.tsukeLog || {};
   const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
-  // 本日すでに何回初回卓に付いたか（組み合わせ問わず合計。初回卓のキャスト選択画面で回数バッジ・背景の濃さに使う）
-  const tsukeFirstCountToday = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.isFirst).length;
+  // 本日すでに何卓の初回に付いたか（同じ初回卓に2度付いても1卓として数える。着卓中（まだ離席していない）分も含める）
+  const tsukeFirstCountToday = (name) => {
+    const pairs = new Set();
+    Object.values(tsukeLogData).forEach(e => {
+      if (e.kanbu === name && e.isFirst) pairs.add(e.tanto + '　' + e.guestName);
+    });
+    const active = (window.tsukeActive || {})[name];
+    if (active && active.isFirst) pairs.add(active.tanto + '　' + active.guestName);
+    return pairs.size;
+  };
   // 今日、来店予定が「同伴」になっているお客様の担当キャスト名一覧（1回だけ計算しておく）
   // 「同伴」の文言は来店時間欄だけでなく、お客様名・備考欄に書かれることもあるため、いずれかに含まれていれば拾う
   const dohanCastNamesToday = new Set(
