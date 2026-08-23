@@ -3030,7 +3030,7 @@ function resolveTsukeGuest(guestId) {
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '' };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count };
   }
   const numId = Number(guestId);
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3152,9 +3152,11 @@ function openTsukeTablePopup(guestId) {
       return !!(threshold && !isTimeOverdue(threshold.time) && !getTsukeActiveOf(name));
     };
     const sortedNotOnThisGuest = [...notOnThisGuest].sort((a, b) => isPendingName(a) - isPendingName(b));
+    // 初回卓は人数（guest.count）分までしか選べないため、既に定員に達している場合は未選択のボタンを薄く表示する
+    const capacityLeft = (isFirstGroup && guest.count) ? guest.count - members.length - selectedCasts.length : null;
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}${capacityLeft !== null ? `<span style="color:var(--accent);"> （定員${guest.count}名）</span>` : ''}</div>
           ${selectedCasts.length ? `<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px;">選択中: ${selectedCasts.join('・')}</div>` : ''}
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:13px 5px;">
             ${sortedNotOnThisGuest.map(name => {
@@ -3164,6 +3166,7 @@ function openTsukeTablePopup(guestId) {
               // （初回卓では一度付いたキャストは既に選択肢から除外済みなので、pastCountは常に0になり意味を持たない）
               const countForDisplay = isFirstGroup ? tsukeFirstCountToday(name) : tsukePastCount(name);
               const isSelected = selectedCasts.includes(name);
+              const isCappedOut = capacityLeft !== null && capacityLeft <= 0 && !isSelected;
               const color = photoSeat ? photoSeat.hex : (isHelpRequested ? '#e05a9e' : 'var(--accent)');
               const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
               // 初回卓は背景の濃淡で回数を示唆しない（数字バッジのみで示す）。指名卓は従来通り濃淡で示す
@@ -3178,7 +3181,7 @@ function openTsukeTablePopup(guestId) {
               const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
               // ボタン自体はname省略のためoverflow:hiddenが要るので、タグはボタンの外（position:relativeの親）に置いて見切れないようにする
               const pendingTag = isPending ? `<span style="position:absolute;left:0;right:0;bottom:-7px;text-align:center;font-size:8px;color:#d8b968;background:#3a2f14;border-radius:3px;padding:1px 4px;white-space:nowrap;">${threshold.label} ${threshold.time}〜</span>` : '';
-              const btnHtml = `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
+              const btnHtml = `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="opacity:${isCappedOut ? 0.35 : 1};background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
               return isPending ? `<div style="position:relative;">${btnHtml}${pendingTag}</div>` : btnHtml;
             }).join('')}
           </div>
@@ -3213,8 +3216,20 @@ function openTsukeTablePopup(guestId) {
 // （複数人まとめて選んでから、卓番横の「着卓」ボタンで一括確定する）
 function toggleTsukeCastSelection(name, guestId) {
   if (!window._tsukeSelectedCasts) window._tsukeSelectedCasts = new Set();
-  if (window._tsukeSelectedCasts.has(name)) window._tsukeSelectedCasts.delete(name);
-  else window._tsukeSelectedCasts.add(name);
+  if (window._tsukeSelectedCasts.has(name)) {
+    window._tsukeSelectedCasts.delete(name);
+  } else {
+    // 初回卓は人数分（guest.count）までしか選べないようにする。既についている人数＋選択中の人数で判定する
+    const guest = resolveTsukeGuest(guestId);
+    if (guest && guest.count) {
+      const capacityLeft = guest.count - getTsukeMembersOnGuest(guestId).length;
+      if (window._tsukeSelectedCasts.size >= capacityLeft) {
+        showToast(`初回${guest.count}名のため、これ以上は選べません`);
+        return;
+      }
+    }
+    window._tsukeSelectedCasts.add(name);
+  }
   openTsukeTablePopup(guestId); // 選択状態をボタンの塗りつぶし・上部の一覧に反映するため再描画する
 }
 
@@ -3531,7 +3546,7 @@ function demoResolveTsukeGuest(guestId) {
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => demoNormalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: demoBuildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: demoBuildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '' };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: demoBuildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: demoBuildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count };
   }
   const numId = Number(guestId);
   return demoGuests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3612,9 +3627,10 @@ function demoOpenTsukeTablePopup(guestId) {
       return !!(threshold && !demoIsTimeOverdue(threshold.time) && !demoGetTsukeActiveOf(name));
     };
     const sortedNotOnThisGuest = [...notOnThisGuest].sort((a, b) => isPendingName(a) - isPendingName(b));
+    const capacityLeft = (isFirstGroup && guest.count) ? guest.count - members.length - selectedCasts.length : null;
     addHtml = notOnThisGuest.length
       ? `<div style="margin-top:12px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}${capacityLeft !== null ? `<span style="color:var(--accent);"> （定員${guest.count}名）</span>` : ''}</div>
           ${selectedCasts.length ? `<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px;">選択中: ${selectedCasts.join('・')}</div>` : ''}
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:13px 5px;">
             ${sortedNotOnThisGuest.map(name => {
@@ -3622,6 +3638,7 @@ function demoOpenTsukeTablePopup(guestId) {
               const photoSeat = photoSeatInfo[name];
               const countForDisplay = isFirstGroup ? tsukeFirstCountToday(name) : tsukePastCount(name);
               const isSelected = selectedCasts.includes(name);
+              const isCappedOut = capacityLeft !== null && capacityLeft <= 0 && !isSelected;
               const color = photoSeat ? photoSeat.hex : (isHelpRequested ? '#e05a9e' : 'var(--accent)');
               const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
               const tier = isFirstGroup ? 0 : Math.min(countForDisplay, 4);
@@ -3632,7 +3649,7 @@ function demoOpenTsukeTablePopup(guestId) {
               const bg = isSelected ? color : (isPending ? 'none' : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none'));
               const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
               const pendingTag = isPending ? `<span style="position:absolute;left:0;right:0;bottom:-7px;text-align:center;font-size:8px;color:#d8b968;background:#3a2f14;border-radius:3px;padding:1px 4px;white-space:nowrap;">${threshold.label} ${threshold.time}〜</span>` : '';
-              const btnHtml = `<button onclick="demoToggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
+              const btnHtml = `<button onclick="demoToggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="opacity:${isCappedOut ? 0.35 : 1};background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
               return isPending ? `<div style="position:relative;">${btnHtml}${pendingTag}</div>` : btnHtml;
             }).join('')}
           </div>
@@ -3663,8 +3680,19 @@ function demoOpenTsukeTablePopup(guestId) {
 
 function demoToggleTsukeCastSelection(name, guestId) {
   if (!window._demoTsukeSelectedCasts) window._demoTsukeSelectedCasts = new Set();
-  if (window._demoTsukeSelectedCasts.has(name)) window._demoTsukeSelectedCasts.delete(name);
-  else window._demoTsukeSelectedCasts.add(name);
+  if (window._demoTsukeSelectedCasts.has(name)) {
+    window._demoTsukeSelectedCasts.delete(name);
+  } else {
+    const guest = demoResolveTsukeGuest(guestId);
+    if (guest && guest.count) {
+      const capacityLeft = guest.count - demoGetTsukeMembersOnGuest(guestId).length;
+      if (window._demoTsukeSelectedCasts.size >= capacityLeft) {
+        showToast(`初回${guest.count}名のため、これ以上は選べません`);
+        return;
+      }
+    }
+    window._demoTsukeSelectedCasts.add(name);
+  }
   demoOpenTsukeTablePopup(guestId);
 }
 
