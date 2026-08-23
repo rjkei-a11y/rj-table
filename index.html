@@ -3716,7 +3716,7 @@ function seedTsukeDemoData() {
   demoStaffList = ['翼','旬','天音','ねる','綺羅','つかさ','ゆうき','JESSE','縁','ひろき','なる','永愛','翔丸','波瑠','カルマ','ジヌ','蒼介','風磨','明日華','稜','みやび','ハルヤ'];
   demoStaffAliases = {};
   demoStaffDayStatus = {};
-  window.demoStaffKanbu = { '翼': true, '綺羅': true, '永愛': true };
+  window.demoStaffKanbu = { '稜': true, '綺羅': true, '永愛': true };
   window.demoStaffShiftStart = {
     '翼':'18:00','旬':'18:00','天音':'18:00','ねる':'18:00','綺羅':'18:00','つかさ':'18:00','ゆうき':'18:00','JESSE':'18:00',
     '縁':'18:30','ひろき':'19:00','なる':'19:00','永愛':'19:00','翔丸':'19:00','波瑠':'19:00','カルマ':'19:00','ジヌ':'19:00',
@@ -3755,7 +3755,7 @@ function seedTsukeDemoData() {
 // このモーダル内のロール切り替えでは「実際にここへたどり着けるロール」だけを選べるようにする
 const DEMO_ROLE_PRESETS = [
   { key: 'admin', label: '内勤', role: 'admin', identity: '' },
-  { key: 'kanbu', label: '幹部キャスト（翼）', role: 'host', identity: '翼' },
+  { key: 'kanbu', label: '幹部キャスト（稜）', role: 'host', identity: '稜' },
 ];
 function setDemoTsukeRole(key) {
   const preset = DEMO_ROLE_PRESETS.find(p => p.key === key);
