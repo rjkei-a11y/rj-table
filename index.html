@@ -3751,10 +3751,11 @@ function seedTsukeDemoData() {
 }
 
 /* ---- デモ用の操作パネル ---- */
+// 一般キャスト（幹部未登録）は実際には付け回しモーダル自体を開けない（canUseTsukemawashiで弾かれる）ため、
+// このモーダル内のロール切り替えでは「実際にここへたどり着けるロール」だけを選べるようにする
 const DEMO_ROLE_PRESETS = [
   { key: 'admin', label: '内勤', role: 'admin', identity: '' },
   { key: 'kanbu', label: '幹部キャスト（翼）', role: 'host', identity: '翼' },
-  { key: 'cast', label: '一般キャスト（旬）', role: 'host', identity: '旬' },
 ];
 function setDemoTsukeRole(key) {
   const preset = DEMO_ROLE_PRESETS.find(p => p.key === key);
