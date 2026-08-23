@@ -3162,8 +3162,10 @@ function openTsukeTablePopup(guestId) {
               const textColor = isSelected ? '#1a1a1a' : (isPending && !photoSeat ? '#5c5c5c' : color);
               const bg = isSelected ? color : (isPending ? 'none' : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none'));
               const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
-              const pendingTag = isPending ? `<span style="position:absolute;bottom:-7px;font-size:8px;background:#3a2f14;color:#d8b968;border-radius:3px;padding:1px 4px;white-space:nowrap;">${threshold.label} ${threshold.time}〜</span>` : '';
-              return `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="position:relative;background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}${pendingTag}</button>`;
+              // ボタン自体はname省略のためoverflow:hiddenが要るので、タグはボタンの外（position:relativeの親）に置いて見切れないようにする
+              const pendingTag = isPending ? `<span style="position:absolute;left:0;right:0;bottom:-7px;text-align:center;font-size:8px;color:#d8b968;background:#3a2f14;border-radius:3px;padding:1px 4px;white-space:nowrap;">${threshold.label} ${threshold.time}〜</span>` : '';
+              const btnHtml = `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
+              return isPending ? `<div style="position:relative;">${btnHtml}${pendingTag}</div>` : btnHtml;
             }).join('')}
           </div>
         </div>`
