@@ -26,6 +26,8 @@
   const staffRef = ref(db, 'staff');
   const staffTeamsRef = ref(db, 'staffTeams');
   const staffKanbuRef = ref(db, 'staffKanbu');
+  const staffShiftStartRef = ref(db, 'staffShiftStart');
+  const staffDohanTimeRef = ref(db, 'staffDohanTime');
   const tsukeActiveRef = ref(db, 'tsukemawashiActive');
   const tsukeLogRef = ref(db, 'tsukemawashiLog');
   const teamDefsRef = ref(db, 'teamDefs');
@@ -98,6 +100,19 @@
     if (isViewOnlyMode()) return;
     const hasData = kanbuObj && Object.keys(kanbuObj).length > 0;
     set(staffKanbuRef, hasData ? kanbuObj : null).catch(e => console.error('FB staffKanbu save error:', e));
+  };
+
+  // Firebaseに各スタッフの出勤時間（{名前: "HH:MM"}形式。出勤確認票スプレッドシートから読み込む）を保存
+  window.fbSaveStaffShiftStart = function(obj) {
+    if (isViewOnlyMode()) return;
+    const hasData = obj && Object.keys(obj).length > 0;
+    set(staffShiftStartRef, hasData ? obj : null).catch(e => console.error('FB staffShiftStart save error:', e));
+  };
+  // Firebaseに各スタッフの同伴時間（{名前: "HH:MM"}形式。出勤確認票スプレッドシートから読み込む）を保存
+  window.fbSaveStaffDohanTime = function(obj) {
+    if (isViewOnlyMode()) return;
+    const hasData = obj && Object.keys(obj).length > 0;
+    set(staffDohanTimeRef, hasData ? obj : null).catch(e => console.error('FB staffDohanTime save error:', e));
   };
 
   // 付け回し：今まさに誰がどの卓についているか（{幹部名: {tableKey, tanto, guestName, startedAt}}）を保存
@@ -321,6 +336,16 @@
     window.staffKanbu = data || {};
     try { localStorage.setItem('tableManager_staffKanbu', JSON.stringify(window.staffKanbu)); } catch(e) {}
     if (typeof updateTsukeEntryBtn === 'function') updateTsukeEntryBtn();
+  });
+
+  // Firebaseから各スタッフの出勤時間・同伴時間をリアルタイム受信
+  onValue(staffShiftStartRef, (snapshot) => {
+    window.staffShiftStart = snapshot.val() || {};
+    try { localStorage.setItem('tableManager_staffShiftStart', JSON.stringify(window.staffShiftStart)); } catch(e) {}
+  });
+  onValue(staffDohanTimeRef, (snapshot) => {
+    window.staffDohanTime = snapshot.val() || {};
+    try { localStorage.setItem('tableManager_staffDohanTime', JSON.stringify(window.staffDohanTime)); } catch(e) {}
   });
 
   // 付け回し：今まさに誰がどの卓についているかをリアルタイム受信
@@ -3048,6 +3073,22 @@ function openTsukeTablePopup(guestId) {
   const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
   // 本日すでに何回初回卓に付いたか（組み合わせ問わず合計。初回卓のキャスト選択画面で回数バッジ・背景の濃さに使う）
   const tsukeFirstCountToday = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.isFirst).length;
+  // 今日、来店予定が「同伴」になっているお客様の担当キャスト名一覧（1回だけ計算しておく）
+  const dohanCastNamesToday = new Set(
+    guests.filter(g => g.arrived && !g.left && (g.arrive || '').includes('同伴'))
+          .map(g => matchStaffName(g.tanto))
+          .filter(Boolean)
+  );
+  // このキャストの出勤・同伴の目安時刻を返す。今日担当しているお客様の来店予定に「同伴」が含まれていれば、
+  // 出勤時間の代わりに同伴時間を目安にする（出勤・同伴時間は「これより遅れないでね」というラインなので、
+  // 目安時刻前でも選択自体はできるようにし、ボタンの見た目だけを変えるために使う）
+  const getShiftThresholdFor = (name) => {
+    if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
+      return { time: window.staffDohanTime[name], label: '同伴' };
+    }
+    const shiftStart = (window.staffShiftStart || {})[name];
+    return shiftStart ? { time: shiftStart, label: '出勤' } : null;
+  };
 
   // キャストロールは「自分」しか操作できないので、他の幹部の「離れる」ボタンは出さない
   // （内勤は代理で誰の分でも操作できるよう、全員分にボタンを出す）
@@ -3093,7 +3134,7 @@ function openTsukeTablePopup(guestId) {
       ? `<div style="margin-top:12px;">
           <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">＋ この卓に着く${headingDesc}</div>
           ${selectedCasts.length ? `<div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px;">選択中: ${selectedCasts.join('・')}</div>` : ''}
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:13px 5px;">
             ${notOnThisGuest.map(name => {
               const isHelpRequested = helpNames.includes(name);
               const photoSeat = photoSeatInfo[name];
@@ -3105,10 +3146,16 @@ function openTsukeTablePopup(guestId) {
               const colorRgb = photoSeat ? photoSeat.rgb : (isHelpRequested ? '224,90,158' : '201,168,76');
               // 初回卓は背景の濃淡で回数を示唆しない（数字バッジのみで示す）。指名卓は従来通り濃淡で示す
               const tier = isFirstGroup ? 0 : Math.min(countForDisplay, 4);
-              const bg = isSelected ? color : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none');
-              const textColor = isSelected ? '#1a1a1a' : color;
+              // 出勤・同伴の目安時刻より前の人は点線ボタンにする。ただし目安時刻は「これより遅れないでね」というラインで
+              // 実際は前倒しで来ることも多いため、disabledにはせず選択自体は常にできるようにする
+              const threshold = getShiftThresholdFor(name);
+              const isPending = threshold && !isTimeOverdue(threshold.time) && !getTsukeActiveOf(name);
+              const borderColor = isPending && !photoSeat ? '#4a4a4a' : color;
+              const textColor = isSelected ? '#1a1a1a' : (isPending && !photoSeat ? '#5c5c5c' : color);
+              const bg = isSelected ? color : (isPending ? 'none' : (tier > 0 ? `rgba(${colorRgb},${countFillAlpha[tier]})` : 'none'));
               const seatBadge = photoSeat && photoSeat.seat ? `<span style="opacity:0.85;font-size:9px;"> ${photoSeat.seat}</span>` : '';
-              return `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:${bg};border:1px solid ${color};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}</button>`;
+              const pendingTag = isPending ? `<span style="position:absolute;bottom:-7px;font-size:8px;background:#3a2f14;color:#d8b968;border-radius:3px;padding:1px 4px;white-space:nowrap;">${threshold.label} ${threshold.time}〜</span>` : '';
+              return `<button onclick="toggleTsukeCastSelection('${name.replace(/'/g,"\\'")}','${guestId}')" style="position:relative;background:${bg};border:1px ${isPending ? 'dashed' : 'solid'} ${borderColor};border-radius:5px;color:${textColor};font-size:11px;height:32px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:var(--font-main);">${isSelected ? '✓ ' : ''}${name}${seatBadge}${countForDisplay > 0 ? `<span style="opacity:0.85;"> ${countForDisplay}</span>` : ''}${pendingTag}</button>`;
             }).join('')}
           </div>
         </div>`
@@ -4762,6 +4809,16 @@ function loadStaff() {
     if (rawKanbu) window.staffKanbu = JSON.parse(rawKanbu);
   } catch(e) {}
   if (!window.staffKanbu) window.staffKanbu = {};
+  try {
+    const rawShiftStart = localStorage.getItem('tableManager_staffShiftStart');
+    if (rawShiftStart) window.staffShiftStart = JSON.parse(rawShiftStart);
+  } catch(e) {}
+  if (!window.staffShiftStart) window.staffShiftStart = {};
+  try {
+    const rawDohanTime = localStorage.getItem('tableManager_staffDohanTime');
+    if (rawDohanTime) window.staffDohanTime = JSON.parse(rawDohanTime);
+  } catch(e) {}
+  if (!window.staffDohanTime) window.staffDohanTime = {};
   if (!window.tsukeActive) window.tsukeActive = {};
   if (!window.tsukeLog) window.tsukeLog = {};
   // Firebaseスタッフ受信時に更新
@@ -6349,6 +6406,15 @@ function openStaffSettings() {
       <div class="modal-body">
         <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">1行に1名ずつ入力してください</p>
         <textarea id="staffInput" style="width:100%;min-height:200px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:10px;outline:none;">${staffList.join('\n')}</textarea>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;color:var(--text-dim);font-weight:700;">出勤時間・同伴時間</span>
+            <button id="shiftLoadBtn" class="btn btn-ghost btn-sm" onclick="loadStaffShiftFromSheet()">📥 出勤時間を読み込む</button>
+          </div>
+          <div id="shiftLoadStatus" style="font-size:11px;color:var(--text-dim);margin-bottom:8px;"></div>
+          <div id="shiftPreviewList"></div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('staffModal').classList.remove('show')">キャンセル</button>
@@ -6356,6 +6422,89 @@ function openStaffSettings() {
       </div>
     </div>`;
   modal.classList.add('show');
+  renderStaffShiftPreview();
+}
+
+// 出勤確認票スプレッドシート（出勤時間・同伴時間）のID
+const SHIFT_SHEET_ID = '1e0ICZgnsfL8BAardaie5MaE4sZHXcqpRrojauzh9uP4';
+
+// 在籍スタッフ登録モーダル内に、現在保存されている出勤時間・同伴時間の一覧を表示する
+function renderStaffShiftPreview() {
+  const listEl = document.getElementById('shiftPreviewList');
+  if (!listEl) return;
+  const shiftStart = window.staffShiftStart || {};
+  const dohanTime = window.staffDohanTime || {};
+  const rowsHtml = staffList.map(name => {
+    if (!shiftStart[name] && !dohanTime[name]) return '';
+    return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);">
+      <span style="color:var(--text);">${name}</span>
+      <span style="display:flex;gap:14px;">
+        <span style="color:var(--accent);font-weight:700;">出勤 ${shiftStart[name] || '−'}</span>
+        <span style="color:#d8b968;font-weight:700;">同伴 ${dohanTime[name] || '−'}</span>
+      </span>
+    </div>`;
+  }).filter(Boolean).join('');
+  listEl.innerHTML = rowsHtml || '<div style="font-size:11px;color:var(--text-dim);">まだ読み込んでいません</div>';
+}
+
+// 「出勤時間管理シート{月}月」タブを直接fetchし、当月ブロックの出勤時間・同伴時間を取り込む
+async function loadStaffShiftFromSheet() {
+  const btn = document.getElementById('shiftLoadBtn');
+  const statusEl = document.getElementById('shiftLoadStatus');
+  btn.disabled = true;
+  btn.textContent = '読み込み中…';
+  try {
+    const now = new Date();
+    const sheetName = `出勤時間管理シート${now.getMonth() + 1}月`;
+    const url = `https://docs.google.com/spreadsheets/d/${SHIFT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('fetch failed: ' + res.status);
+    const csvText = await res.text();
+    const { shiftStart, dohanTime, unknownNames } = parseShiftSheetCsv(csvText);
+    if (!Object.keys(shiftStart).length) throw new Error('no rows parsed');
+    window.staffShiftStart = shiftStart;
+    window.staffDohanTime = dohanTime;
+    if (window.fbSaveStaffShiftStart) window.fbSaveStaffShiftStart(shiftStart);
+    if (window.fbSaveStaffDohanTime) window.fbSaveStaffDohanTime(dohanTime);
+    try {
+      localStorage.setItem('tableManager_staffShiftStart', JSON.stringify(shiftStart));
+      localStorage.setItem('tableManager_staffDohanTime', JSON.stringify(dohanTime));
+    } catch(e) {}
+    renderStaffShiftPreview();
+    const warnHtml = unknownNames.length ? `<br><span style="color:#e0524a;">⚠ スタッフ名簿にない名前: ${unknownNames.join('・')}</span>` : '';
+    statusEl.innerHTML = `<span style="color:#7fd97f;">✓ ${Object.keys(shiftStart).length}件を取得しました（${sheetName}）</span>${warnHtml}`;
+  } catch (e) {
+    console.error('出勤時間の読み込みエラー:', e);
+    statusEl.innerHTML = `<span style="color:#e0524a;">読み込みに失敗しました。スプレッドシートの共有設定（リンクを知っている全員＝閲覧者）を確認してください。</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📥 出勤時間を読み込む';
+  }
+}
+
+// CSVをパースし、当月ブロック（前月・当月が左右に並ぶうちの右側＝「出勤時間」ヘッダーの最後の出現位置）から
+// 従業員名・出勤時間・同伴時間の列を読み取る。「下限」の行（先月度売上→出勤時間の対応表）に来たら打ち切る
+function parseShiftSheetCsv(csvText) {
+  const rows = csvText.trim().split('\n').map(line =>
+    line.split(',').map(cell => cell.replace(/^"|"$/g, '').replace(/""/g, '"').trim())
+  );
+  const shiftStart = {}, dohanTime = {}, unknownNames = [];
+  const headerRow = rows.find(r => r.includes('出勤時間'));
+  if (!headerRow) return { shiftStart, dohanTime, unknownNames };
+  const startCol = headerRow.lastIndexOf('出勤時間'); // 右ブロック＝当月
+  const nameCol = startCol - 1, dohanCol = startCol + 1;
+  const headerIdx = rows.indexOf(headerRow);
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const name = (rows[i][nameCol] || '').trim();
+    if (!name || name === '下限') break;
+    const time = (rows[i][startCol] || '').trim();
+    const dohan = (rows[i][dohanCol] || '').trim();
+    const matched = matchStaffName(name);
+    if (!staffList.includes(matched)) { unknownNames.push(name); continue; }
+    if (/^\d{1,2}:\d{2}$/.test(time)) shiftStart[matched] = time;
+    if (/^\d{1,2}:\d{2}$/.test(dohan)) dohanTime[matched] = dohan;
+  }
+  return { shiftStart, dohanTime, unknownNames };
 }
 
 function saveStaffFromModal() {
