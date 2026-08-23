@@ -3664,6 +3664,8 @@ function demoOpenTsukeTablePopup(guestId) {
       : '';
   }
 
+  // 自動再生などで頻繁に作り直されるため、こちらもスクロール位置を保持する
+  const prevPopupScrollTop = overlay.firstElementChild ? overlay.firstElementChild.scrollTop : 0;
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;max-height:75vh;overflow-y:auto;">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;">
       <div style="font-size:15px;font-weight:700;color:var(--accent);">${tableKey}卓</div>
@@ -3675,6 +3677,7 @@ function demoOpenTsukeTablePopup(guestId) {
     ${addHtml}
     <button onclick="demoCloseTsukeTablePopup()" style="width:100%;margin-top:14px;padding:10px;background:transparent;border:1px solid #555;border-radius:8px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">閉じる</button>
   </div>`;
+  if (overlay.firstElementChild) overlay.firstElementChild.scrollTop = prevPopupScrollTop;
   overlay.style.display = 'flex';
 }
 
@@ -3893,6 +3896,10 @@ const DEMO_AUTOPLAY_PRESETS = [
 function demoRenderTsukeModalIfOpen() {
   const overlay = document.getElementById('tsukeDemoModal');
   if (!overlay || !overlay.classList.contains('show')) return;
+  // 自動再生中は毎秒中身を丸ごと作り直すため、スクロール位置を保持しないと見ている場所が
+  // 毎回先頭に戻ってしまう。作り直す前に読んでおき、作り直した後に同じ位置へ戻す
+  const prevBody = overlay.querySelector('.modal-body');
+  const prevScrollTop = prevBody ? prevBody.scrollTop : 0;
   const now = new Date(demoNow());
   const clockText = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
   const roleRowHtml = DEMO_ROLE_PRESETS.map(p => {
@@ -3933,6 +3940,8 @@ function demoRenderTsukeModalIfOpen() {
         ${demoBuildTsukeKanbuStatsHtml()}
       </div>
     </div>`;
+  const newBody = overlay.querySelector('.modal-body');
+  if (newBody) newBody.scrollTop = prevScrollTop;
 }
 
 function renderFloorStatus() {
