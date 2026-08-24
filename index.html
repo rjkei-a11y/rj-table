@@ -1769,12 +1769,14 @@ function formatBudgetText(text) {
   return normalized;
 }
 
-// 卓状況BOXの右上バッジ表示向け：予算欄が具体的な金額（数字のみ、または「5万」のような万表記）の
-// 時だけコンパクト表記で拾う。「未定」「上げ」等、金額として確定していない自由記述はnullを返し、
-// バッジ自体を表示しない対象にする
+// 卓状況BOXの右上バッジ表示向け：予算欄が具体的な金額（数字のみ、「5万」のような万表記、
+// 「6〜7万」のような幅のある万表記）の時はコンパクト表記で拾う。「クイック」が含まれる時も
+// （金額そのものではないが卓状況で一目で分かった方がよいため）そのままバッジ表示する。
+// 「未定」「上げ」等、それ以外の金額として確定していない自由記述はnullを返し、バッジを出さない
 function formatBudgetCompact(text) {
   if (!text) return null;
-  const cleaned = toHalfWidthDigits(text).replace(/,/g, '').trim();
+  const raw = String(text).trim();
+  const cleaned = toHalfWidthDigits(raw).replace(/,/g, '').trim();
   // 数字だけ（カンマ区切り含む）→「5万」のようなコンパクト表記に変換する
   if (/^\d+$/.test(cleaned)) {
     const num = parseInt(cleaned, 10);
@@ -1789,6 +1791,10 @@ function formatBudgetCompact(text) {
   // 既に「5万」「5.5万」のように万表記で書かれている場合は、そのままの表記を使う
   const manMatch = cleaned.match(/^(\d+(\.\d+)?)万$/);
   if (manMatch) return `${manMatch[1]}万`;
+  // 「6〜7万」のような幅のある万表記（区切りは〜/～/-/ーいずれでもよい）
+  const rangeMatch = cleaned.match(/^(\d+(?:\.\d+)?)\s*[〜～\-ー]\s*(\d+(?:\.\d+)?)万$/);
+  if (rangeMatch) return `${rangeMatch[1]}〜${rangeMatch[2]}万`;
+  if (detectQuickKeyword(raw)) return raw;
   return null;
 }
 
