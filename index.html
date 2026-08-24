@@ -3749,6 +3749,76 @@ function demoConfirmLeaveTsuke(name) {
 }
 
 /* ---- デモ用のダミーデータ ---- */
+// 卓のBOX構成（フロア）はランダム化せず、本番の既定フロア（DEFAULT_FLOORS）と同じ内容に固定する
+const DEMO_FLOOR_DATA = {
+  V: Array.from({length:9},(_,i)=>'V'+(i+1)),
+  A: Array.from({length:6},(_,i)=>'A'+(i+1)),
+  B: Array.from({length:9},(_,i)=>'B'+(i+1)),
+};
+const DEMO_GUEST_SURNAMES = ['田中','鈴木','佐藤','高橋','伊藤','渡辺','山本','中村','小林','加藤','吉田','山田','斎藤','松本','井上'];
+const DEMO_ARRIVE_TIME_POOL = ['19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30'];
+const DEMO_NOTE_POOL = ['', '', '', '2回目', '3回目', 'VIP'];
+
+function demoShuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function demoPickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function demoRandomInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
+
+// リセットのたびに、指名客2組以上・初回2組以上を必ず確保しつつ、卓の埋まり方をランダムに作る
+// （卓のBOX自体＝DEMO_FLOOR_DATAは固定。ランダムなのはどの卓に誰が入るかだけ）
+function demoBuildRandomFloorData() {
+  const allTables = demoShuffle([...DEMO_FLOOR_DATA.V, ...DEMO_FLOOR_DATA.A, ...DEMO_FLOOR_DATA.B]);
+  const guestCount = demoRandomInt(2, 4);
+  const firstCount = demoRandomInt(2, 3);
+  const guestTables = allTables.slice(0, guestCount);
+  const firstTables = allTables.slice(guestCount, guestCount + firstCount);
+
+  let guestId = 1;
+  const guests = guestTables.map(tableNum => {
+    const tanto = demoPickRandom(demoStaffList);
+    const help = Math.random() < 0.35 ? demoPickRandom(demoStaffList.filter(n => n !== tanto)) : '';
+    const isDohan = Math.random() < 0.2;
+    return {
+      id: guestId++, tableNum, arrived: true, left: false, tanto,
+      name: demoPickRandom(DEMO_GUEST_SURNAMES), help,
+      arrive: isDohan ? '同伴' : demoPickRandom(DEMO_ARRIVE_TIME_POOL),
+      note: demoPickRandom(DEMO_NOTE_POOL),
+    };
+  });
+
+  let firstGid = 1, firstRid = 1;
+  const firstGroups = firstTables.map(tableNum => {
+    const count = demoRandomInt(2, 3);
+    const seats = count === 3 ? ['左','中','右'] : ['左','右'];
+    const rows = seats.map(seat => {
+      const photo1 = demoPickRandom(demoStaffList);
+      const photo2 = Math.random() < 0.4 ? demoPickRandom(demoStaffList.filter(n => n !== photo1)) : '';
+      return { id: firstRid++, seat, photo1, photo2, okuri: '', nominaoshi: '', plan: '' };
+    });
+    return { id: firstGid++, tableNum, arrived: true, count: String(count), rows };
+  });
+
+  // 誰か1人はすでに着席中にしておく（経過時間の色変化がすぐ確認できるように）
+  const activeGuest = demoPickRandom(guests);
+  const activeCastPool = demoStaffList.filter(n => n !== activeGuest.tanto);
+  const activeCast = demoPickRandom(activeCastPool.length ? activeCastPool : demoStaffList);
+  const tsukeActive = {
+    [activeCast]: {
+      guestId: String(activeGuest.id), tableKey: activeGuest.tableNum,
+      tanto: activeGuest.tanto, guestName: activeGuest.name,
+      startedAt: demoNow() - demoRandomInt(0, 25) * 60000, isFirst: false,
+    },
+  };
+
+  return { guests, firstGroups, tsukeActive };
+}
+
 function seedTsukeDemoData() {
   demoStaffList = ['翼','旬','天音','ねる','綺羅','つかさ','ゆうき','JESSE','縁','ひろき','なる','永愛','翔丸','波瑠','カルマ','ジヌ','蒼介','風磨','明日華','稜','雅','ハルヤ'];
   demoStaffAliases = {};
@@ -3760,25 +3830,11 @@ function seedTsukeDemoData() {
     '蒼介':'19:15','風磨':'19:30','明日華':'19:30','稜':'20:15','雅':'20:15','ハルヤ':'20:30',
   };
   window.demoStaffDohanTime = { '風磨':'20:30','ハルヤ':'21:00','永愛':'20:00','カルマ':'20:00' };
-  demoFloorData = { V: ['V1','V2','V3'], A: ['A1','A2','A3','A4','A5','A6'], B: ['B1','B2','B3','B4','B5','B6'] };
-  demoGuests = [
-    { id: 1, tableNum: 'A1', arrived: true, left: false, tanto: '永愛', name: '田中', help: '', arrive: '21:00', note: '' },
-    { id: 2, tableNum: 'A2', arrived: true, left: false, tanto: 'カルマ', name: '鈴木', help: '翔丸', arrive: '20:00', note: '' },
-    { id: 3, tableNum: 'B1', arrived: true, left: false, tanto: '風磨', name: '佐藤', help: '', arrive: '同伴', note: '' },
-    { id: 4, tableNum: 'B4', arrived: true, left: false, tanto: 'なる', name: '高橋', help: '', arrive: '21:30', note: '2回目' },
-  ];
-  demoFirstGroups = [
-    { id: 1, tableNum: 'A6', arrived: true, count: '3', rows: [
-      { id: 1, seat: '左', photo1: '永愛', photo2: '成', okuri: '', nominaoshi: '', plan: '' },
-      { id: 2, seat: '中', photo1: 'カルマ', photo2: '稜', okuri: '', nominaoshi: '', plan: '' },
-      { id: 3, seat: '右', photo1: '波瑠', photo2: '', okuri: '', nominaoshi: '', plan: '' },
-    ] },
-    { id: 2, tableNum: 'B6', arrived: true, count: '2', rows: [
-      { id: 4, seat: '左', photo1: '明日華', photo2: '', okuri: '', nominaoshi: '', plan: '' },
-      { id: 5, seat: '右', photo1: '風磨', photo2: '', okuri: '', nominaoshi: '', plan: '' },
-    ] },
-  ];
-  window.demoTsukeActive = { '翼': { guestId: '2', tableKey: 'A2', tanto: 'カルマ', guestName: '鈴木', startedAt: demoNow() - 20 * 60000, isFirst: false } };
+  demoFloorData = JSON.parse(JSON.stringify(DEMO_FLOOR_DATA));
+  const random = demoBuildRandomFloorData();
+  demoGuests = random.guests;
+  demoFirstGroups = random.firstGroups;
+  window.demoTsukeActive = random.tsukeActive;
   window.demoTsukeLog = {};
   window._demoTsukeSelectedCasts = new Set();
   window._demoTsukeTablePopupGuestId = null;
@@ -3830,8 +3886,10 @@ function promptEditDemoClock() {
 let demoAutoPlaySpeed = 0;
 let demoAutoPlayIntervalId = null;
 let demoAutoPlayLastTickAt = null;
+let demoAutoPlayLastNonZeroSpeed = 15; // トグルで再生する時に使う、直近に選んだ速度（未選択なら既定15倍速）
 function setDemoAutoPlaySpeed(multiplier) {
   demoAutoPlaySpeed = multiplier;
+  if (multiplier > 0) demoAutoPlayLastNonZeroSpeed = multiplier;
   if (demoAutoPlayIntervalId) { clearInterval(demoAutoPlayIntervalId); demoAutoPlayIntervalId = null; }
   if (multiplier > 0) {
     demoAutoPlayLastTickAt = Date.now();
@@ -3842,13 +3900,16 @@ function setDemoAutoPlaySpeed(multiplier) {
       window._demoOffsetMs += realDeltaMs * demoAutoPlaySpeed;
       demoRefreshAfterClockChange();
     }, 1000);
-  } else {
-    demoRenderTsukeModalIfOpen(); // 停止した見た目（ボタンのハイライト解除）を反映するため
   }
+  demoRenderTsukeModalIfOpen(); // 再生/停止ボタンのハイライト切り替えを、次のtickを待たずにすぐ反映する
 }
 function demoRefreshAfterClockChange() {
   demoRenderTsukeModalIfOpen();
   if (window._demoTsukeTablePopupGuestId != null) demoOpenTsukeTablePopup(window._demoTsukeTablePopupGuestId);
+}
+// 通常再生⇄一時停止をワンタップで切り替える（再生時は直近に選んだ倍率を使う）
+function toggleDemoAutoPlay() {
+  setDemoAutoPlaySpeed(demoAutoPlaySpeed > 0 ? 0 : demoAutoPlayLastNonZeroSpeed);
 }
 function toggleDemoDayOff(name) {
   const isOff = demoStaffDayStatus[name] && demoStaffDayStatus[name].status === 'off';
@@ -3893,8 +3954,8 @@ function closeTsukeDemoModal() {
 }
 
 // 時間経過の自動再生スピードのプリセット。倍率＝実時間の何倍の速さでデモ時計を進めるか
+// ON/OFFはtoggleDemoAutoPlay()のトグルボタンが担うため、ここには速度の選択肢だけを並べる
 const DEMO_AUTOPLAY_PRESETS = [
-  { multiplier: 0, label: '⏸ 停止' },
   { multiplier: 15, label: '▶ ×15' },
   { multiplier: 30, label: '▶▶ ×30' },
   { multiplier: 60, label: '▶▶▶ ×60' },
@@ -3912,6 +3973,7 @@ function demoRenderTsukeModalIfOpen() {
     const active = (demoRole === p.role && demoIdentity === p.identity);
     return `<button onclick="setDemoTsukeRole('${p.key}')" style="background:${active ? '#8e6fd9' : 'transparent'};border:1px solid #8e6fd9;border-radius:999px;color:${active ? '#fff' : '#8e6fd9'};font-size:11px;font-weight:700;padding:5px 11px;cursor:pointer;font-family:var(--font-main);">${p.label}</button>`;
   }).join('');
+  const autoPlayToggleHtml = `<button onclick="toggleDemoAutoPlay()" style="background:${demoAutoPlaySpeed > 0 ? '#8e6fd9' : 'transparent'};border:1px solid #8e6fd9;border-radius:999px;color:${demoAutoPlaySpeed > 0 ? '#fff' : '#c9a8ec'};font-size:11px;font-weight:700;padding:4px 12px;cursor:pointer;font-family:var(--font-main);">${demoAutoPlaySpeed > 0 ? '⏸ 一時停止' : '▶ 再生'}</button>`;
   const autoPlayRowHtml = DEMO_AUTOPLAY_PRESETS.map(p => {
     const active = (demoAutoPlaySpeed === p.multiplier);
     return `<button onclick="setDemoAutoPlaySpeed(${p.multiplier})" style="background:${active ? '#8e6fd9' : 'transparent'};border:1px solid #8e6fd9;border-radius:999px;color:${active ? '#fff' : '#c9a8ec'};font-size:11px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">${p.label}</button>`;
@@ -3937,6 +3999,7 @@ function demoRenderTsukeModalIfOpen() {
           </div>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px dashed #4a3d6e;">
             <span style="font-size:10px;color:#a08fc9;">自動再生:</span>
+            ${autoPlayToggleHtml}
             ${autoPlayRowHtml}
           </div>
         </div>
