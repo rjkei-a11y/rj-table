@@ -1397,7 +1397,7 @@ function openMrNotePopup(target) {
       </div>
     </div>`;
   modal.classList.add('show');
-  setTimeout(() => document.getElementById('mrNotePopupInput')?.focus(), 50);
+  setTimeout(() => { const el = document.getElementById('mrNotePopupInput'); if (el) el.focus(); }, 50);
 }
 function saveMrNotePopup() {
   const value = document.getElementById('mrNotePopupInput').value;
@@ -1615,7 +1615,8 @@ function openQueuePopup() {
 }
 
 function closeQueuePopup() {
-  document.getElementById('queuePopup')?.classList.remove('show');
+  const el = document.getElementById('queuePopup');
+  if (el) el.classList.remove('show');
 }
 
 function confirmQueueSubmit() {
@@ -2358,7 +2359,7 @@ function openTableNumPopup(guestId) {
       </div>
     </div>`;
   modal.classList.add('show');
-  setTimeout(() => document.getElementById('tableNumPopupInput')?.focus(), 50);
+  setTimeout(() => { const el = document.getElementById('tableNumPopupInput'); if (el) el.focus(); }, 50);
 }
 
 function saveTableNumPopup(guestId) {
@@ -2403,7 +2404,7 @@ function openNoteEditPopup(guestId) {
       <div class="modal-footer">${footerHtml}</div>
     </div>`;
   modal.classList.add('show');
-  if (canEditList) setTimeout(() => document.getElementById('noteEditPopupInput')?.focus(), 50);
+  if (canEditList) setTimeout(() => { const el = document.getElementById('noteEditPopupInput'); if (el) el.focus(); }, 50);
 }
 
 function saveNoteEditPopup(guestId) {
@@ -2449,7 +2450,7 @@ function openHelpEditPopup(guestId) {
       <div class="modal-footer">${footerHtml}</div>
     </div>`;
   modal.classList.add('show');
-  if (canEditList) setTimeout(() => document.getElementById('helpEditPopupInput')?.focus(), 50);
+  if (canEditList) setTimeout(() => { const el = document.getElementById('helpEditPopupInput'); if (el) el.focus(); }, 50);
 }
 
 function saveHelpEditPopup(guestId) {
@@ -5754,7 +5755,8 @@ function openMyReportsModal() {
 }
 
 function closeMyReportsModal() {
-  document.getElementById('myReportsModal')?.classList.remove('show');
+  const el = document.getElementById('myReportsModal');
+  if (el) el.classList.remove('show');
 }
 
 // キャスト本人が「自分の予約一覧」から、自分の担当分だけを削除できる特例ルート
@@ -7099,7 +7101,8 @@ function openManageModal() {
 }
 
 function closeManageModal() {
-  document.getElementById('manageModal')?.classList.remove('show');
+  const el = document.getElementById('manageModal');
+  if (el) el.classList.remove('show');
 }
 
 function openEditModal(id) {
