@@ -739,7 +739,9 @@ let firstGid = 1;
 let firstRid = 1;
 let staffList = [];
 let staffAliases = {}; // { "本名": ["呼び名1","呼び名2", ...] }
-let staffDayStatus = {}; // { "本名": { status: 'pending'|'off'|'paid_off'|'half_off', reportType: 'self'|'proxy'|null, timestamp } }
+let staffDayStatus = {}; // { "本名": { status: 'pending'|'off'|'paid_off'|'half_off', pending?: true, reportType: 'self'|'proxy'|null, timestamp } }
+// pendingは、半休（勤務する時間帯がある）の人が、その勤務分の予定をまだ決めていない時に
+// status:'half_off'と併せて立てるフラグ。半休と予定未定を同時に表せるようにするためのもの
 let eventTantoToday = { date: '', names: {} }; // その日一度でも👑主役が付いた担当者を記録（{ date: 'YYYY-MM-DD', names: { 正規化した担当者名: true } }）。日付が変われば自動的にリセットされる
 let _resetToken = 0; // 本日分リセット/復元のたびに更新。保険の遅延処理が古い操作を巻き戻さないようにするため
 
@@ -5979,6 +5981,8 @@ function refreshAliasModalIfOpen() {
 
 // 予定未定・お休み・有休・半休のステータスを設定する統一関数
 // status: 'pending' | 'off' | 'paid_off' | 'half_off' | 'clear'（clearは記録を消して未報告の状態に戻す）
+// 半休は「勤務する時間帯はある」ため、予定未定（勤務分の予定がまだ決まっていない）と両立しうる。
+// 半休↔予定未定を切り替えても、もう一方が既に立っていればpendingフラグとして残し、両方を同時に表せるようにする
 function setStaffDayStatus(name, status) {
   if (status === 'clear') {
     delete staffDayStatus[name];
@@ -5988,11 +5992,21 @@ function setStaffDayStatus(name, status) {
     return;
   }
   const reportType = getCurrentReportType();
-  staffDayStatus[name] = { status, reportType, timestamp: Date.now() };
+  const prev = staffDayStatus[name];
+  const prevWasPending = !!prev && (prev.status === 'pending' || prev.pending);
+  const prevWasHalfOff = !!prev && prev.status === 'half_off';
+  if (status === 'pending' && prevWasHalfOff) {
+    staffDayStatus[name] = { status: 'half_off', pending: true, reportType, timestamp: Date.now() };
+  } else if (status === 'half_off' && prevWasPending) {
+    staffDayStatus[name] = { status: 'half_off', pending: true, reportType, timestamp: Date.now() };
+  } else {
+    staffDayStatus[name] = { status, reportType, timestamp: Date.now() };
+  }
   saveDayStatus(name);
   renderStaffStatus();
   const labels = { pending: '予定未定', off: 'お休み', paid_off: '有休', half_off: '半休' };
-  showToast(`${name} を「${labels[status] || status}」として記録しました`);
+  const combined = (staffDayStatus[name].status === 'half_off' && staffDayStatus[name].pending) ? '半休＋予定未定' : (labels[status] || status);
+  showToast(`${name} を「${combined}」として記録しました`);
 }
 
 // 後方互換：テキスト報告で「予定未定」が検出された時に呼ばれる
@@ -6585,6 +6599,8 @@ function computeDailySummary() {
     else if (entry.status === 'paid_off') bump(paidOffCount, name);
     else if (entry.status === 'half_off') bump(halfOffCount, name);
     else if (entry.status === 'pending') bump(pendingCount, name);
+    // 半休＋予定未定の組み合わせは、半休の集計に加えて予定未定にも重複カウントする
+    if (entry.status === 'half_off' && entry.pending) bump(pendingCount, name);
     if (entry.reportType === 'self') bump(selfCount, name);
     else if (entry.reportType === 'proxy') bump(proxyCount, name);
   });
@@ -6989,17 +7005,20 @@ function renderStaffStatus() {
   const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
   container.innerHTML = staffList.map(name => {
     const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
-    const dayStatus = staffDayStatus[name] ? staffDayStatus[name].status : null;
+    const entry = staffDayStatus[name] || null;
+    const dayStatus = entry ? entry.status : null;
     const isHalfOff = dayStatus === 'half_off';
+    // 半休でも勤務する時間帯の予定がまだ決まっていないことがあるため、
+    // 予定未定は「status==='pending'」だけでなく「半休＋pendingフラグ」でも成立する
+    const isPending = dayStatus === 'pending' || !!(entry && entry.pending);
     // ドットの色は「報告状況」を表す：報告済み(緑) > 休み/有休(赤) > 予定未定(青) > 未報告(グレー)
-    // 半休であること自体は色とは別に「半」バッジで示す。半休でも報告が済んでいれば緑、
-    // まだ未報告なら（予定未定と区別せず）グレーのまま、「半」バッジだけが付く
+    // 半休であること自体は色とは別に「半」バッジで示すため、半休＋予定未定なら青ドット＋「半」バッジの両方が付く
     let color, textColor;
     if (done) {
       color = textColor = '#2ecc71';
     } else if (dayStatus === 'off' || dayStatus === 'paid_off') {
       color = textColor = '#e74c3c';
-    } else if (dayStatus === 'pending') {
+    } else if (isPending) {
       color = textColor = '#3498db';
     } else {
       color = 'var(--border)';
