@@ -994,7 +994,7 @@ function toggleTableListVisible() {
 
 function confirmPublishTableList() {
   let overlay = document.getElementById('publishTableListOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='publishTableListOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='publishTableListOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">卓一覧をキャストに公開しますか？</div>
     <div style="display:flex;gap:10px;">
@@ -2855,7 +2855,7 @@ function openTeamMembersPopup(teamKey) {
   }).sort((a, b) => b.planned - a.planned); // 予定数が多い順に並べる
 
   let overlay = document.getElementById('teamMembersOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='teamMembersOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='teamMembersOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.onclick = (e) => { if (e.target === overlay) overlay.style.display = 'none'; };
 
   const rowsHtml = memberStats.length
@@ -3128,7 +3128,7 @@ function openTsukeTablePopup(guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   const members = getTsukeMembersOnGuest(guestId);
   let overlay = document.getElementById('tsukeTableOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeTableOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1002;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeTableOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:1002;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.onclick = (e) => { if (e.target === overlay) closeTsukeTablePopup(); };
 
   const isAdmin = localStorage.getItem('rj_role') === 'admin';
@@ -3313,7 +3313,7 @@ function promptJoinSelectedTsuke(guestId) {
   const selected = [...(window._tsukeSelectedCasts || new Set())];
   if (!selected.length) { showToast('キャストを選択してください'); return; }
   let overlay = document.getElementById('tsukeJoinConfirmOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeJoinConfirmOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1003;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeJoinConfirmOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1003;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:280px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${selected.join('・')}さんを着卓させますか？</div>
     <div style="display:flex;gap:10px;">
@@ -3642,7 +3642,7 @@ function demoOpenTsukeTablePopup(guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   const members = demoGetTsukeMembersOnGuest(guestId);
   let overlay = document.getElementById('tsukeDemoTableOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeDemoTableOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1012;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeDemoTableOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:1012;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.onclick = (e) => { if (e.target === overlay) demoCloseTsukeTablePopup(); };
 
   const isAdmin = demoRole === 'admin';
@@ -3780,7 +3780,7 @@ function demoPromptJoinSelectedTsuke(guestId) {
   const selected = [...(window._demoTsukeSelectedCasts || new Set())];
   if (!selected.length) { showToast('🧪 キャストを選択してください'); return; }
   let overlay = document.getElementById('tsukeDemoJoinConfirmOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeDemoJoinConfirmOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1013;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeDemoJoinConfirmOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1013;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:280px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${selected.join('・')}さんを着卓させますか？</div>
     <div style="display:flex;gap:10px;">
@@ -4399,7 +4399,7 @@ function toggleFirstGroupArrived(gid) {
 function clearFirstData() {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">初回データを全て消去しますか？</div>
     <div style="display:flex;gap:10px;">
@@ -4787,7 +4787,7 @@ function editFirstRow(gid, rid, field, td) {
 function deleteFirstGroup(gid) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;"><div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">この組を削除しますか？</div><div style="display:flex;gap:10px;"><button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button><button onclick="document.getElementById('deleteOverlay').style.display='none';firstGroups=firstGroups.filter(x=>x.id!==${gid});saveFirstData();renderFirstTab();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button></div></div>`;
   overlay.style.display='flex';
 }
@@ -5183,7 +5183,7 @@ function confirmToggleLeft(id) {
   if (!g) return;
   const label = (g.name || '').replace('△','').trim() || g.tanto || ('No.' + g.rowNum);
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">退店にしますか？</div>
     <div style="font-size:16px;font-weight:700;color:#c9a84c;margin-bottom:20px;">「${label}」</div>
@@ -5407,7 +5407,7 @@ function confirmDelete(id, afterExpr) {
   if (!overlay) {
     overlay = document.createElement('div');
     overlay.id = 'deleteOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;';
     document.body.appendChild(overlay);
   }
   overlay.innerHTML = `
@@ -5766,7 +5766,7 @@ function confirmDeleteMyReservation(id) {
   const label = formatGuestDisplayName(g.name);
 
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">この予約を削除しますか？</div>
     <div style="font-size:16px;font-weight:700;color:#c9a84c;margin-bottom:20px;">「${label}」</div>
@@ -5851,7 +5851,7 @@ function renderIdentityIndicator() {
 
 function confirmLogout() {
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">ログアウトしますか？</div>
     <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">次回はパスワード入力から始まります。<br>あなたの名前選択もリセットされます。</div>
@@ -6058,7 +6058,7 @@ function promptQuickStatus(status) {
 function confirmQuickStatus(name, status) {
   const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休', clear: '未報告に戻す' };
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">${name}を「${labels[status] || status}」にしますか？</div>
     <div style="display:flex;gap:10px;">
@@ -6083,7 +6083,7 @@ function confirmResetReports() {
   if (localStorage.getItem('rj_role') !== 'admin') return;
   // リセット忘れ等で本来の営業日と実行日がズレることがあるため、先に「どの日の集計として記録するか」を選ばせる
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   const offsets = [-2, -1, 0];
   const dateButtons = offsets.map(offset => {
     const dateKey = getTodayKey(offset);
@@ -6317,7 +6317,7 @@ function confirmUndoReset() {
   if (!backup) { showToast('復元できるデータがありません'); return; }
   const dateStr = backup.timestamp ? new Date(backup.timestamp).toLocaleString('ja-JP') : '';
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">直前のリセット前の状態に戻しますか？</div>
     <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">${dateStr ? dateStr + ' 時点のデータに復元します。' : ''}<br>現在のデータは上書きされます。</div>
@@ -6748,7 +6748,7 @@ function saveTempAdminAccess() {
 // 「設定を削除」は誤操作防止のため、確認ダイアログを経由してから実行する
 function clearTempAdminAccess() {
   let overlay = document.getElementById('deleteOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
     <div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">一時パスワードの設定を削除しますか？</div>
     <div style="display:flex;gap:10px;">
@@ -7478,7 +7478,7 @@ function setStaffTeam(name, teamKey) {
 // 個人名をタップすると開く、その人専用の設定ポップアップ（幹部かどうかを切り替える）
 function openStaffKanbuPopup(name) {
   let overlay = document.getElementById('staffKanbuOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='staffKanbuOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='staffKanbuOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
   const isKanbu = !!(window.staffKanbu || {})[name];
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:22px;max-width:280px;width:100%;text-align:center;">
     <div style="font-size:15px;color:#f0ece0;font-weight:700;margin-bottom:16px;">${name}</div>
