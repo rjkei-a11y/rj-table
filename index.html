@@ -3032,9 +3032,11 @@ function buildTsukeFloorBoxesHtml() {
           <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--accent);font-weight:700;margin-top:3px;padding-top:3px;border-top:1px dashed #444;">
             <span>🚶${m.name}</span><span style="color:${tsukeTimerColor(m.startedAt)};" data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}分</span>
           </div>`).join('');
-        // 指名卓はゴールド、初回卓はブルーで固定する（キャストが着卓しているかどうかでは色を変えない）
-        const boxBg = info.isFirst ? '#1a2a3a' : '#2a2410';
-        const boxBorder = info.isFirst ? '#4a90d9' : 'var(--accent)';
+        // 指名卓はゴールド、初回卓はブルーで固定する（キャストが着卓しているかどうかでは色を変えない）。
+        // 体入のお客様は卓状況欄と合わせて緑にする
+        const isTainyu = !info.isFirst && info.name && info.name.includes('体入');
+        const boxBg = info.isFirst ? '#1a2a3a' : (isTainyu ? '#253a14' : '#2a2410');
+        const boxBorder = info.isFirst ? '#4a90d9' : (isTainyu ? '#9acd32' : 'var(--accent)');
         return `<div onclick="openTsukeTablePopup('${info.guestId}')" style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
           <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}</span><span style="font-size:8.5px;">${info.photoDisplay || `<span style="color:var(--text-dim);">${info.tanto}</span>`}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
