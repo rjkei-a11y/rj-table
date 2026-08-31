@@ -2981,7 +2981,10 @@ function openTeamMembersPopup(teamKey) {
   const members = Object.keys(teams).filter(name => teams[name] === teamKey);
 
   const activeGuests = guests.filter(g => g.arrived);
-  const plannedGuests = guests.filter(g => !(g.name && g.name.includes('△') && !g.arrived));
+  // 卓一覧が非公開設定の間は、キャストに来店確認前の予定情報を一切見せない（renderTeamCountsと同じ基準）
+  const plannedGuests = shouldMaskSensitiveFields()
+    ? activeGuests
+    : guests.filter(g => !(g.name && g.name.includes('△') && !g.arrived));
 
   const memberStats = members.map(name => {
     const isThisPerson = g => matchStaffName(g.tanto) === name;
