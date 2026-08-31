@@ -2456,11 +2456,11 @@ function saveNoteEditPopup(guestId) {
 }
 
 // ===== お客様履歴検索（担当・お客様名・来店日から過去の記録を遡って確認する） =====
-let _customerHistoryQuery = { tanto: '', name: '', date: '' };
+let _customerHistoryQuery = { tanto: '', name: '' };
 
 // tanto・nameが両方指定されていれば、開いた直後に自動で検索する
 function openCustomerHistoryPopup(tanto, name) {
-  _customerHistoryQuery = { tanto: tanto || '', name: name || '', date: '' };
+  _customerHistoryQuery = { tanto: tanto || '', name: name || '' };
   renderCustomerHistoryPopup({ loading: false, results: null, searched: false });
   if (_customerHistoryQuery.tanto && _customerHistoryQuery.name) searchCustomerHistory();
 }
@@ -2488,10 +2488,6 @@ function renderCustomerHistoryPopup(state) {
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
         <label style="width:56px;flex-shrink:0;font-size:11px;color:var(--text-dim);">お客様名</label>
         <input id="chQueryName" style="flex:1;min-width:0;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:7px 9px;" value="${(q.name||'').replace(/"/g,'&quot;')}">
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <label style="width:56px;flex-shrink:0;font-size:11px;color:var(--text-dim);">来店日</label>
-        <input id="chQueryDate" type="date" style="flex:1;min-width:0;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:6px 9px;" value="${q.date||''}">
       </div>
       <button class="btn btn-primary" onclick="searchCustomerHistory()" style="width:100%;margin-top:10px;">検索する</button>
     </div>`;
@@ -2539,11 +2535,9 @@ function renderCustomerHistoryPopup(state) {
 function searchCustomerHistory() {
   const tantoEl = document.getElementById('chQueryTanto');
   const nameEl = document.getElementById('chQueryName');
-  const dateEl = document.getElementById('chQueryDate');
   const tanto = ((tantoEl ? tantoEl.value : _customerHistoryQuery.tanto) || '').trim();
   const name = ((nameEl ? nameEl.value : _customerHistoryQuery.name) || '').replace('△','').trim();
-  const date = dateEl ? dateEl.value : (_customerHistoryQuery.date || '');
-  _customerHistoryQuery = { tanto, name, date };
+  _customerHistoryQuery = { tanto, name };
   if (!tanto || !name) {
     showToast('担当とお客様名を両方入力してください');
     return;
@@ -2560,8 +2554,7 @@ function searchCustomerHistory() {
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
       return (b.timestamp || 0) - (a.timestamp || 0);
     });
-    const filtered = _customerHistoryQuery.date ? records.filter(r => r.date === _customerHistoryQuery.date) : records;
-    renderCustomerHistoryPopup({ loading: false, results: filtered, searched: true });
+    renderCustomerHistoryPopup({ loading: false, results: records, searched: true });
   });
 }
 
