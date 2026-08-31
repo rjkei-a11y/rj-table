@@ -7205,7 +7205,9 @@ function renderStaffStatus() {
     // 半休であること自体は色とは別に「半」バッジで示すため、半休＋予定未定なら青ドット＋「半」バッジの両方が付く
     let color, textColor;
     if (done) {
-      color = textColor = '#2ecc71';
+      // 卓一覧非公開中は、報告済み(緑)をそのまま出すと「予定あり」がキャストにバレてしまうため、
+      // 予定未定と同じ青にして区別がつかないようにする
+      color = textColor = shouldMaskSensitiveFields() ? '#3498db' : '#2ecc71';
     } else if (dayStatus === 'off' || dayStatus === 'paid_off') {
       color = textColor = '#e74c3c';
     } else if (isPending) {
