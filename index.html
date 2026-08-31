@@ -795,6 +795,19 @@ function checkTempAdminExpiry() {
   location.reload();
 }
 
+// 一時パスワードの期限切れ（expiresAt）はFirebaseへの書き込みを伴わないため、
+// onValue(tempAdminAccessRef, ...)だけでは「日付が変わった」ことを検知できない。
+// そのため毎日深夜1:00に1回だけ再チェックし、開きっぱなしの端末があれば締め出す
+function scheduleDailyTempAdminExpiryCheck() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 1, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  setTimeout(() => {
+    checkTempAdminExpiry();
+    scheduleDailyTempAdminExpiryCheck();
+  }, next - now);
+}
+
 // メインパスワード（内勤・従業員共通のもの）が変更された場合、既にログイン済みの端末を
 // 自動的にログアウトさせる（退職者が出た時、パスワードを変更するだけで締め出せるようにするため）。
 // ログイン時に「その時点のパスワードのバージョン（updatedAt）」を端末側にも覚えておき、
@@ -1048,6 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active') && window.renderView) window.renderView();
   };
   checkLogin();
+  scheduleDailyTempAdminExpiryCheck();
   // firstGroupsを必ずクリーンな状態で初期化
   firstGroups = [];
   firstGid = 1;
