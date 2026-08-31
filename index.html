@@ -2928,8 +2928,12 @@ function renderTeamCounts() {
   // 「その日に実際に卓があった数」を数えるのが目的なので、退店済みでも来店確認済みなら対象にする
   const activeGuests = guests.filter(g => g.arrived);
   // 「△予定」（お客様名に△が含まれ、まだ来店確認していない仮予約）は分母から除外する。
-  // ヘッダーの「予定卓数（△◯）」と同じ判定基準
-  const plannedGuests = guests.filter(g => !(g.name && g.name.includes('△') && !g.arrived));
+  // ヘッダーの「予定卓数（△◯）」と同じ判定基準。
+  // ただし卓一覧が非公開設定の間は、予算・備考のマスクと同じ基準で、キャストに来店確認前の
+  // 予定情報を一切見せない（分母・バーの太さも来店確認済みの分だけで計算する）
+  const plannedGuests = shouldMaskSensitiveFields()
+    ? activeGuests
+    : guests.filter(g => !(g.name && g.name.includes('△') && !g.arrived));
   const counts = {}; // 来店数（塗りつぶしに使う）
   const plannedCounts = {}; // 予定数（枠の大きさ・分母に使う）。空行は元々guestsに含まれないためそのまま数える
   window.teamDefs.forEach(t => {
