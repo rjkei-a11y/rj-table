@@ -5993,13 +5993,14 @@ function renderIdentityIndicator() {
     const myShiftStart = me ? (window.staffShiftStart || {})[me] : null;
     const myDohanTime = me ? (window.staffDohanTime || {})[me] : null;
     const shiftHtml = (myShiftStart || myDohanTime)
-      ? `<span style="color:var(--text-dim);font-size:11px;margin-left:8px;">${myShiftStart ? '出勤 '+myShiftStart : ''}${myShiftStart && myDohanTime ? '／' : ''}${myDohanTime ? '同伴 '+myDohanTime : ''}</span>`
+      ? `<span style="color:var(--text-dim);font-size:13px;">${myShiftStart ? '出勤 '+myShiftStart : ''}${myShiftStart && myDohanTime ? '／' : ''}${myDohanTime ? '同伴 '+myDohanTime : ''}</span>`
       : '';
-    el.innerHTML = (me
-      ? `<span style="color:var(--accent);font-weight:700;font-size:16px;">${me}</span>`
-      : `<span style="color:var(--text-dim);font-size:11px;">未選択</span>`)
-      + logoutLink
-      + shiftHtml;
+    el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:4px;">
+      <span>${me
+        ? `<span style="color:var(--accent);font-weight:700;font-size:16px;">${me}</span>`
+        : `<span style="color:var(--text-dim);font-size:11px;">未選択</span>`}${logoutLink}</span>
+      ${shiftHtml}
+    </div>`;
   } else if (role === 'admin') {
     el.innerHTML = `<span style="color:var(--text-dim);font-size:11px;">内勤者専用フォーム</span>` + logoutLink;
   } else {
