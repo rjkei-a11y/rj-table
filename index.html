@@ -356,10 +356,12 @@
   onValue(staffShiftStartRef, (snapshot) => {
     window.staffShiftStart = snapshot.val() || {};
     try { localStorage.setItem('tableManager_staffShiftStart', JSON.stringify(window.staffShiftStart)); } catch(e) {}
+    if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
   });
   onValue(staffDohanTimeRef, (snapshot) => {
     window.staffDohanTime = snapshot.val() || {};
     try { localStorage.setItem('tableManager_staffDohanTime', JSON.stringify(window.staffDohanTime)); } catch(e) {}
+    if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
   });
 
   // 付け回し：今まさに誰がどの卓についているかをリアルタイム受信
@@ -5988,10 +5990,16 @@ function renderIdentityIndicator() {
   const logoutLink = `<button onclick="confirmLogout()" style="background:none;border:none;color:var(--text-dim);font-size:11px;text-decoration:underline;cursor:pointer;margin-left:6px;">ログアウト</button>`;
   if (role === 'host') {
     const me = getMyIdentity();
+    const myShiftStart = me ? (window.staffShiftStart || {})[me] : null;
+    const myDohanTime = me ? (window.staffDohanTime || {})[me] : null;
+    const shiftHtml = (myShiftStart || myDohanTime)
+      ? `<span style="color:var(--text-dim);font-size:11px;margin-left:8px;">${myShiftStart ? '出勤 '+myShiftStart : ''}${myShiftStart && myDohanTime ? '／' : ''}${myDohanTime ? '同伴 '+myDohanTime : ''}</span>`
+      : '';
     el.innerHTML = (me
       ? `<span style="color:var(--accent);font-weight:700;font-size:16px;">${me}</span>`
       : `<span style="color:var(--text-dim);font-size:11px;">未選択</span>`)
-      + logoutLink;
+      + logoutLink
+      + shiftHtml;
   } else if (role === 'admin') {
     el.innerHTML = `<span style="color:var(--text-dim);font-size:11px;">内勤者専用フォーム</span>` + logoutLink;
   } else {
