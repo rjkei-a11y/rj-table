@@ -3404,10 +3404,10 @@ function openTsukeTablePopup(guestId) {
       const isTempAway = !!(lastLeave && lastLeave.temporary);
       return { name, activeInfo, isOnThisTable, elsewhere, isDone, isTempAway };
     });
-    // 初回卓の定員は「今その卓を占めている人数」＝在籍中・一時離席中（枠は保持）の合計で判定する。
-    // 対応済（通常の「離れる」で完全に外れた人）は本人が再度その卓に戻れないだけで、
-    // 空いた枠自体は他のキャストが新しく着けるようにする（枠を消費したままにしない）
-    const usedSlots = rows.filter(r => r.isOnThisTable || r.isTempAway).length;
+    // 初回卓の定員は「今その卓に実際についている人数」だけで判定する。一時離席中の人は
+    // 席を予約扱いにはせず、その間は別のキャストが空いた枠に着けるようにする。
+    // 対応済（通常の「離れる」で完全に外れた人）も同様に枠を消費したままにしない
+    const usedSlots = rows.filter(r => r.isOnThisTable).length;
     const capacityLeft = (isFirstGroup && guest.count) ? guest.count - usedSlots : null;
     if (capacityLeft !== null) {
       capNoteHtml = `<div style="font-size:11.5px;color:var(--text-dim);">定員${guest.count}名中 ${usedSlots}名</div>`;
@@ -3455,9 +3455,9 @@ function openTsukeTablePopup(guestId) {
         actionsHtml = tempLeaveBtn + leaveBtn;
       } else {
         // 着（初めて呼ぶ）／戻す（この卓に一時離席していた人を呼び戻す）／移動（他の卓についている人をこの卓に呼ぶ）
+        // 定員は「今実際についている人数」で判定するため、戻す・移動も着と同じく満席なら押せないようにする
         const label = r.isTempAway ? '戻す' : (r.elsewhere ? '移動' : '着');
-        const isNewSlot = !r.isTempAway; // 戻すは既に確保済みの枠を使うため定員チェック対象外
-        const isCappedOut = isNewSlot && capacityLeft !== null && capacityLeft <= 0;
+        const isCappedOut = capacityLeft !== null && capacityLeft <= 0;
         const threshold = getShiftThresholdFor(name);
         const isPending = !!(threshold && !isTimeOverdue(threshold.time)) && !r.elsewhere && !r.isTempAway;
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
@@ -3903,9 +3903,10 @@ function demoOpenTsukeTablePopup(guestId) {
       const isTempAway = !!(lastLeave && lastLeave.temporary);
       return { name, activeInfo, isOnThisTable, elsewhere, isDone, isTempAway };
     });
-    // 対応済（通常の「離れる」で完全に外れた人）は本人が再度その卓に戻れないだけで、
-    // 空いた枠自体は他のキャストが新しく着けるようにする（枠を消費したままにしない）
-    const usedSlots = rows.filter(r => r.isOnThisTable || r.isTempAway).length;
+    // 初回卓の定員は「今その卓に実際についている人数」だけで判定する。一時離席中の人は
+    // 席を予約扱いにはせず、その間は別のキャストが空いた枠に着けるようにする。
+    // 対応済（通常の「離れる」で完全に外れた人）も同様に枠を消費したままにしない
+    const usedSlots = rows.filter(r => r.isOnThisTable).length;
     const capacityLeft = (isFirstGroup && guest.count) ? guest.count - usedSlots : null;
     if (capacityLeft !== null) {
       capNoteHtml = `<div style="font-size:11.5px;color:var(--text-dim);">定員${guest.count}名中 ${usedSlots}名</div>`;
@@ -3948,9 +3949,9 @@ function demoOpenTsukeTablePopup(guestId) {
         const tempLeaveBtn = isFirstGroup ? `<button onclick="demoConfirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
         actionsHtml = tempLeaveBtn + leaveBtn;
       } else {
+        // 定員は「今実際についている人数」で判定するため、戻す・移動も着と同じく満席なら押せないようにする
         const label = r.isTempAway ? '戻す' : (r.elsewhere ? '移動' : '着');
-        const isNewSlot = !r.isTempAway;
-        const isCappedOut = isNewSlot && capacityLeft !== null && capacityLeft <= 0;
+        const isCappedOut = capacityLeft !== null && capacityLeft <= 0;
         const threshold = getShiftThresholdFor(name);
         const isPending = !!(threshold && !demoIsTimeOverdue(threshold.time)) && !r.elsewhere && !r.isTempAway;
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
