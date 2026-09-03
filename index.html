@@ -3404,8 +3404,10 @@ function openTsukeTablePopup(guestId) {
       const isTempAway = !!(lastLeave && lastLeave.temporary);
       return { name, activeInfo, isOnThisTable, elsewhere, isDone, isTempAway };
     });
-    // 初回卓の定員は、在籍中・一時離席中（枠は保持）・対応済（枠を使い切った）の合計人数で消化される
-    const usedSlots = rows.filter(r => r.isOnThisTable || r.isTempAway || r.isDone).length;
+    // 初回卓の定員は「今その卓を占めている人数」＝在籍中・一時離席中（枠は保持）の合計で判定する。
+    // 対応済（通常の「離れる」で完全に外れた人）は本人が再度その卓に戻れないだけで、
+    // 空いた枠自体は他のキャストが新しく着けるようにする（枠を消費したままにしない）
+    const usedSlots = rows.filter(r => r.isOnThisTable || r.isTempAway).length;
     const capacityLeft = (isFirstGroup && guest.count) ? guest.count - usedSlots : null;
     if (capacityLeft !== null) {
       capNoteHtml = `<div style="font-size:11.5px;color:var(--text-dim);">定員${guest.count}名中 ${usedSlots}名</div>`;
@@ -3901,7 +3903,9 @@ function demoOpenTsukeTablePopup(guestId) {
       const isTempAway = !!(lastLeave && lastLeave.temporary);
       return { name, activeInfo, isOnThisTable, elsewhere, isDone, isTempAway };
     });
-    const usedSlots = rows.filter(r => r.isOnThisTable || r.isTempAway || r.isDone).length;
+    // 対応済（通常の「離れる」で完全に外れた人）は本人が再度その卓に戻れないだけで、
+    // 空いた枠自体は他のキャストが新しく着けるようにする（枠を消費したままにしない）
+    const usedSlots = rows.filter(r => r.isOnThisTable || r.isTempAway).length;
     const capacityLeft = (isFirstGroup && guest.count) ? guest.count - usedSlots : null;
     if (capacityLeft !== null) {
       capNoteHtml = `<div style="font-size:11.5px;color:var(--text-dim);">定員${guest.count}名中 ${usedSlots}名</div>`;
