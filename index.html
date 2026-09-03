@@ -3461,8 +3461,12 @@ function openTsukeTablePopup(guestId) {
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
         const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
         const btnColor = label === '着' ? 'var(--accent)' : '#fff';
-        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は既存のtsukeTimerColorの基準＝15分以上で赤に合わせる）
-        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}</span> <span style="color:${tsukeTimerColor(r.elsewhere.startedAt)};">${tsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
+        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は既存のtsukeTimerColorの基準＝15分以上で赤に合わせる）。
+        // 初回卓は担当欄が写真指名の名前一覧になっていて場所を取るだけなので出さず、「初回N名」だけにする
+        const elsewhereLabel = r.elsewhere && r.elsewhere.isFirst
+          ? (r.elsewhere.guestName || '')
+          : (r.elsewhere ? `${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}` : '');
+        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${elsewhereLabel}</span> <span style="color:${tsukeTimerColor(r.elsewhere.startedAt)};">${tsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
         const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
         const btn = `<button ${isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
         actionsHtml = elsewherePill + timeTag + btn;
@@ -3948,8 +3952,12 @@ function demoOpenTsukeTablePopup(guestId) {
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
         const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
         const btnColor = label === '着' ? 'var(--accent)' : '#fff';
-        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は既存のdemoTsukeTimerColorの基準＝15分以上で赤に合わせる）
-        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}</span> <span style="color:${demoTsukeTimerColor(r.elsewhere.startedAt)};">${demoTsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
+        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は既存のdemoTsukeTimerColorの基準＝15分以上で赤に合わせる）。
+        // 初回卓は担当欄が写真指名の名前一覧になっていて場所を取るだけなので出さず、「初回N名」だけにする
+        const elsewhereLabel = r.elsewhere && r.elsewhere.isFirst
+          ? (r.elsewhere.guestName || '')
+          : (r.elsewhere ? `${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}` : '');
+        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${elsewhereLabel}</span> <span style="color:${demoTsukeTimerColor(r.elsewhere.startedAt)};">${demoTsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
         const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
         const btn = `<button ${isCappedOut ? 'disabled' : `onclick="demoConfirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
         actionsHtml = elsewherePill + timeTag + btn;
