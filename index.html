@@ -3461,7 +3461,10 @@ function openTsukeTablePopup(guestId) {
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
         const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
         const btnColor = label === '着' ? 'var(--accent)' : '#fff';
-        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;color:#e8954a;white-space:nowrap;background:rgba(232,149,74,0.12);border:1px solid rgba(232,149,74,0.4);border-radius:99px;padding:2px 8px;">${r.elsewhere.tableKey}卓 ${tsukeElapsedMinutes(r.elsewhere.startedAt)}分</span>` : '';
+        const elsewherePill = r.elsewhere ? `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+          <span style="font-size:9.5px;font-weight:700;color:#e8954a;white-space:nowrap;background:rgba(232,149,74,0.12);border:1px solid rgba(232,149,74,0.4);border-radius:99px;padding:2px 8px;">${r.elsewhere.tableKey}卓 ${tsukeElapsedMinutes(r.elsewhere.startedAt)}分</span>
+          <span style="font-size:9px;color:var(--text-dim);white-space:nowrap;">${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}</span>
+        </div>` : '';
         const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
         const btn = `<button ${isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:6px 13px;min-width:50px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
         actionsHtml = elsewherePill + timeTag + btn;
@@ -3947,7 +3950,10 @@ function demoOpenTsukeTablePopup(guestId) {
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
         const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
         const btnColor = label === '着' ? 'var(--accent)' : '#fff';
-        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;color:#e8954a;white-space:nowrap;background:rgba(232,149,74,0.12);border:1px solid rgba(232,149,74,0.4);border-radius:99px;padding:2px 8px;">${r.elsewhere.tableKey}卓 ${demoTsukeElapsedMinutes(r.elsewhere.startedAt)}分</span>` : '';
+        const elsewherePill = r.elsewhere ? `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+          <span style="font-size:9.5px;font-weight:700;color:#e8954a;white-space:nowrap;background:rgba(232,149,74,0.12);border:1px solid rgba(232,149,74,0.4);border-radius:99px;padding:2px 8px;">${r.elsewhere.tableKey}卓 ${demoTsukeElapsedMinutes(r.elsewhere.startedAt)}分</span>
+          <span style="font-size:9px;color:var(--text-dim);white-space:nowrap;">${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}</span>
+        </div>` : '';
         const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
         const btn = `<button ${isCappedOut ? 'disabled' : `onclick="demoConfirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:6px 13px;min-width:50px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
         actionsHtml = elsewherePill + timeTag + btn;
