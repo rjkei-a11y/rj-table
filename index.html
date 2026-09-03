@@ -4087,9 +4087,19 @@ function demoBuildRandomFloorData() {
   const firstGroups = firstTables.map(tableNum => {
     const count = demoRandomInt(2, 3);
     const seats = count === 3 ? ['左','中','右'] : ['左','右'];
+    // 同じ初回グループ内で同じキャストが複数の席に写真指名されることは実際には無いため、
+    // グループ内で既に使ったキャスト名は以降の席の候補から除外する
+    const usedInGroup = [];
     const rows = seats.map(seat => {
-      const photo1 = demoPickRandom(demoStaffList);
-      const photo2 = Math.random() < 0.4 ? demoPickRandom(demoStaffList.filter(n => n !== photo1)) : '';
+      const pool1 = demoStaffList.filter(n => !usedInGroup.includes(n));
+      const photo1 = demoPickRandom(pool1.length ? pool1 : demoStaffList);
+      usedInGroup.push(photo1);
+      let photo2 = '';
+      if (Math.random() < 0.4) {
+        const pool2 = demoStaffList.filter(n => n !== photo1 && !usedInGroup.includes(n));
+        photo2 = demoPickRandom(pool2.length ? pool2 : demoStaffList.filter(n => n !== photo1));
+        usedInGroup.push(photo2);
+      }
       return { id: firstRid++, seat, photo1, photo2, okuri: '', nominaoshi: '', plan: '' };
     });
     return { id: firstGid++, tableNum, arrived: true, count: String(count), rows };
