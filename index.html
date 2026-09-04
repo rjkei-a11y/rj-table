@@ -4992,9 +4992,16 @@ function editFirstRow(gid, rid, field, td) {
   input.setSelectionRange(input.value.length, input.value.length);
   function save() {
     r[field] = input.value.trim();
+    // No.タップでの来店フラグ立て忘れの保険：写真指名欄に入力があった時点で、まだ来店フラグが立っていなければ自動で立てる
+    let arrivedJustSet = false;
+    if ((field === 'photo1' || field === 'photo2') && r[field] && !g.arrived) {
+      g.arrived = true;
+      g.actualArrive = calcLeaveTimeFromNow(0);
+      arrivedJustSet = true;
+    }
     saveFirstData();
-    if (field === 'nominaoshi') {
-      // 飲直の確定/解除は行全体の色分けが変わるため、行ごと再描画する
+    if (field === 'nominaoshi' || arrivedJustSet) {
+      // 飲直の確定/解除、または来店フラグの自動セットはNo.列など行全体の表示が変わるため、行ごと再描画する
       withScrollPreserved(renderFirstTab, td.closest('tr'));
     } else {
       // それ以外の項目は、このセルの表示だけを直接書き換える（他のDOMに触れないので画面がズレない）
@@ -5003,6 +5010,10 @@ function editFirstRow(gid, rid, field, td) {
     // 飲直・送り・卓番が変更されたら卓一覧に反映
     if (field === 'nominaoshi' || field === 'okuri' || field === 'plan') {
       syncNominaoshiToTable(g, r);
+    }
+    if (arrivedJustSet) {
+      syncFirstGroupToView(g);
+      showToast('写真指名欄への入力を検知したため、来店確認 ✅ も自動で入れました');
     }
   }
   input.addEventListener('blur', save);
