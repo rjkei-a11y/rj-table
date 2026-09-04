@@ -3077,9 +3077,10 @@ function tsukeElapsedMinutes(startedAt) {
   return Math.max(0, Math.floor((Date.now() - startedAt) / 60000));
 }
 
-// 着卓からの経過時間に応じた表示色（15分以上経過で赤）
-function tsukeTimerColor(startedAt) {
-  return tsukeElapsedMinutes(startedAt) >= 15 ? '#c0392b' : '#7fd97f';
+// 着卓からの経過時間に応じた表示色。初回卓は6分まで緑・7分から赤、通常卓は15分まで緑・16分から赤
+function tsukeTimerColor(startedAt, isFirst) {
+  const threshold = isFirst ? 6 : 15;
+  return tsukeElapsedMinutes(startedAt) > threshold ? '#c0392b' : '#7fd97f';
 }
 
 // 着席する：既に他のお客様についていれば、まずそちらを自動で離席させてから、新しいお客様に着く
@@ -3179,7 +3180,7 @@ function buildTsukeFloorBoxesHtml() {
         const members = getTsukeMembersOnGuest(info.guestId);
         const memberHtml = members.map(m => `
           <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--accent);font-weight:700;margin-top:3px;padding-top:3px;border-top:1px dashed #444;">
-            <span>🚶${m.name}</span><span style="color:${tsukeTimerColor(m.startedAt)};" data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}分</span>
+            <span>🚶${m.name}</span><span style="color:${tsukeTimerColor(m.startedAt, info.isFirst)};" data-tsuke-timer="${m.startedAt}" data-tsuke-first="${info.isFirst ? '1' : '0'}">${tsukeElapsedMinutes(m.startedAt)}分</span>
           </div>`).join('');
         // 指名卓はゴールド、初回卓はブルーで固定する（キャストが着卓しているかどうかでは色を変えない）。
         // 体入のお客様は卓状況欄と合わせて緑にする
@@ -3232,7 +3233,7 @@ function buildTsukeKanbuStatsHtml() {
     const leaveBtn = (active && isAdmin) ? `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="flex-shrink:0;background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : '';
     const currentHtml = active
       ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">
-           <span style="font-size:10.5px;color:var(--text);font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span style="color:${tsukeTimerColor(active.startedAt)};" data-tsuke-timer="${active.startedAt}">${tsukeElapsedMinutes(active.startedAt)}</span>分）</span>
+           <span style="font-size:10.5px;color:var(--text);font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span style="color:${tsukeTimerColor(active.startedAt, active.isFirst)};" data-tsuke-timer="${active.startedAt}" data-tsuke-first="${active.isFirst ? '1' : '0'}">${tsukeElapsedMinutes(active.startedAt)}</span>分）</span>
            ${leaveBtn}
          </div>`
       : `<div style="font-size:10px;color:#666;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">現在ついていません</div>`;
@@ -3369,7 +3370,7 @@ function openTsukeTablePopup(guestId) {
         const canLeaveThis = isAdmin || (m.name === myName && !isFirstGroup);
         return `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;color:var(--text);">${m.name}（<span data-tsuke-timer="${m.startedAt}">${tsukeElapsedMinutes(m.startedAt)}</span>分）</span>
+          <span style="font-size:13px;color:var(--text);">${m.name}（<span style="color:${tsukeTimerColor(m.startedAt, isFirstGroup)};" data-tsuke-timer="${m.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(m.startedAt)}</span>分）</span>
           ${canLeaveThis ? `<button onclick="confirmLeaveTsuke('${m.name.replace(/'/g,"\\'")}')" style="background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : ''}
         </div>`;
       }).join('')
@@ -3463,12 +3464,12 @@ function openTsukeTablePopup(guestId) {
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
         const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
         const btnColor = label === '着' ? 'var(--accent)' : '#fff';
-        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は既存のtsukeTimerColorの基準＝15分以上で赤に合わせる）。
+        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は移動先の卓が初回卓か通常卓かで基準を変える）。
         // 初回卓は担当欄が写真指名の名前一覧になっていて場所を取るだけなので出さず、「初回N名」だけにする
         const elsewhereLabel = r.elsewhere && r.elsewhere.isFirst
           ? (r.elsewhere.guestName || '')
           : (r.elsewhere ? `${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}` : '');
-        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${elsewhereLabel}</span> <span style="color:${tsukeTimerColor(r.elsewhere.startedAt)};">${tsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
+        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${elsewhereLabel}</span> <span style="color:${tsukeTimerColor(r.elsewhere.startedAt, r.elsewhere.isFirst)};">${tsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
         const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
         const btn = `<button ${isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
         actionsHtml = elsewherePill + timeTag + btn;
@@ -3477,7 +3478,7 @@ function openTsukeTablePopup(guestId) {
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
-          <span style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${r.isOnThisTable ? `（<span data-tsuke-timer="${r.activeInfo.startedAt}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}</span>
+          <span style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
       </div>`;
@@ -3566,8 +3567,9 @@ function openTsukemawashiModal() {
     window._tsukeTimerInterval = setInterval(() => {
       document.querySelectorAll('[data-tsuke-timer]').forEach(el => {
         const startedAt = Number(el.getAttribute('data-tsuke-timer'));
+        const isFirst = el.getAttribute('data-tsuke-first') === '1';
         el.textContent = tsukeElapsedMinutes(startedAt);
-        el.style.color = tsukeTimerColor(startedAt);
+        el.style.color = tsukeTimerColor(startedAt, isFirst);
       });
     }, 60000);
   }
@@ -3628,8 +3630,9 @@ function demoIsTimeOverdue(timeText, thresholdMinutesBefore = 0) {
 function demoTsukeElapsedMinutes(startedAt) {
   return Math.max(0, Math.floor((demoNow() - startedAt) / 60000));
 }
-function demoTsukeTimerColor(startedAt) {
-  return demoTsukeElapsedMinutes(startedAt) >= 15 ? '#c0392b' : '#7fd97f';
+function demoTsukeTimerColor(startedAt, isFirst) {
+  const threshold = isFirst ? 6 : 15;
+  return demoTsukeElapsedMinutes(startedAt) > threshold ? '#c0392b' : '#7fd97f';
 }
 
 function demoBuildAliasIndex() {
@@ -3758,7 +3761,7 @@ function demoBuildTsukeFloorBoxesHtml() {
         const members = demoGetTsukeMembersOnGuest(info.guestId);
         const memberHtml = members.map(m => `
           <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--accent);font-weight:700;margin-top:3px;padding-top:3px;border-top:1px dashed #444;">
-            <span>🚶${m.name}</span><span style="color:${demoTsukeTimerColor(m.startedAt)};" data-demo-tsuke-timer="${m.startedAt}">${demoTsukeElapsedMinutes(m.startedAt)}分</span>
+            <span>🚶${m.name}</span><span style="color:${demoTsukeTimerColor(m.startedAt, info.isFirst)};" data-demo-tsuke-timer="${m.startedAt}" data-demo-tsuke-first="${info.isFirst ? '1' : '0'}">${demoTsukeElapsedMinutes(m.startedAt)}分</span>
           </div>`).join('');
         const boxBg = info.isFirst ? '#1a2a3a' : '#2a2410';
         const boxBorder = info.isFirst ? '#4a90d9' : 'var(--accent)';
@@ -3798,7 +3801,7 @@ function demoBuildTsukeKanbuStatsHtml() {
     const leaveBtn = (active && isAdmin) ? `<button onclick="demoConfirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="flex-shrink:0;background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:10px;padding:3px 8px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : '';
     const currentHtml = active
       ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">
-           <span style="font-size:10.5px;color:var(--text);font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span style="color:${demoTsukeTimerColor(active.startedAt)};" data-demo-tsuke-timer="${active.startedAt}">${demoTsukeElapsedMinutes(active.startedAt)}</span>分）</span>
+           <span style="font-size:10.5px;color:var(--text);font-weight:700;">🚶 ${active.tableKey}卓・${active.guestName}（<span style="color:${demoTsukeTimerColor(active.startedAt, active.isFirst)};" data-demo-tsuke-timer="${active.startedAt}" data-demo-tsuke-first="${active.isFirst ? '1' : '0'}">${demoTsukeElapsedMinutes(active.startedAt)}</span>分）</span>
            ${leaveBtn}
          </div>`
       : `<div style="font-size:10px;color:#666;margin-top:5px;padding-top:5px;border-top:1px solid #2a2a2a;">現在ついていません</div>`;
@@ -3873,7 +3876,7 @@ function demoOpenTsukeTablePopup(guestId) {
         const canLeaveThis = isAdmin || (m.name === myName && !isFirstGroup);
         return `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">
-          <span style="font-size:13px;color:var(--text);">${m.name}（<span data-demo-tsuke-timer="${m.startedAt}">${demoTsukeElapsedMinutes(m.startedAt)}</span>分）</span>
+          <span style="font-size:13px;color:var(--text);">${m.name}（<span style="color:${demoTsukeTimerColor(m.startedAt, isFirstGroup)};" data-demo-tsuke-timer="${m.startedAt}" data-demo-tsuke-first="${isFirstGroup ? '1' : '0'}">${demoTsukeElapsedMinutes(m.startedAt)}</span>分）</span>
           ${canLeaveThis ? `<button onclick="demoConfirmLeaveTsuke('${m.name.replace(/'/g,"\\'")}')" style="background:none;border:1px solid #c0392b;border-radius:5px;color:#c0392b;font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);">離れる</button>` : ''}
         </div>`;
       }).join('')
@@ -3957,12 +3960,12 @@ function demoOpenTsukeTablePopup(guestId) {
         const btnBg = label === '着' ? 'transparent' : '#c0392b';
         const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
         const btnColor = label === '着' ? 'var(--accent)' : '#fff';
-        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は既存のdemoTsukeTimerColorの基準＝15分以上で赤に合わせる）。
+        // 卓番・担当お客様名・経過時間を色分けして見分けやすくする（経過時間は移動先の卓が初回卓か通常卓かで基準を変える）。
         // 初回卓は担当欄が写真指名の名前一覧になっていて場所を取るだけなので出さず、「初回N名」だけにする
         const elsewhereLabel = r.elsewhere && r.elsewhere.isFirst
           ? (r.elsewhere.guestName || '')
           : (r.elsewhere ? `${r.elsewhere.tanto || ''}${r.elsewhere.guestName ? '・' + r.elsewhere.guestName : ''}` : '');
-        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${elsewhereLabel}</span> <span style="color:${demoTsukeTimerColor(r.elsewhere.startedAt)};">${demoTsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
+        const elsewherePill = r.elsewhere ? `<span style="font-size:9.5px;font-weight:700;white-space:nowrap;background:var(--surface2);border:1px solid var(--border);border-radius:99px;padding:2px 8px;"><span style="color:var(--accent);">${r.elsewhere.tableKey}卓</span> <span style="color:#e8954a;">${elsewhereLabel}</span> <span style="color:${demoTsukeTimerColor(r.elsewhere.startedAt, r.elsewhere.isFirst)};">${demoTsukeElapsedMinutes(r.elsewhere.startedAt)}分</span></span>` : '';
         const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
         const btn = `<button ${isCappedOut ? 'disabled' : `onclick="demoConfirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
         actionsHtml = elsewherePill + timeTag + btn;
@@ -3971,7 +3974,7 @@ function demoOpenTsukeTablePopup(guestId) {
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
-          <span style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${r.isOnThisTable ? `（<span data-demo-tsuke-timer="${r.activeInfo.startedAt}">${demoTsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}</span>
+          <span style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${r.isOnThisTable ? `（<span style="color:${demoTsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-demo-tsuke-timer="${r.activeInfo.startedAt}" data-demo-tsuke-first="${isFirstGroup ? '1' : '0'}">${demoTsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
       </div>`;
@@ -4245,8 +4248,9 @@ function openTsukeDemoModal() {
     window._demoTsukeTimerInterval = setInterval(() => {
       document.querySelectorAll('[data-demo-tsuke-timer]').forEach(el => {
         const startedAt = Number(el.getAttribute('data-demo-tsuke-timer'));
+        const isFirst = el.getAttribute('data-demo-tsuke-first') === '1';
         el.textContent = demoTsukeElapsedMinutes(startedAt);
-        el.style.color = demoTsukeTimerColor(startedAt);
+        el.style.color = demoTsukeTimerColor(startedAt, isFirst);
       });
     }, 60000);
   }
