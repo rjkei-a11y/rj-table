@@ -3417,16 +3417,8 @@ function openTsukeTablePopup(guestId) {
     const headingDesc = isFirstGroup
       ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">））</span>`
       : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
-    // 並び順: 在籍中 → 戻せる人 → 他の卓についている人（移動可） → 通常の候補（出勤前は下寄せ） → 対応済（一番下）
-    const sortKeyOf = (r) => {
-      if (r.isOnThisTable) return 0;
-      if (r.isTempAway) return 1;
-      if (r.elsewhere) return 2;
-      if (r.isDone) return 5;
-      const threshold = getShiftThresholdFor(r.name);
-      return (threshold && !isTimeOverdue(threshold.time)) ? 4 : 3;
-    };
-    const sortedRows = [...rows].sort((a, b) => sortKeyOf(a) - sortKeyOf(b));
+    // 並び順は状態で並べ替えず、在籍スタッフ登録（設定画面）で入力した順番のまま表示する
+    const sortedRows = rows;
 
     const rowsHtml = sortedRows.map(r => {
       const name = r.name;
@@ -3917,15 +3909,8 @@ function demoOpenTsukeTablePopup(guestId) {
     const headingDesc = isFirstGroup
       ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">））</span>`
       : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
-    const sortKeyOf = (r) => {
-      if (r.isOnThisTable) return 0;
-      if (r.isTempAway) return 1;
-      if (r.elsewhere) return 2;
-      if (r.isDone) return 5;
-      const threshold = getShiftThresholdFor(r.name);
-      return (threshold && !demoIsTimeOverdue(threshold.time)) ? 4 : 3;
-    };
-    const sortedRows = [...rows].sort((a, b) => sortKeyOf(a) - sortKeyOf(b));
+    // 並び順は状態で並べ替えず、在籍スタッフ登録（設定画面）で入力した順番のまま表示する
+    const sortedRows = rows;
 
     const rowsHtml = sortedRows.map(r => {
       const name = r.name;
