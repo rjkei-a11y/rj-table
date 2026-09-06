@@ -4991,12 +4991,18 @@ function editFirstRow(gid, rid, field, td) {
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
   function save() {
-    r[field] = input.value.trim();
+    // 編集中（キーボード入力中）にFirebaseからの再同期でfirstGroups配列が丸ごと差し替わっていることがあるため、
+    // 保存の瞬間に改めて現在のfirstGroupsからグループ・行を引き直す（見つからなければ編集開始時点のものを使う）。
+    // これをせず開いた時点のg/rにそのまま書き込むと、差し替わり後の配列には反映されず、
+    // 入力内容や来店フラグの自動セットが保存されないことがあった
+    const liveG = firstGroups.find(x => x.id === gid) || g;
+    const liveR = (liveG.rows || []).find(x => x.id === rid) || r;
+    liveR[field] = input.value.trim();
     // No.タップでの来店フラグ立て忘れの保険：写真指名欄に入力があった時点で、まだ来店フラグが立っていなければ自動で立てる
     let arrivedJustSet = false;
-    if ((field === 'photo1' || field === 'photo2') && r[field] && !g.arrived) {
-      g.arrived = true;
-      g.actualArrive = calcLeaveTimeFromNow(0);
+    if ((field === 'photo1' || field === 'photo2') && liveR[field] && !liveG.arrived) {
+      liveG.arrived = true;
+      liveG.actualArrive = calcLeaveTimeFromNow(0);
       arrivedJustSet = true;
     }
     saveFirstData();
@@ -5005,14 +5011,14 @@ function editFirstRow(gid, rid, field, td) {
       withScrollPreserved(renderFirstTab, td.closest('tr'));
     } else {
       // それ以外の項目は、このセルの表示だけを直接書き換える（他のDOMに触れないので画面がズレない）
-      td.textContent = r[field] || '';
+      td.textContent = liveR[field] || '';
     }
     // 飲直・送り・卓番が変更されたら卓一覧に反映
     if (field === 'nominaoshi' || field === 'okuri' || field === 'plan') {
-      syncNominaoshiToTable(g, r);
+      syncNominaoshiToTable(liveG, liveR);
     }
     if (arrivedJustSet) {
-      syncFirstGroupToView(g);
+      syncFirstGroupToView(liveG);
       showToast('写真指名欄への入力を検知したため、来店確認 ✅ も自動で入れました');
     }
   }
