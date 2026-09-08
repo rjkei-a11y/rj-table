@@ -3312,7 +3312,15 @@ function openTsukeTablePopup(guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   const members = getTsukeMembersOnGuest(guestId);
   let overlay = document.getElementById('tsukeTableOverlay');
-  if (!overlay) { overlay = document.createElement('div'); overlay.id='tsukeTableOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:1002;'; document.body.appendChild(overlay); }
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tsukeTableOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:1002;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+    // コンパクト表示（幹部・キャスト）の時だけ、背景の暗い部分をタップして閉じられるようにする
+    // （フルスクリーン表示＝内勤の時はシートが画面全体を覆うのでこのハンドラは実質発火しない）
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeTsukeTablePopup(); });
+    document.body.appendChild(overlay);
+  }
 
   const isAdmin = localStorage.getItem('rj_role') === 'admin';
   const myName = getMyIdentity();
@@ -3361,6 +3369,15 @@ function openTsukeTablePopup(guestId) {
     const shiftStart = (window.staffShiftStart || {})[name];
     return shiftStart ? { time: shiftStart, label: '出勤' } : null;
   };
+
+  // 卓一覧の備考・共有事項を、付け回し画面からも確認できるようにする（初回卓にはこの2項目自体が存在しないため対象外）。
+  // 共有事項はもともと「席に着く人へ向けた連絡」なのでマスク対象にせず常に見せ、備考は卓一覧と同じ基準でマスクする
+  const canSeeGuestNote = isAdmin || !shouldMaskSensitiveFields();
+  const escapeForNote = (s) => String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const noteHtml = !isFirstGroup ? [
+    guest.shareNote ? `<div style="font-size:11px;color:#e74c3c;font-weight:700;margin-top:4px;white-space:pre-wrap;word-break:break-word;">📢 ${escapeForNote(guest.shareNote)}</div>` : '',
+    (canSeeGuestNote && guest.note) ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;white-space:pre-wrap;word-break:break-word;">📝 ${escapeForNote(guest.note)}</div>` : '',
+  ].join('') : '';
 
   // キャストロールは「自分」しか操作できないので、他の幹部の「離れる」ボタンは出さない
   // （内勤は代理で誰の分でも操作できるよう、全員分にボタンを出す）
@@ -3492,31 +3509,53 @@ function openTsukeTablePopup(guestId) {
     bodyHtml = membersHtml + joinBtnHtml;
   }
 
-  // フルスクリーン表示：上部のつまみエリアを下にスワイプすると閉じる（小さいポップアップは今まで通り外側タップで閉じる）
-  overlay.innerHTML = `<div id="tsukeTableSheet" style="position:fixed;top:0;left:0;right:0;bottom:0;background:#1a1a1a;display:flex;flex-direction:column;">
-    <div id="tsukeTableSheetHandle" style="flex-shrink:0;padding:14px 20px 10px;cursor:grab;touch-action:none;border-bottom:1px solid #262626;">
-      <div style="width:38px;height:4px;border-radius:99px;background:#4a4a4a;margin:0 auto 12px;"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-        <div style="font-size:18px;font-weight:900;color:var(--accent);">${tableKey}卓</div>
-        <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:22px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-top:2px;">
-        <div>
-          <div style="font-size:12px;color:var(--text-dim);">${guest.tantoDisplay || pairTanto}${isFirstGroup ? '' : '・' + pairGuestName}</div>
-          ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${guest.help}</div>` : ''}
+  if (isAdmin) {
+    // 内勤：候補者が多く縦に長くなるため、今まで通りフルスクリーン表示にする
+    // （上部のつまみエリアを下にスワイプすると閉じる）
+    overlay.innerHTML = `<div id="tsukeTableSheet" style="position:fixed;top:0;left:0;right:0;bottom:0;background:#1a1a1a;display:flex;flex-direction:column;">
+      <div id="tsukeTableSheetHandle" style="flex-shrink:0;padding:14px 20px 10px;cursor:grab;touch-action:none;border-bottom:1px solid #262626;">
+        <div style="width:38px;height:4px;border-radius:99px;background:#4a4a4a;margin:0 auto 12px;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <div style="font-size:18px;font-weight:900;color:var(--accent);">${tableKey}卓</div>
+          <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:22px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
         </div>
-        <div style="text-align:right;flex-shrink:0;">
-          ${capNoteHtml}
-          ${members.length ? `<div style="font-size:11.5px;color:var(--accent);font-weight:700;">🚶 ${members.map(m => m.name).join('・')}</div>` : ''}
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-top:2px;">
+          <div>
+            <div style="font-size:12px;color:var(--text-dim);">${guest.tantoDisplay || pairTanto}${isFirstGroup ? '' : '・' + pairGuestName}</div>
+            ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${guest.help}</div>` : ''}
+            ${noteHtml}
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            ${capNoteHtml}
+            ${members.length ? `<div style="font-size:11.5px;color:var(--accent);font-weight:700;">🚶 ${members.map(m => m.name).join('・')}</div>` : ''}
+          </div>
         </div>
       </div>
-    </div>
-    <div style="flex:1;overflow-y:auto;padding:10px 14px 28px;">
-      ${bodyHtml}
-    </div>
-  </div>`;
-  overlay.style.display = 'flex';
-  setupSwipeToClose(document.getElementById('tsukeTableSheet'), document.getElementById('tsukeTableSheetHandle'), closeTsukeTablePopup);
+      <div style="flex:1;overflow-y:auto;padding:10px 14px 28px;">
+        ${bodyHtml}
+      </div>
+    </div>`;
+    overlay.style.display = 'flex';
+    setupSwipeToClose(document.getElementById('tsukeTableSheet'), document.getElementById('tsukeTableSheetHandle'), closeTsukeTablePopup);
+  } else {
+    // 幹部・キャスト：内容は「自分が着くかどうか」だけなので、画面全体を覆わないコンパクトな中央ポップアップにする。
+    // 背景の暗い部分をタップすれば閉じる（overlay生成時に付けたクリックハンドラで処理）
+    overlay.innerHTML = `<div style="background:#1a1712;border:1px solid #35301f;border-radius:12px;width:100%;max-width:360px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="flex-shrink:0;padding:16px 18px 12px;border-bottom:1px solid #262626;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <div style="font-size:17px;font-weight:900;color:var(--accent);">${tableKey}卓</div>
+          <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:20px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">${guest.tantoDisplay || pairTanto}${isFirstGroup ? '' : '・' + pairGuestName}</div>
+        ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${guest.help}</div>` : ''}
+        ${noteHtml}
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:12px 18px 18px;">
+        ${bodyHtml}
+      </div>
+    </div>`;
+    overlay.style.display = 'flex';
+  }
 }
 
 // キャスト自身が「この卓に着卓する」を押した時、または内勤が行ごとの「着／戻す／移動」ボタンを押した時に使う。
