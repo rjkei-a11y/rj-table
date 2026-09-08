@@ -2462,7 +2462,8 @@ let _customerHistoryQuery = { tanto: '', name: '' };
 
 // tanto・nameが両方指定されていれば、開いた直後に自動で検索する
 function openCustomerHistoryPopup(tanto, name) {
-  _customerHistoryQuery = { tanto: tanto || '', name: name || '' };
+  // 「しおり+枝」のような枝卓の名前で呼ばれても、本来のお客様（しおり）の履歴を検索・表示する
+  _customerHistoryQuery = { tanto: tanto || '', name: stripEdaSuffixForHistory(name) };
   renderCustomerHistoryPopup({ loading: false, results: null, searched: false });
   if (_customerHistoryQuery.tanto && _customerHistoryQuery.name) searchCustomerHistory();
 }
@@ -6541,6 +6542,14 @@ function saveTodayToMonthlyLog(dateKey) {
 }
 
 // ===== お客様履歴（過去のお客様検索） =====
+// 「しおり+枝」「しおり＋同業」のように、枝卓・同業卓の名前には本来のお客様名の後ろに接尾語が付く。
+// 過去の来店履歴は本来のお客様（しおり）を軸に記録・検索したいので、この接尾語が付いたまま
+// 保存・検索するとお客様名が微妙に違う＝別人として扱われてしまう。履歴の保存・検索の直前に
+// 必ずこれで接尾語を取り除き、素のお客様名だけを使う（formatGuestDisplayNameの接尾語判定と対にしている）
+function stripEdaSuffixForHistory(name) {
+  const m = String(name || '').match(/^(.*?)\s*[+＋]\s*(枝|同業)\s*$/);
+  return (m && m[1].trim()) ? m[1].trim() : String(name || '').trim();
+}
 // Firebaseのキーに使えない記号（. # $ [ ] /）を安全な文字に置き換える
 function sanitizeHistoryKeyPart(text) {
   return String(text || '').replace(/[.#$\[\]\/]/g, '_').trim();
@@ -6555,7 +6564,7 @@ function saveTodayToCustomerHistory(dateKey) {
   dateKey = dateKey || getTodayKey();
   guests.filter(g => g.arrived && g.tanto && g.name).forEach((g, i) => {
     const tanto = matchStaffName(g.tanto) || g.tanto;
-    const name = (g.name || '').replace('△', '').trim();
+    const name = stripEdaSuffixForHistory((g.name || '').replace('△', '').trim());
     if (!name) return;
     const customerKey = buildCustomerHistoryKey(tanto, name);
     const entryId = dateKey.replace(/-/g, '') + '_' + i;
