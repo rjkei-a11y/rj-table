@@ -3270,7 +3270,7 @@ function resolveTsukeGuest(guestId) {
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count, rows: fg.rows || [] };
   }
   const numId = Number(guestId);
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3454,6 +3454,35 @@ function openTsukeTablePopup(guestId) {
     // 並び順は状態で並べ替えず、在籍スタッフ登録（設定画面）で入力した順番のまま表示する
     const sortedRows = rows;
 
+    // 初回卓限定：「次に誰を着かせる予定だったか」を毎回スタッフ一覧から探さなくて済むよう、
+    // まだ着席・対応済でない写真指名（席の順＝左→中→右、各席は photo1→photo2）だけをワンタップの候補として上に出す
+    let pendingNomineesHtml = '';
+    if (isFirstGroup) {
+      const seenNominees = new Set();
+      const pendingNominees = [];
+      (guest.rows || []).forEach(gr => {
+        [gr.photo1, gr.photo2].filter(Boolean).forEach(rawName => {
+          const nm = normalizeStaffNamesInText(rawName);
+          if (!nm || seenNominees.has(nm)) return;
+          seenNominees.add(nm);
+          const rowInfo = rows.find(r => r.name === nm);
+          if (!rowInfo || rowInfo.isOnThisTable || rowInfo.isDone) return; // 名簿にいない・既に着席済み・対応済は対象外
+          const seatColor = (TSUKE_SEAT_COLORS[gr.seat] || TSUKE_SEAT_COLORS['左']).hex;
+          const label = rowInfo.isTempAway ? '戻す' : (rowInfo.elsewhere ? '移動' : '着');
+          pendingNominees.push({ name: nm, seatColor, label, isCappedOut: capacityLeft !== null && capacityLeft <= 0 });
+        });
+      });
+      if (pendingNominees.length) {
+        pendingNomineesHtml = `
+          <div style="background:rgba(74,144,217,0.1);border:1px solid #2f6fb0;border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+            <div style="font-size:10.5px;color:#7fb2e6;font-weight:700;margin-bottom:8px;">▶ 次に着かせる予定</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              ${pendingNominees.map(p => `<button ${p.isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${p.name.replace(/'/g,"\\'")}','${guestId}')"`} style="display:flex;align-items:center;gap:6px;opacity:${p.isCappedOut ? 0.5 : 1};background:var(--surface2);border:1px solid ${p.seatColor};border-radius:99px;padding:5px 12px 5px 6px;cursor:${p.isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);"><span style="width:8px;height:8px;border-radius:50%;background:${p.seatColor};flex-shrink:0;"></span><span style="font-size:12.5px;font-weight:700;color:var(--text);">${p.name}</span><span style="font-size:10.5px;font-weight:700;color:${p.seatColor};">${p.label}</span></button>`).join('')}
+            </div>
+          </div>`;
+      }
+    }
+
     const rowsHtml = sortedRows.map(r => {
       const name = r.name;
       const isHelpRequested = helpNames.includes(name);
@@ -3514,6 +3543,7 @@ function openTsukeTablePopup(guestId) {
     }).join('');
 
     bodyHtml = `
+      ${pendingNomineesHtml}
       <div style="font-size:11px;color:var(--text-dim);padding:0 4px 6px;">キャスト ${headingDesc}</div>
       ${rowsHtml || `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">対象のキャストがいません</div>`}
     `;
