@@ -5071,9 +5071,14 @@ function toggleFirstRowEnded(gid, rid) {
   const r = (g.rows || []).find(x => x.id === rid);
   if (!r) return;
   r.ended = !r.ended;
+  // この組の全席が対応済（終了または飲直）になったら、付け回しでこの卓についていた人も自動で離席させる
+  // （卓自体はもう対応が終わっているのに、付け回し上はついたままの表示が残ってしまうのを防ぐ）
+  const allDone = (g.rows || []).length > 0 && (g.rows || []).every(x => isFirstRowDone(x));
+  if (allDone) releaseTsukeActiveForGuest('first_' + gid);
   saveFirstData();
   renderFirstTab();
   renderFloorStatus();
+  renderTsukeModalIfOpen();
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast(r.ended ? '終了にしました' : '終了を取り消しました');
 }
@@ -5108,6 +5113,13 @@ function editFirstRow(gid, rid, field, td) {
       liveG.actualArrive = calcLeaveTimeFromNow(0);
       arrivedJustSet = true;
     }
+    // 飲直の入力で全席が対応済になったら、付け回しでこの卓についていた人も自動で離席させる
+    // （toggleFirstRowEndedの「終了」と同じ考え方。卓自体はもう対応済なのに、付け回し上はついたままの
+    // 表示が残ってしまうのを防ぐ）
+    if (field === 'nominaoshi') {
+      const allDone = (liveG.rows || []).length > 0 && (liveG.rows || []).every(x => isFirstRowDone(x));
+      if (allDone) releaseTsukeActiveForGuest('first_' + gid);
+    }
     saveFirstData();
     if (field === 'nominaoshi' || arrivedJustSet) {
       // 飲直の確定/解除、または来店フラグの自動セットはNo.列など行全体の表示が変わるため、行ごと再描画する
@@ -5124,6 +5136,7 @@ function editFirstRow(gid, rid, field, td) {
       syncFirstGroupToView(liveG);
       showToast('写真指名欄への入力を検知したため、来店確認 ✅ も自動で入れました');
     }
+    renderTsukeModalIfOpen();
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e => { if (e.key==='Enter' && !e.isComposing && e.keyCode !== 229) input.blur(); if (e.key==='Escape') { td.textContent=current; } });
@@ -5133,7 +5146,7 @@ function deleteFirstGroup(gid) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   let overlay = document.getElementById('deleteOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
-  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;"><div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">この組を削除しますか？</div><div style="display:flex;gap:10px;"><button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button><button onclick="document.getElementById('deleteOverlay').style.display='none';firstGroups=firstGroups.filter(x=>x.id!==${gid});saveFirstData();renderFirstTab();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button></div></div>`;
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;"><div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">この組を削除しますか？</div><div style="display:flex;gap:10px;"><button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button><button onclick="document.getElementById('deleteOverlay').style.display='none';releaseTsukeActiveForGuest('first_${gid}');firstGroups=firstGroups.filter(x=>x.id!==${gid});saveFirstData();renderFirstTab();renderTsukeModalIfOpen();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button></div></div>`;
   overlay.style.display='flex';
 }
 
@@ -5540,20 +5553,24 @@ function confirmToggleLeft(id) {
   overlay.style.display = 'flex';
 }
 
-function toggleLeft(id) {
-  const g = guests.find(x => x.id === id);
-  if (!g) return;
-  lastLeft = JSON.parse(JSON.stringify(g)); // バックアップ
-  g.left = true;
-  // 付け回しでこの卓についていた人がいれば、退店と同時に自動で離席させる
-  // （お客様がいなくなった卓に、まだついたままの表示が残ってしまうのを防ぐ）
-  const idStr = String(id);
+// 付け回しでこのguestId（通常卓は数値、初回卓は"first_◯"）についていた人がいれば、まとめて自動で離席させる。
+// お客様がいなくなった・その卓の対応が終わったのに、まだ誰かついたままの表示が残ってしまうのを防ぐための共通処理
+function releaseTsukeActiveForGuest(guestId) {
+  const idStr = String(guestId);
   const tsukeActive = window.tsukeActive || {};
   Object.keys(tsukeActive).forEach(kanbuName => {
     if (tsukeActive[kanbuName] && String(tsukeActive[kanbuName].guestId) === idStr) {
       doLeaveTsuke(kanbuName, false);
     }
   });
+}
+
+function toggleLeft(id) {
+  const g = guests.find(x => x.id === id);
+  if (!g) return;
+  lastLeft = JSON.parse(JSON.stringify(g)); // バックアップ
+  g.left = true;
+  releaseTsukeActiveForGuest(id);
   saveToStorage();
   renderView();
   renderEmptyTablesArea();
