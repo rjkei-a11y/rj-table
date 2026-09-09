@@ -3270,7 +3270,7 @@ function resolveTsukeGuest(guestId) {
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count, rows: fg.rows || [] };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count };
   }
   const numId = Number(guestId);
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3454,35 +3454,6 @@ function openTsukeTablePopup(guestId) {
     // 並び順は状態で並べ替えず、在籍スタッフ登録（設定画面）で入力した順番のまま表示する
     const sortedRows = rows;
 
-    // 初回卓限定：「次に誰を着かせる予定だったか」を毎回スタッフ一覧から探さなくて済むよう、
-    // まだ着席・対応済でない写真指名（席の順＝左→中→右、各席は photo1→photo2）だけをワンタップの候補として上に出す
-    let pendingNomineesHtml = '';
-    if (isFirstGroup) {
-      const seenNominees = new Set();
-      const pendingNominees = [];
-      (guest.rows || []).forEach(gr => {
-        [gr.photo1, gr.photo2].filter(Boolean).forEach(rawName => {
-          const nm = normalizeStaffNamesInText(rawName);
-          if (!nm || seenNominees.has(nm)) return;
-          seenNominees.add(nm);
-          const rowInfo = rows.find(r => r.name === nm);
-          if (!rowInfo || rowInfo.isOnThisTable || rowInfo.isDone) return; // 名簿にいない・既に着席済み・対応済は対象外
-          const seatColor = (TSUKE_SEAT_COLORS[gr.seat] || TSUKE_SEAT_COLORS['左']).hex;
-          const label = rowInfo.isTempAway ? '戻す' : (rowInfo.elsewhere ? '移動' : '着');
-          pendingNominees.push({ name: nm, seatColor, label, isCappedOut: capacityLeft !== null && capacityLeft <= 0 });
-        });
-      });
-      if (pendingNominees.length) {
-        pendingNomineesHtml = `
-          <div style="background:rgba(74,144,217,0.1);border:1px solid #2f6fb0;border-radius:8px;padding:10px 12px;margin-bottom:10px;">
-            <div style="font-size:10.5px;color:#7fb2e6;font-weight:700;margin-bottom:8px;">▶ 次に着かせる予定</div>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;">
-              ${pendingNominees.map(p => `<button ${p.isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${p.name.replace(/'/g,"\\'")}','${guestId}')"`} style="display:flex;align-items:center;gap:6px;opacity:${p.isCappedOut ? 0.5 : 1};background:var(--surface2);border:1px solid ${p.seatColor};border-radius:99px;padding:5px 12px 5px 6px;cursor:${p.isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);"><span style="width:8px;height:8px;border-radius:50%;background:${p.seatColor};flex-shrink:0;"></span><span style="font-size:12.5px;font-weight:700;color:var(--text);">${p.name}</span><span style="font-size:10.5px;font-weight:700;color:${p.seatColor};">${p.label}</span></button>`).join('')}
-            </div>
-          </div>`;
-      }
-    }
-
     const rowsHtml = sortedRows.map(r => {
       const name = r.name;
       const isHelpRequested = helpNames.includes(name);
@@ -3492,6 +3463,10 @@ function openTsukeTablePopup(guestId) {
       // 半休の人は候補には出すが、名前の横に分かるように「半休」を付ける
       const isHalfOff = (staffDayStatus || {})[name] && staffDayStatus[name].status === 'half_off';
       const halfOffBadge = isHalfOff ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid #e67e22;color:#e67e22;margin-left:6px;">半休</span>` : '';
+      // 名前をタップすると「次に着かせる予定」の目印◯を付けたり消したりできる（本人を着席させる操作とは無関係の、
+      // 内勤が自分用にメモするための印。端末内だけの一時的な状態でFirebaseには保存しない）
+      const isNextPick = !!(window._tsukeNextPicks && window._tsukeNextPicks[guestId + '__' + name]);
+      const nextPickMark = isNextPick ? `<span style="color:var(--accent);font-weight:900;margin-left:4px;">◯</span>` : '';
       const barColor = r.isOnThisTable ? 'var(--accent)'
         : (r.elsewhere || r.isTempAway) ? '#c0392b'
         : r.isDone ? '#444'
@@ -3536,14 +3511,13 @@ function openTsukeTablePopup(guestId) {
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
-          <span style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}${halfOffBadge}</span>
+          <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}${halfOffBadge}</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
       </div>`;
     }).join('');
 
     bodyHtml = `
-      ${pendingNomineesHtml}
       <div style="font-size:11px;color:var(--text-dim);padding:0 4px 6px;">キャスト ${headingDesc}</div>
       ${rowsHtml || `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">対象のキャストがいません</div>`}
     `;
@@ -3625,6 +3599,16 @@ function confirmLeaveTsuke(name) {
   doLeaveTsuke(name);
   showToast(`${name}さんが離れました`);
   // 卓ポップアップが開いている場合は閉じずに中身だけ更新する（幹部稼働カードから呼ばれた時は開いていないので何もしない）
+  if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
+}
+
+// 内勤が「次にこの人を着かせる予定」を自分用に覚えておくための目印◯（この卓のこの名前、という単位で管理）。
+// 実際の着席状態には一切影響しない、この端末だけの一時的なメモなのでFirebaseには保存しない
+function toggleTsukeNextPick(guestId, name) {
+  if (!window._tsukeNextPicks) window._tsukeNextPicks = {};
+  const key = guestId + '__' + name;
+  if (window._tsukeNextPicks[key]) delete window._tsukeNextPicks[key];
+  else window._tsukeNextPicks[key] = true;
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
 }
 
