@@ -3474,8 +3474,11 @@ function openTsukeTablePopup(guestId) {
       const halfOffBadge = isHalfOff ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid #e67e22;color:#e67e22;margin-left:6px;">半休</span>` : '';
       // 名前をタップすると「次に着かせる予定」の目印◯を付けたり消したりできる（本人を着席させる操作とは無関係の、
       // 内勤が自分用にメモするための印。端末内だけの一時的な状態でFirebaseには保存しない）
-      const isNextPick = !!(window._tsukeNextPicks && window._tsukeNextPicks[guestId + '__' + name]);
+      const isNextPick = !!(window._tsukeNextPicks && window._tsukeNextPicks[String(guestId)] && window._tsukeNextPicks[String(guestId)][name]);
       const nextPickMark = isNextPick ? `<span style="color:var(--accent);font-weight:900;margin-left:4px;">◯</span>` : '';
+      // 別の卓で既に◯が付いている人は、その卓番を小さく添えて二重に予定してしまわないよう気付けるようにする
+      const otherPickTable = findOtherTsukeNextPickTable(name, guestId);
+      const otherPickHtml = otherPickTable ? `<div style="font-size:10px;color:var(--accent);margin-top:1px;">→ ${otherPickTable}卓に次に着く予定</div>` : '';
       const barColor = r.isOnThisTable ? 'var(--accent)'
         : (r.elsewhere || r.isTempAway) ? '#c0392b'
         : r.isDone ? '#444'
@@ -3521,6 +3524,7 @@ function openTsukeTablePopup(guestId) {
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
           <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}</span>
+          ${otherPickHtml}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
       </div>`;
@@ -3615,10 +3619,24 @@ function confirmLeaveTsuke(name) {
 // 実際の着席状態には一切影響しない、この端末だけの一時的なメモなのでFirebaseには保存しない
 function toggleTsukeNextPick(guestId, name) {
   if (!window._tsukeNextPicks) window._tsukeNextPicks = {};
-  const key = guestId + '__' + name;
-  if (window._tsukeNextPicks[key]) delete window._tsukeNextPicks[key];
-  else window._tsukeNextPicks[key] = true;
+  const gid = String(guestId);
+  if (!window._tsukeNextPicks[gid]) window._tsukeNextPicks[gid] = {};
+  if (window._tsukeNextPicks[gid][name]) delete window._tsukeNextPicks[gid][name];
+  else window._tsukeNextPicks[gid][name] = true;
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
+}
+
+// この人が、今開いている卓とは別の卓で「次に着かせる予定」の◯を付けられていないか探す。
+// 見つかったら「A6卓に次に着く予定」のように、別卓のことを一目で分かるようにするために使う
+// （複数の初回卓を同時に進めている時、同じ人を二重に予定してしまわないための注意喚起）
+function findOtherTsukeNextPickTable(name, currentGuestId) {
+  const picks = window._tsukeNextPicks || {};
+  const currentGid = String(currentGuestId);
+  const otherGid = Object.keys(picks).find(gid => gid !== currentGid && picks[gid] && picks[gid][name]);
+  if (!otherGid) return null;
+  const otherGuest = resolveTsukeGuest(otherGid.match(/^\d+$/) ? Number(otherGid) : otherGid);
+  if (!otherGuest || !otherGuest.tableNum) return null;
+  return otherGuest.tableNum.toUpperCase().replace(/^P/, 'V');
 }
 
 // 初回卓限定：また戻ってくる前提で一時的に離席する（この卓に対しては「戻す」ボタンでいつでも呼び戻せる。
