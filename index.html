@@ -1936,6 +1936,17 @@ function calcLeaveTimeFromNow(minutesToAdd) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+// 「21:05」のような時刻文字列に分数を加算する（calcLeaveTimeFromNowは「今から何分後」しか計算できないため、
+// 来店フラグが立った時刻など、過去に記録済みの時刻を起点に計算したい時に使う）
+function addMinutesToTimeString(timeStr, minutesToAdd) {
+  const m = String(timeStr || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return '';
+  const totalMinutes = parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + minutesToAdd;
+  const h = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
 // テキスト中に「クイック」が含まれるか（予算・退店・備考のどこに書かれていてもよい）
 function detectQuickKeyword(text) {
   if (!text) return false;
@@ -3279,7 +3290,7 @@ function resolveTsukeGuest(guestId) {
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count, actualArrive: fg.actualArrive || '' };
   }
   const numId = Number(guestId);
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3417,6 +3428,11 @@ function openTsukeTablePopup(guestId) {
 
   let bodyHtml;
   let capNoteHtml = '';
+  // 初回卓限定：来店フラグが立った時刻（actualArrive）の60分後を「終了目安」としてヘッダーに出す。
+  // あくまで大体の目安（実際は前後する）なので、断定的な表現にならないよう「目安」と明記する
+  const endEstimateHtml = (isFirstGroup && guest.actualArrive)
+    ? `<span style="font-size:11px;color:#e8954a;font-weight:700;">終了目安 ${addMinutesToTimeString(guest.actualArrive, 60)}</span>`
+    : '';
   // 初回卓限定：今この卓以外にも同時進行中の初回卓があれば、ヘッダーに一覧を出す（内勤用のフルスクリーン画面のみ）。
   // タップすればそのままその卓のキャスト選択画面に切り替わるので、複数の初回を並行して進めやすくする
   let otherFirstTablesHtml = '';
@@ -3582,7 +3598,10 @@ function openTsukeTablePopup(guestId) {
       <div id="tsukeTableSheetHandle" style="flex-shrink:0;padding:14px 20px 10px;cursor:grab;touch-action:none;border-bottom:1px solid #262626;">
         <div style="width:38px;height:4px;border-radius:99px;background:#4a4a4a;margin:0 auto 12px;"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-          <div style="font-size:18px;font-weight:900;color:var(--accent);">${tableKey}卓</div>
+          <div style="display:flex;align-items:baseline;gap:10px;">
+            <div style="font-size:18px;font-weight:900;color:var(--accent);">${tableKey}卓</div>
+            ${endEstimateHtml}
+          </div>
           <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:22px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-top:2px;">
