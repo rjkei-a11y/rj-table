@@ -3423,6 +3423,10 @@ function openTsukeTablePopup(guestId) {
     };
     const candidateNames = getWorkingStaffList().filter(name => {
       if (!isFirstGroup && tantoNames.includes(name)) return false; // 指名客の担当本人はこの卓の一覧には出さない
+      // 休み・有休の人は、付け回しの候補には出さない（本日の予定報告で古い休みフラグが上書きされていても、
+      // ここでは内勤が今つけている休み/有休の状態を優先する）
+      const dayStatusEntry = (staffDayStatus || {})[name];
+      if (dayStatusEntry && (dayStatusEntry.status === 'off' || dayStatusEntry.status === 'paid_off')) return false;
       return true;
     });
     const rows = candidateNames.map(name => {
@@ -3456,6 +3460,9 @@ function openTsukeTablePopup(guestId) {
       const photoSeat = photoSeatInfo[name];
       // 指名卓は「この担当・お客様に何回付いたか」、初回卓は「本日すでに何回初回卓に付いたか」を回数として使う
       const countForDisplay = isFirstGroup ? tsukeFirstCountToday(name) : tsukePastCount(name);
+      // 半休の人は候補には出すが、名前の横に分かるように「半休」を付ける
+      const isHalfOff = (staffDayStatus || {})[name] && staffDayStatus[name].status === 'half_off';
+      const halfOffBadge = isHalfOff ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid #e67e22;color:#e67e22;margin-left:6px;">半休</span>` : '';
       const barColor = r.isOnThisTable ? 'var(--accent)'
         : (r.elsewhere || r.isTempAway) ? '#c0392b'
         : r.isDone ? '#444'
@@ -3500,7 +3507,7 @@ function openTsukeTablePopup(guestId) {
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
-          <span style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}</span>
+          <span style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}${halfOffBadge}</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
       </div>`;
