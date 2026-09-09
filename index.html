@@ -5518,9 +5518,19 @@ function toggleLeft(id) {
   if (!g) return;
   lastLeft = JSON.parse(JSON.stringify(g)); // バックアップ
   g.left = true;
+  // 付け回しでこの卓についていた人がいれば、退店と同時に自動で離席させる
+  // （お客様がいなくなった卓に、まだついたままの表示が残ってしまうのを防ぐ）
+  const idStr = String(id);
+  const tsukeActive = window.tsukeActive || {};
+  Object.keys(tsukeActive).forEach(kanbuName => {
+    if (tsukeActive[kanbuName] && String(tsukeActive[kanbuName].guestId) === idStr) {
+      doLeaveTsuke(kanbuName, false);
+    }
+  });
   saveToStorage();
   renderView();
   renderEmptyTablesArea();
+  renderTsukeModalIfOpen();
   if (window.renderFloorStatus) window.renderFloorStatus();
 }
 
