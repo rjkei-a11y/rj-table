@@ -6910,6 +6910,9 @@ function computeDailySummary() {
   // ----- 予定報告集計（guestsから） -----
   const selfCount = {};
   const proxyCount = {};
+  // 卓数：来店確認済みの担当ごとの卓数。「黎斗」名義の卓と、登録済みキャストに一致しない担当名は
+  // 個人名では数えず、まとめて「内勤」としてカウントする（黎斗は内勤扱いのため、指名扱いの実績には含めない）
+  const tableCount = {};
   guests.forEach(g => {
     // ヘルプ指名（呼び名リストで貪欲マッチ）
     if (g.help) {
@@ -6925,6 +6928,10 @@ function computeDailySummary() {
         bump(rpCount, tanto);
       } else if (includesShinkiText(nameAndNote)) {
         bump(shinkiCount, tanto);
+      }
+      if (tanto) {
+        const isKanbuOrUnregistered = tanto === '黎斗' || !staffList.includes(tanto);
+        bump(tableCount, isKanbuOrUnregistered ? '内勤' : tanto);
       }
     }
     // 本人／代理の集計（記録されているものだけカウント。未記録はノイズを避けるためスキップ）
@@ -6950,7 +6957,7 @@ function computeDailySummary() {
     else if (entry.reportType === 'proxy') bump(proxyCount, name);
   });
 
-  return { photoCount, okuriCount, nomiCount, helpCount, shinkiCount, rpCount, selfCount, proxyCount, offCount, paidOffCount, halfOffCount, pendingCount };
+  return { photoCount, okuriCount, nomiCount, helpCount, shinkiCount, rpCount, selfCount, proxyCount, offCount, paidOffCount, halfOffCount, pendingCount, tableCount };
 }
 
 // 月次ログを合算する（当月かつliveなら本日のcomputeDailySummary()も加算）
@@ -6963,7 +6970,7 @@ function aggregateMonthlyLogs(monthKey) {
   // Firebase側のキャッシュをベースに、ローカル（保存直後で確実に最新）で上書きマージする
   const logs = { ...(window._fbMonthlyLogs || {}), ...localLogs };
 
-  const keys = ['photoCount','okuriCount','nomiCount','helpCount','shinkiCount','rpCount','selfCount','proxyCount','offCount','paidOffCount','halfOffCount','pendingCount'];
+  const keys = ['photoCount','okuriCount','nomiCount','helpCount','shinkiCount','rpCount','selfCount','proxyCount','offCount','paidOffCount','halfOffCount','pendingCount','tableCount'];
   const merged = {};
   keys.forEach(k => merged[k] = {});
 
@@ -7142,10 +7149,10 @@ function changeSummaryDay(dayKey) {
 }
 
 // 列幅を固定し、ヘッダー用テーブルと本体用テーブルで完全に揃える（横スクロールを連動させるため）
-const SUMMARY_COL_WIDTHS = [68, 54, 54, 50, 54, 54, 62, 50, 50, 58, 50];
-const SUMMARY_COL_LABELS = ['キャスト','送り','飲直','新規','初回RP','写真指名','ヘルプ指名','本人','代理','休/有休','半休'];
+const SUMMARY_COL_WIDTHS = [68, 50, 54, 54, 50, 54, 54, 62, 50, 50, 58, 50];
+const SUMMARY_COL_LABELS = ['キャスト','卓数','送り','飲直','新規','初回RP','写真指名','ヘルプ指名','本人','代理','休/有休','半休'];
 // 表示列（名前を除く）と、集計データ側のフィールド名の対応。編集モードでの保存時に使う
-const SUMMARY_COL_FIELDS = ['okuriCount','nomiCount','shinkiCount','rpCount','photoCount','helpCount','selfCount','proxyCount','offCount','halfOffCount'];
+const SUMMARY_COL_FIELDS = ['tableCount','okuriCount','nomiCount','shinkiCount','rpCount','photoCount','helpCount','selfCount','proxyCount','offCount','halfOffCount'];
 function summaryColgroup() {
   return '<colgroup>' + SUMMARY_COL_WIDTHS.map(w => `<col style="width:${w}px;">`).join('') + '</colgroup>';
 }
@@ -7169,6 +7176,7 @@ function buildSummaryTable(summary, editable) {
   const offCount = summary.offCount || {};
   const paidOffCount = summary.paidOffCount || {};
   const halfOffCount = summary.halfOffCount || {};
+  const tableCount = summary.tableCount || {};
   const allNames = new Set([
     ...staffList,
     ...Object.keys(photoCount),
@@ -7179,10 +7187,13 @@ function buildSummaryTable(summary, editable) {
     ...Object.keys(rpCount),
     ...Object.keys(selfCount),
     ...Object.keys(proxyCount),
+    ...Object.keys(tableCount),
   ]);
+  // 「内勤」（登録キャストに一致しない担当・黎斗名義の卓数の受け皿）は、常に一覧の最下部に固定する
   const orderedNames = [
     ...staffList.filter(n => allNames.has(n)),
-    ...[...allNames].filter(n => !staffList.includes(n)).sort()
+    ...[...allNames].filter(n => !staffList.includes(n) && n !== '内勤').sort(),
+    ...(allNames.has('内勤') ? ['内勤'] : []),
   ];
 
   const cellStyle = 'padding:9px 4px;line-height:1.4;border-bottom:1px solid var(--border);text-align:center;';
@@ -7205,8 +7216,10 @@ function buildSummaryTable(summary, editable) {
     const proxy = proxyCount[name] || 0;
     const off = (offCount[name] || 0) + (paidOffCount[name] || 0);
     const half = halfOffCount[name] || 0;
+    const table = tableCount[name] || 0;
     return `<tr>
       <td style="padding:9px 8px 9px 4px;line-height:1.4;border-bottom:1px solid var(--border);border-right:1px solid var(--accent-dim);font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:var(--surface);z-index:3;">${name}</td>
+      ${cell(name, 'tableCount', table)}
       ${cell(name, 'okuriCount', okuri)}
       ${cell(name, 'nomiCount', nomi)}
       ${cell(name, 'shinkiCount', shinki)}
@@ -7221,7 +7234,7 @@ function buildSummaryTable(summary, editable) {
   }).join('');
 
   const headerHtml = `
-    <table style="width:604px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
+    <table style="width:654px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
       ${summaryColgroup()}
       <thead>
         <tr style="color:var(--accent);">
@@ -7231,9 +7244,9 @@ function buildSummaryTable(summary, editable) {
     </table>`;
 
   const bodyHtml = `
-    <table id="summaryBodyTable" style="width:604px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
+    <table id="summaryBodyTable" style="width:654px;border-collapse:separate;border-spacing:0;font-size:12px;table-layout:fixed;">
       ${summaryColgroup()}
-      <tbody>${rows || `<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>`}</tbody>
+      <tbody>${rows || `<tr><td colspan="12" style="padding:24px;text-align:center;color:var(--text-dim);">データがありません</td></tr>`}</tbody>
     </table>`;
 
   return { headerHtml, bodyHtml };
