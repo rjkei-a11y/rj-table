@@ -3085,6 +3085,15 @@ function tsukeElapsedMinutes(startedAt) {
   return Math.max(0, Math.floor((Date.now() - startedAt) / 60000));
 }
 
+// 着卓した時刻を「19:45」のような表示にする（深夜0〜5時台は前日の続きとして24時以降の表記にする。
+// calcLeaveTimeFromNowと同じ閾値・考え方だが、あちらは「今からn分後」、これは「過去の任意の時刻」を変換する）
+function formatTsukeStartTime(startedAt) {
+  const d = new Date(startedAt);
+  let hours = d.getHours();
+  if (hours < 6) hours += 24;
+  return `${String(hours).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 // 着卓からの経過時間に応じた表示色。初回卓は6分まで緑・7分から赤、通常卓は15分まで緑・16分から赤
 function tsukeTimerColor(startedAt, isFirst) {
   const threshold = isFirst ? 6 : 15;
@@ -3511,7 +3520,7 @@ function openTsukeTablePopup(guestId) {
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
         <div style="flex:1;min-width:0;">
-          <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分）` : ''}${seatBadge}${halfOffBadge}</span>
+          <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
       </div>`;
