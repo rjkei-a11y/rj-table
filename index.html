@@ -28,6 +28,7 @@
   const staffKanbuRef = ref(db, 'staffKanbu');
   const staffShiftStartRef = ref(db, 'staffShiftStart');
   const staffDohanTimeRef = ref(db, 'staffDohanTime');
+  const staffHairMakeRef = ref(db, 'staffHairMakeStart');
   const tsukeActiveRef = ref(db, 'tsukemawashiActive');
   const tsukeLogRef = ref(db, 'tsukemawashiLog');
   const teamDefsRef = ref(db, 'teamDefs');
@@ -113,6 +114,12 @@
     if (isViewOnlyMode()) return;
     const hasData = obj && Object.keys(obj).length > 0;
     set(staffDohanTimeRef, hasData ? obj : null).catch(e => console.error('FB staffDohanTime save error:', e));
+  };
+  // Firebaseに各スタッフの本日のヘアメ開始時刻（{名前: "HH:MM"}形式。LINEで届くヘアメ表を貼り付けて解析する）を保存
+  window.fbSaveStaffHairMake = function(obj) {
+    if (isViewOnlyMode()) return;
+    const hasData = obj && Object.keys(obj).length > 0;
+    set(staffHairMakeRef, hasData ? obj : null).catch(e => console.error('FB staffHairMakeStart save error:', e));
   };
 
   // 付け回し：今まさに誰がどの卓についているか（{幹部名: {tableKey, tanto, guestName, startedAt}}）を保存
@@ -362,6 +369,12 @@
     window.staffDohanTime = snapshot.val() || {};
     try { localStorage.setItem('tableManager_staffDohanTime', JSON.stringify(window.staffDohanTime)); } catch(e) {}
     if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
+  });
+  // Firebaseから本日のヘアメ開始時刻をリアルタイム受信（付け回しモーダルが開いていれば候補バッジも即時更新）
+  onValue(staffHairMakeRef, (snapshot) => {
+    window.staffHairMakeStart = snapshot.val() || {};
+    try { localStorage.setItem('tableManager_staffHairMakeStart', JSON.stringify(window.staffHairMakeStart)); } catch(e) {}
+    if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
   });
 
   // 付け回し：今まさに誰がどの卓についているかをリアルタイム受信
@@ -3396,6 +3409,12 @@ function openTsukeTablePopup(guestId) {
   // 出勤時間の代わりに同伴時間を目安にする（出勤・同伴時間は「これより遅れないでね」というラインなので、
   // 目安時刻前でも選択自体はできるようにし、ボタンの見た目だけを変えるために使う）
   const getShiftThresholdFor = (name) => {
+    // ヘアメ表に載っている人は、出勤していてもヘアメ待ちで稼働できないため、
+    // ヘアメ開始時刻+15分（ヘアメ終了目安）を稼働開始の目安にする。表にない人（個人でヘアメする人）は出勤時間が稼働開始時刻のまま
+    const hairMakeStart = (window.staffHairMakeStart || {})[name];
+    if (hairMakeStart) {
+      return { time: addMinutesToTimeString(hairMakeStart, 15), label: 'ヘアメ' };
+    }
     if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
       return { time: window.staffDohanTime[name], label: '同伴' };
     }
@@ -6145,6 +6164,11 @@ function loadStaff() {
     if (rawDohanTime) window.staffDohanTime = JSON.parse(rawDohanTime);
   } catch(e) {}
   if (!window.staffDohanTime) window.staffDohanTime = {};
+  try {
+    const rawHairMakeStart = localStorage.getItem('tableManager_staffHairMakeStart');
+    if (rawHairMakeStart) window.staffHairMakeStart = JSON.parse(rawHairMakeStart);
+  } catch(e) {}
+  if (!window.staffHairMakeStart) window.staffHairMakeStart = {};
   if (!window.tsukeActive) window.tsukeActive = {};
   if (!window.tsukeLog) window.tsukeLog = {};
   // Firebaseスタッフ受信時に更新
@@ -6778,6 +6802,10 @@ function doResetReports(dateKey) {
   window.tsukeActive = {};
   window.tsukeLog = {};
   if (window.fbClearTsukeAll) window.fbClearTsukeAll();
+  // ヘアメ時間も当日限りのデータなので、翌営業日に古い時刻が残らないようクリアする
+  window.staffHairMakeStart = {};
+  window._hairMakeUnmatched = [];
+  saveStaffHairMakeStart();
 
   renderTables();
   renderStaffStatus();
@@ -7138,6 +7166,28 @@ function matchStaffName(rawText) {
   if (partial) return partial;
   const aliasPartial = aliasIndex.find(entry => normText.includes(entry.norm) || entry.norm.includes(normText));
   return aliasPartial ? aliasPartial.name : text;
+}
+
+// ヘアメ表テキスト（LINEで届く「17:00 名前」形式の行の集まり。日付見出しや「訂正版」等の行は無視する）を解析し、
+// { 正式スタッフ名: "HH:MM"（ヘアメ開始時刻） } の形に変換する。呼び名の表記ゆれはmatchStaffNameで吸収するが、
+// それでも一致しない名前は不一致として返し、内勤に手動でどのスタッフか選ばせる
+function parseHairMakeText(text) {
+  const lines = (text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const matched = {};
+  const unmatched = [];
+  lines.forEach(line => {
+    const m = line.match(/^(\d{1,2}):(\d{2})\s+(.+)$/);
+    if (!m) return;
+    const time = `${m[1].padStart(2, '0')}:${m[2]}`;
+    const rawName = m[3].trim();
+    const matchedName = matchStaffName(rawName);
+    if (matchedName && staffList.includes(matchedName)) {
+      matched[matchedName] = time;
+    } else {
+      unmatched.push({ time, rawName });
+    }
+  });
+  return { matched, unmatched };
 }
 
 // ヘルプ欄などの自由入力テキストから、含まれるスタッフ名を貪欲マッチで抽出する
@@ -7938,6 +7988,18 @@ function openStaffSettings() {
             <div id="shiftPreviewList"></div>
           </div>
         </div>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleHairMakeSection()">
+            <span style="font-size:12px;color:var(--text-dim);font-weight:700;"><span id="hairMakeSectionArrow">▶</span> ヘアメ時間（本日）</span>
+          </div>
+          <div id="hairMakeSectionBody" style="display:none;margin-top:8px;">
+            <p style="font-size:11px;color:var(--text-dim);margin-bottom:6px;line-height:1.6;">LINEで届くヘアメ表をそのまま貼り付けてください。稼働開始可能時刻（ヘアメ開始+15分）として付け回しの候補一覧に反映されます。この表にない人は、出勤時間がそのまま稼働開始時刻として扱われます。</p>
+            <textarea id="hairMakeInput" style="width:100%;min-height:120px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font-main);font-size:13px;padding:10px;outline:none;" placeholder="17:00 とあ&#10;17:30 きら&#10;17:45 ねる"></textarea>
+            <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="applyHairMakeText()">反映</button>
+            <div id="hairMakePreview" style="margin-top:8px;"></div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('staffModal').classList.remove('show')">キャンセル</button>
@@ -7946,6 +8008,7 @@ function openStaffSettings() {
     </div>`;
   modal.classList.add('show');
   renderStaffShiftPreview();
+  renderHairMakePreview();
 }
 
 // 出勤確認票スプレッドシート（出勤時間・同伴時間）のID
@@ -7959,6 +8022,78 @@ function toggleStaffShiftSection() {
   const isOpen = body.style.display !== 'none';
   body.style.display = isOpen ? 'none' : 'block';
   if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+}
+
+// ヘアメ時間セクションの開閉
+function toggleHairMakeSection() {
+  const body = document.getElementById('hairMakeSectionBody');
+  const arrow = document.getElementById('hairMakeSectionArrow');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+}
+
+// 貼り付けられたヘアメ表を解析し、一致したものは即反映、一致しなかったものは手動選択待ちにする
+function applyHairMakeText() {
+  const textEl = document.getElementById('hairMakeInput');
+  if (!textEl) return;
+  const { matched, unmatched } = parseHairMakeText(textEl.value);
+  if (!Object.keys(matched).length && !unmatched.length) {
+    const previewEl = document.getElementById('hairMakePreview');
+    if (previewEl) previewEl.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">「17:00 名前」の形式の行が見つかりませんでした</div>';
+    return;
+  }
+  window.staffHairMakeStart = matched;
+  window._hairMakeUnmatched = unmatched;
+  saveStaffHairMakeStart();
+  renderHairMakePreview();
+  if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
+  showToast('ヘアメ時間を反映しました');
+}
+
+function saveStaffHairMakeStart() {
+  try { localStorage.setItem('tableManager_staffHairMakeStart', JSON.stringify(window.staffHairMakeStart || {})); } catch(e) {}
+  if (window.fbSaveStaffHairMake) window.fbSaveStaffHairMake(window.staffHairMakeStart || {});
+}
+
+// 一致しなかった行を、内勤が手動でスタッフに割り当てる
+function resolveHairMakeUnmatched(idx, staffName) {
+  if (!staffName) return;
+  const u = (window._hairMakeUnmatched || [])[idx];
+  if (!u) return;
+  window.staffHairMakeStart = window.staffHairMakeStart || {};
+  window.staffHairMakeStart[staffName] = u.time;
+  window._hairMakeUnmatched.splice(idx, 1);
+  saveStaffHairMakeStart();
+  renderHairMakePreview();
+  if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
+}
+
+// 在籍スタッフ登録モーダル内に、現在のヘアメ時間の反映結果（一致分＋要確認分）を表示する
+function renderHairMakePreview() {
+  const previewEl = document.getElementById('hairMakePreview');
+  if (!previewEl) return;
+  const matched = window.staffHairMakeStart || {};
+  const unmatched = window._hairMakeUnmatched || [];
+  const matchedNames = Object.keys(matched).sort((a, b) => matched[a].localeCompare(matched[b]));
+  const matchedRows = matchedNames.map(name => `
+    <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);">
+      <span style="color:var(--text);">${name}</span>
+      <span style="color:var(--accent);font-weight:700;">ヘアメ ${matched[name]}〜（稼働 ${addMinutesToTimeString(matched[name], 15)}〜）</span>
+    </div>`).join('');
+  const unmatchedRows = unmatched.map((u, i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:4px 0;">
+      <span style="color:#e0524a;">⚠ ${u.rawName}（${u.time}）</span>
+      <select onchange="resolveHairMakeUnmatched(${i}, this.value)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-size:11px;border-radius:4px;">
+        <option value="">スタッフを選択</option>
+        ${staffList.map(n => `<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  previewEl.innerHTML = `
+    ${matchedRows || '<div style="font-size:11px;color:var(--text-dim);">まだ反映されていません</div>'}
+    ${unmatched.length ? `<div style="margin-top:10px;font-size:11px;color:#e0524a;font-weight:700;">⚠ 一致しない名前があります。対象スタッフを選んでください</div>${unmatchedRows}` : ''}
+  `;
 }
 
 // 在籍スタッフ登録モーダル内に、現在保存されている出勤時間・同伴時間の一覧を表示する
