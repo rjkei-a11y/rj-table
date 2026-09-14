@@ -3413,7 +3413,7 @@ function openTsukeTablePopup(guestId) {
     // ヘアメ開始時刻+15分（ヘアメ終了目安）を稼働開始の目安にする。表にない人（個人でヘアメする人）は出勤時間が稼働開始時刻のまま
     const hairMakeStart = (window.staffHairMakeStart || {})[name];
     if (hairMakeStart) {
-      return { time: addMinutesToTimeString(hairMakeStart, 15), label: 'ヘアメ' };
+      return { time: addMinutesToTimeString(hairMakeStart, 15), label: 'ヘアメ終' };
     }
     if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
       return { time: window.staffDohanTime[name], label: '同伴' };
