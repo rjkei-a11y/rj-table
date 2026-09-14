@@ -6579,11 +6579,33 @@ function promptQuickStatus(status) {
 }
 
 // 複数選択ピッカーの選択状態をトグルして再描画する
+// 選択状態に応じた見た目（初回描画・トグル更新の両方で使い回す）
+function quickStatusOptionStyle(isSel) {
+  return `display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:12px;background:${isSel ? 'var(--accent)' : 'var(--surface2)'};border:1px solid ${isSel ? 'var(--accent)' : 'var(--border)'};border-radius:6px;color:${isSel ? '#1a1400' : 'var(--text)'};font-family:var(--font-main);font-size:14px;margin-bottom:6px;cursor:pointer;font-weight:${isSel ? '700' : '400'};`;
+}
+function quickStatusCheckStyle(isSel) {
+  return `display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:18px;height:18px;border-radius:4px;border:1px solid ${isSel ? '#1a1400' : 'var(--text-dim)'};background:${isSel ? '#1a1400' : 'transparent'};color:${isSel ? 'var(--accent)' : 'transparent'};font-size:12px;`;
+}
+
+// タップされた行だけを直接書き換える（モーダル全体を作り直すとスクロール位置が先頭に戻ってしまうため）
 function toggleQuickStatusName(name) {
   if (!window._quickStatusSelected) window._quickStatusSelected = new Set();
-  if (window._quickStatusSelected.has(name)) window._quickStatusSelected.delete(name);
-  else window._quickStatusSelected.add(name);
-  renderQuickStatusModal();
+  const selected = window._quickStatusSelected;
+  if (selected.has(name)) selected.delete(name);
+  else selected.add(name);
+  const isSel = selected.has(name);
+  const modal = document.getElementById('quickStatusModal');
+  if (modal) {
+    modal.querySelectorAll('.qsOption').forEach(btn => {
+      if (btn.dataset.name === name) {
+        btn.style.cssText = quickStatusOptionStyle(isSel);
+        const check = btn.querySelector('.qsCheck');
+        if (check) check.style.cssText = quickStatusCheckStyle(isSel);
+      }
+    });
+    const confirmBtn = modal.querySelector('#qsConfirmBtn');
+    if (confirmBtn) confirmBtn.textContent = `決定（${selected.size}名選択中）`;
+  }
 }
 
 function renderQuickStatusModal() {
@@ -6594,10 +6616,11 @@ function renderQuickStatusModal() {
   const labels = { pending: '予定未定', off: '本日お休み', paid_off: '有休', half_off: '半休', clear: '未報告に戻す' };
   const options = staffList.map(name => {
     const isSel = selected.has(name);
+    const nameAttr = name.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     return `
-    <button onclick="toggleQuickStatusName('${name.replace(/'/g,"\\'")}')"
-      style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:12px;background:${isSel ? 'var(--accent)' : 'var(--surface2)'};border:1px solid ${isSel ? 'var(--accent)' : 'var(--border)'};border-radius:6px;color:${isSel ? '#1a1400' : 'var(--text)'};font-family:var(--font-main);font-size:14px;margin-bottom:6px;cursor:pointer;font-weight:${isSel ? '700' : '400'};">
-      <span style="display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:18px;height:18px;border-radius:4px;border:1px solid ${isSel ? '#1a1400' : 'var(--text-dim)'};background:${isSel ? '#1a1400' : 'transparent'};color:${isSel ? 'var(--accent)' : 'transparent'};font-size:12px;">✓</span>
+    <button class="qsOption" data-name="${nameAttr}" onclick="toggleQuickStatusName('${name.replace(/'/g,"\\'")}')"
+      style="${quickStatusOptionStyle(isSel)}">
+      <span class="qsCheck" style="${quickStatusCheckStyle(isSel)}">✓</span>
       ${name}
     </button>
   `;
@@ -6612,7 +6635,7 @@ function renderQuickStatusModal() {
         ${options || '<p style="color:var(--text-dim);text-align:center;">スタッフが未登録です</p>'}
       </div>
       <div style="padding:12px;border-top:1px solid var(--border);">
-        <button onclick="confirmQuickStatusMulti()" style="width:100%;padding:12px;background:var(--accent);border:none;border-radius:6px;color:#1a1400;font-size:14px;font-weight:700;cursor:pointer;">決定（${selected.size}名選択中）</button>
+        <button id="qsConfirmBtn" onclick="confirmQuickStatusMulti()" style="width:100%;padding:12px;background:var(--accent);border:none;border-radius:6px;color:#1a1400;font-size:14px;font-weight:700;cursor:pointer;">決定（${selected.size}名選択中）</button>
       </div>
     </div>`;
 }
