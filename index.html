@@ -3410,11 +3410,11 @@ function openTsukeTablePopup(guestId) {
   // 目安時刻前でも選択自体はできるようにし、ボタンの見た目だけを変えるために使う）
   const getShiftThresholdFor = (name) => {
     // ヘアメ表に載っている人は、出勤していてもヘアメ待ちで稼働できないため、
-    // ヘアメ開始時刻+15分（ヘアメ終了目安）を稼働開始の目安にする。表にない人（個人でヘアメする人）は出勤時間が稼働開始時刻のまま
-    const hairMakeStart = (window.staffHairMakeStart || {})[name];
-    if (hairMakeStart) {
-      return { time: addMinutesToTimeString(hairMakeStart, 15), label: 'ヘアメ終' };
-    }
+    // ヘアメ終了目安（出勤時間の方が遅ければそちらを優先）を稼働開始の目安にする。
+    // 表にない人（個人でヘアメする人）は出勤時間がそのまま稼働開始時刻のまま。
+    // お休み・有休の人はそもそも候補一覧に出てこない（このthreshold判定より前で除外済み）ため、ここでは気にしなくてよい
+    const hairMakeThreshold = computeHairMakeReadyThreshold(name);
+    if (hairMakeThreshold) return hairMakeThreshold;
     if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
       return { time: window.staffDohanTime[name], label: '同伴' };
     }
@@ -7190,6 +7190,25 @@ function parseHairMakeText(text) {
   return { matched, unmatched };
 }
 
+// ヘアメ表と出勤時間から、実際の稼働開始目安時刻を算出する（付け回し候補画面・スタッフ登録の
+// プレビューの両方で使う）。出勤時間の方がヘアメ終了予定より遅ければ、出勤時間の方を優先する
+// （ヘアメが早く終わっても、そもそもの出勤時刻より前には稼働できないため）。
+// お休み・有休の人は呼び出し側（候補一覧は元々除外、プレビューは表示自体をスキップ）で扱うため、ここでは判定しない
+function computeHairMakeReadyThreshold(name) {
+  const hairMakeStart = (window.staffHairMakeStart || {})[name];
+  if (!hairMakeStart) return null;
+  const hairMakeEnd = addMinutesToTimeString(hairMakeStart, 15);
+  const shiftStart = (window.staffShiftStart || {})[name];
+  if (shiftStart) {
+    const shiftT = parseTimeText(shiftStart);
+    const hairT = parseTimeText(hairMakeEnd);
+    if (shiftT && hairT && toShiftMinutes(shiftT.hour, shiftT.minute) > toShiftMinutes(hairT.hour, hairT.minute)) {
+      return { time: shiftStart, label: '出勤' };
+    }
+  }
+  return { time: hairMakeEnd, label: 'ヘアメ終' };
+}
+
 // ヘルプ欄などの自由入力テキストから、含まれるスタッフ名を貪欲マッチで抽出する
 function extractStaffNames(text, aliasIndex) {
   const found = [];
@@ -8077,11 +8096,23 @@ function renderHairMakePreview() {
   const matched = window.staffHairMakeStart || {};
   const unmatched = window._hairMakeUnmatched || [];
   const matchedNames = Object.keys(matched).sort((a, b) => matched[a].localeCompare(matched[b]));
-  const matchedRows = matchedNames.map(name => `
-    <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);">
+  const matchedRows = matchedNames.map(name => {
+    // お休み・有休の人は候補一覧にも出てこないので、ここでも反映対象外であることが分かるようにしておく
+    const dayStatus = (staffDayStatus[name] || {}).status;
+    if (dayStatus === 'off' || dayStatus === 'paid_off') {
+      return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);opacity:0.5;">
+        <span style="color:var(--text-dim);">${name}</span>
+        <span style="color:var(--text-dim);">ヘアメ ${matched[name]}〜（${dayStatus === 'off' ? 'お休み' : '有休'}のため対象外）</span>
+      </div>`;
+    }
+    // 出勤時間の方が遅ければ出勤時間を優先する（付け回し候補一覧のバッジと同じロジック）
+    const threshold = computeHairMakeReadyThreshold(name);
+    const thresholdNote = threshold.label === '出勤' ? '・出勤時間優先' : '';
+    return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);">
       <span style="color:var(--text);">${name}</span>
-      <span style="color:var(--accent);font-weight:700;">ヘアメ ${matched[name]}〜（稼働 ${addMinutesToTimeString(matched[name], 15)}〜）</span>
-    </div>`).join('');
+      <span style="color:var(--accent);font-weight:700;">ヘアメ ${matched[name]}〜（稼働 ${threshold.time}〜${thresholdNote}）</span>
+    </div>`;
+  }).join('');
   const unmatchedRows = unmatched.map((u, i) => `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:4px 0;">
       <span style="color:#e0524a;">⚠ ${u.rawName}（${u.time}）</span>
