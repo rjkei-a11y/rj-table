@@ -6020,8 +6020,8 @@ function updateStats() {
 }
 
 function updateTableStats() {
-  // 担当名が入っていない行は「予定卓数」「現状」の集計対象外
-  const withData = guests.filter(g => (g.name || g.tanto) && g.tanto && g.tanto.trim());
+  // 担当名が入っていない行、および担当名に「店フリー」が含まれる行は「予定卓数」「現状」の集計対象外
+  const withData = guests.filter(g => (g.name || g.tanto) && g.tanto && g.tanto.trim() && !g.tanto.includes('店フリー'));
   // 予定卓数 = 実際にデータが入っている件数（行番号に隙間があっても正確に数える）
   const maxRow = withData.length;
   // △の件数（来店済みは除外）
