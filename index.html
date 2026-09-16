@@ -7327,7 +7327,7 @@ function openAttendanceBreakdown(mode) {
         : `<span style="color:var(--text-dim);">設定なし</span>`);
     const markHtml = d.isOff
       ? ''
-      : (d.counted ? `<span style="color:#2ecc71;font-weight:700;">✓出勤</span>` : `<span style="color:var(--text-dim);">未到達</span>`);
+      : (d.counted ? `<span style="color:#2ecc71;font-weight:700;">✓出勤</span>` : `<span style="color:var(--text-dim);">未</span>`);
     return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;">
       <span style="color:var(--text);min-width:56px;flex-shrink:0;">${d.name}</span>
       <span style="flex:1;text-align:left;">${reasonHtml}</span>
