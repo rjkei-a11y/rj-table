@@ -7237,8 +7237,10 @@ function computeHairMakeReadyThreshold(name) {
 // 今日、来店予定が「同伴」になっているお客様の担当キャスト名一覧を返す（openTsukeTablePopup内の
 // 同名ロジックと同じ判定基準。「同伴」の文言は来店時間欄だけでなく、お客様名・備考欄に書かれることもある）
 function computeDohanCastNamesToday() {
+  // 来店フラグは要求しない：同伴はまだお客様が店に来ていない「待ち合わせ〜移動中」の段階でこそ
+  // 出勤時間ではなく同伴時間を基準にすべきなので、来店確認前の「予定」段階から対象に含める
   return new Set(
-    guests.filter(g => g.arrived && !g.left &&
+    guests.filter(g => !g.left &&
       [g.arrive, g.name, g.note].some(text => (text || '').includes('同伴')))
           .map(g => matchStaffName(g.tanto))
           .filter(Boolean)
