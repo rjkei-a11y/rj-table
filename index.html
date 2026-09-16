@@ -3483,7 +3483,7 @@ function openTsukeTablePopup(guestId) {
   // フルスクリーン画面のヘッダー（卓番の行）にも、卓状況見出しと同じ本日出勤カウントを小さめに表示する（内勤用のみ）
   const todayAttendanceHtml = isAdmin ? (() => {
     const { arrived, total } = computeTsukeFloorReadyCount();
-    return `<span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>`;
+    return `<span onclick="event.stopPropagation();openAttendanceBreakdown('priority')" style="font-size:11px;color:var(--text-dim);white-space:nowrap;cursor:pointer;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>`;
   })() : '';
   if (isAdmin) {
     // 内勤：キャスト名を縦一列に並べ、行ごとに「着／離れる／一時離席／戻す／移動」を直接操作する。
@@ -3766,7 +3766,7 @@ function renderTsukeModalIfOpen() {
           const { arrived, total } = computeTsukeFloorReadyCount();
           return `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">
             <span style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;">卓状況</span>
-            <span style="font-size:10.5px;color:var(--text-dim);white-space:nowrap;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>
+            <span onclick="openAttendanceBreakdown('priority')" style="font-size:10.5px;color:var(--text-dim);white-space:nowrap;cursor:pointer;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>
           </div>`;
         })()}
         ${buildTsukeFloorBoxesHtml()}
@@ -6397,28 +6397,9 @@ function promptIdentityModal(onDone) {
 // 本日出勤予定のうち、既に出勤時間を過ぎている人数を数える（内勤者専用フォーム欄の「本日出勤 ○/⬜︎」用）。
 // お休み・有休の人は母数（⬜︎）からも除く。半休の人は出勤時間シートの値によらず22:30を出勤時間として扱う
 function computeTodayAttendanceCount() {
-  const scheduled = staffList.filter(name => {
-    const status = (staffDayStatus[name] || {}).status;
-    return status !== 'off' && status !== 'paid_off';
-  });
-  const now = new Date();
-  const nowShift = toShiftMinutes(now.getHours(), now.getMinutes());
-  const dohanCastNamesToday = computeDohanCastNamesToday();
-  const arrived = scheduled.filter(name => {
-    const isHalfOff = (staffDayStatus[name] || {}).status === 'half_off';
-    let shiftTimeStr;
-    if (isHalfOff) {
-      shiftTimeStr = '22:30';
-    } else if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
-      shiftTimeStr = window.staffDohanTime[name];
-    } else {
-      shiftTimeStr = (window.staffShiftStart || {})[name];
-    }
-    const t = parseTimeText(shiftTimeStr);
-    if (!t) return false;
-    return nowShift >= toShiftMinutes(t.hour, t.minute);
-  }).length;
-  return { arrived, total: scheduled.length };
+  const detail = computeAttendanceDetail('simple');
+  const scheduled = detail.filter(d => !d.isOff);
+  return { arrived: scheduled.filter(d => d.counted).length, total: scheduled.length };
 }
 
 // キャスト用端末の予定報告タブに「あなた: 〇〇（変更）」を表示。内勤端末には代理入力モードのトグルを表示
@@ -6444,7 +6425,7 @@ function renderIdentityIndicator() {
     const { arrived, total } = computeTodayAttendanceCount();
     el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
       <span><span style="color:var(--text-dim);font-size:11px;">内勤者専用フォーム</span>${logoutLink}</span>
-      <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>
+      <span onclick="openAttendanceBreakdown('simple')" style="font-size:11px;color:var(--text-dim);white-space:nowrap;cursor:pointer;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>
     </div>`;
   } else {
     el.innerHTML = '';
@@ -7283,20 +7264,86 @@ function computeStaffReadyThreshold(name) {
 
 // 付け回しモーダルの「卓状況」見出し用：本日稼働予定人数のうち、既に稼働可能時刻を過ぎた人数を数える
 function computeTsukeFloorReadyCount() {
-  const scheduled = staffList.filter(name => {
-    const status = (staffDayStatus[name] || {}).status;
-    return status !== 'off' && status !== 'paid_off';
-  });
+  const detail = computeAttendanceDetail('priority');
+  const scheduled = detail.filter(d => !d.isOff);
+  return { arrived: scheduled.filter(d => d.counted).length, total: scheduled.length };
+}
+
+// 本日出勤カウントの内訳（キャストごとの根拠とカウント対象かどうか）を返す。「本日出勤 ○/⬜︎」表示の
+// タップで開く内訳モーダル、および①②それぞれの集計関数の共通ロジックとして使う。
+// mode='simple': ①内勤者専用フォーム欄と同じ判定（半休→同伴→出勤時間。ヘアメ表は見ない）
+// mode='priority': ②付け回しモーダルと同じ判定（半休→ヘアメ表→同伴→出勤時間。computeStaffReadyThresholdを使う）
+function computeAttendanceDetail(mode) {
   const now = new Date();
   const nowShift = toShiftMinutes(now.getHours(), now.getMinutes());
-  const arrived = scheduled.filter(name => {
-    const threshold = computeStaffReadyThreshold(name);
-    if (!threshold) return false;
-    const t = parseTimeText(threshold.time);
-    if (!t) return false;
-    return nowShift >= toShiftMinutes(t.hour, t.minute);
-  }).length;
-  return { arrived, total: scheduled.length };
+  const dohanCastNamesToday = computeDohanCastNamesToday();
+  return staffList.map(name => {
+    const status = (staffDayStatus[name] || {}).status;
+    const isOff = status === 'off' || status === 'paid_off';
+    let threshold = null;
+    if (!isOff) {
+      if (mode === 'priority') {
+        threshold = computeStaffReadyThreshold(name);
+      } else {
+        const isHalfOff = status === 'half_off';
+        if (isHalfOff) {
+          threshold = { time: '22:30', label: '半休' };
+        } else if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
+          threshold = { time: window.staffDohanTime[name], label: '同伴' };
+        } else {
+          const shiftStart = (window.staffShiftStart || {})[name];
+          threshold = shiftStart ? { time: shiftStart, label: '出勤' } : null;
+        }
+      }
+    }
+    let counted = false;
+    if (!isOff && threshold) {
+      const t = parseTimeText(threshold.time);
+      counted = !!(t && nowShift >= toShiftMinutes(t.hour, t.minute));
+    }
+    return { name, status, isOff, threshold, counted };
+  });
+}
+
+// 「本日出勤 ○/⬜︎」をタップした時の内訳モーダル。誰がどの根拠（半休/ヘアメ表/同伴/出勤時間）で
+// カウントされている・いないのかを一覧表示し、集計結果の検証をしやすくする
+function openAttendanceBreakdown(mode) {
+  let modal = document.getElementById('attendanceBreakdownModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'attendanceBreakdownModal';
+    document.body.appendChild(modal);
+  }
+  const detail = computeAttendanceDetail(mode);
+  const statusLabels = { off: 'お休み', paid_off: '有休' };
+  const rows = detail.map(d => {
+    const reasonHtml = d.isOff
+      ? `<span style="color:#e74c3c;">${statusLabels[d.status] || '休み'}（対象外）</span>`
+      : (d.threshold
+        ? `<span style="color:var(--text-dim);">${d.threshold.label} ${d.threshold.time}〜</span>`
+        : `<span style="color:var(--text-dim);">設定なし</span>`);
+    const markHtml = d.isOff
+      ? ''
+      : (d.counted ? `<span style="color:#2ecc71;font-weight:700;">✓出勤</span>` : `<span style="color:var(--text-dim);">未到達</span>`);
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px;">
+      <span style="color:var(--text);min-width:56px;flex-shrink:0;">${d.name}</span>
+      <span style="flex:1;text-align:left;">${reasonHtml}</span>
+      <span style="flex-shrink:0;min-width:48px;text-align:right;">${markHtml}</span>
+    </div>`;
+  }).join('');
+  const title = mode === 'priority' ? '本日出勤の内訳（付け回し用）' : '本日出勤の内訳（内勤フォーム用）';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:360px;max-height:80vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>${title}</span>
+        <button onclick="document.getElementById('attendanceBreakdownModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;">
+        ${rows || '<p style="color:var(--text-dim);text-align:center;">スタッフが未登録です</p>'}
+      </div>
+    </div>`;
+  modal.classList.add('show');
 }
 
 // ヘルプ欄などの自由入力テキストから、含まれるスタッフ名を貪欲マッチで抽出する
