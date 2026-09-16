@@ -1119,11 +1119,12 @@ document.addEventListener('DOMContentLoaded', () => {
   updateQuickAddBtnVisibility();
   updateFixedTop();
   setTimeout(updateFixedTop, 100);
-  // 来店予定・退店予定の時刻経過ハイライトを1分ごとに再評価する
+  // 来店予定・退店予定の時刻経過ハイライトを1分ごとに再評価する（本日出勤の○カウントもここで一緒に更新する）
   setInterval(() => {
     updateDate();
     renderTables();
     renderFloorStatus();
+    renderIdentityIndicator();
   }, 60000);
 });
 
@@ -6381,6 +6382,25 @@ function promptIdentityModal(onDone) {
   modal.classList.add('show');
 }
 
+// 本日出勤予定のうち、既に出勤時間を過ぎている人数を数える（内勤者専用フォーム欄の「本日出勤 ○/⬜︎」用）。
+// お休み・有休の人は母数（⬜︎）からも除く。半休の人は出勤時間シートの値によらず22:30を出勤時間として扱う
+function computeTodayAttendanceCount() {
+  const scheduled = staffList.filter(name => {
+    const status = (staffDayStatus[name] || {}).status;
+    return status !== 'off' && status !== 'paid_off';
+  });
+  const now = new Date();
+  const nowShift = toShiftMinutes(now.getHours(), now.getMinutes());
+  const arrived = scheduled.filter(name => {
+    const isHalfOff = (staffDayStatus[name] || {}).status === 'half_off';
+    const shiftTimeStr = isHalfOff ? '22:30' : (window.staffShiftStart || {})[name];
+    const t = parseTimeText(shiftTimeStr);
+    if (!t) return false;
+    return nowShift >= toShiftMinutes(t.hour, t.minute);
+  }).length;
+  return { arrived, total: scheduled.length };
+}
+
 // キャスト用端末の予定報告タブに「あなた: 〇〇（変更）」を表示。内勤端末には代理入力モードのトグルを表示
 function renderIdentityIndicator() {
   const el = document.getElementById('identityIndicator');
@@ -6401,7 +6421,11 @@ function renderIdentityIndicator() {
       ${shiftHtml}
     </div>`;
   } else if (role === 'admin') {
-    el.innerHTML = `<span style="color:var(--text-dim);font-size:11px;">内勤者専用フォーム</span>` + logoutLink;
+    const { arrived, total } = computeTodayAttendanceCount();
+    el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+      <span><span style="color:var(--text-dim);font-size:11px;">内勤者専用フォーム</span>${logoutLink}</span>
+      <span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>
+    </div>`;
   } else {
     el.innerHTML = '';
   }
@@ -7804,6 +7828,8 @@ function renderStaffStatus() {
       <span style="color:${textColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
     </div>`;
   }).join('');
+  // 報告状況（休み/有休/半休など）が変わるたび、本日出勤カウントも合わせて更新する
+  if (typeof renderIdentityIndicator === 'function') renderIdentityIndicator();
 }
 
 // ===== MANAGE MODAL (編集・削除一覧) =====
