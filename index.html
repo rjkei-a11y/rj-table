@@ -6403,9 +6403,17 @@ function computeTodayAttendanceCount() {
   });
   const now = new Date();
   const nowShift = toShiftMinutes(now.getHours(), now.getMinutes());
+  const dohanCastNamesToday = computeDohanCastNamesToday();
   const arrived = scheduled.filter(name => {
     const isHalfOff = (staffDayStatus[name] || {}).status === 'half_off';
-    const shiftTimeStr = isHalfOff ? '22:30' : (window.staffShiftStart || {})[name];
+    let shiftTimeStr;
+    if (isHalfOff) {
+      shiftTimeStr = '22:30';
+    } else if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
+      shiftTimeStr = window.staffDohanTime[name];
+    } else {
+      shiftTimeStr = (window.staffShiftStart || {})[name];
+    }
     const t = parseTimeText(shiftTimeStr);
     if (!t) return false;
     return nowShift >= toShiftMinutes(t.hour, t.minute);
