@@ -3480,6 +3480,11 @@ function openTsukeTablePopup(guestId) {
         </div>`;
     }
   }
+  // フルスクリーン画面のヘッダー（卓番の行）にも、卓状況見出しと同じ本日出勤カウントを小さめに表示する（内勤用のみ）
+  const todayAttendanceHtml = isAdmin ? (() => {
+    const { arrived, total } = computeTsukeFloorReadyCount();
+    return `<span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>`;
+  })() : '';
   if (isAdmin) {
     // 内勤：キャスト名を縦一列に並べ、行ごとに「着／離れる／一時離席／戻す／移動」を直接操作する。
     // 卓状況で選べる対象は幹部に絞らず、本日出勤している従業員全員にする
@@ -3620,7 +3625,10 @@ function openTsukeTablePopup(guestId) {
             <div style="font-size:18px;font-weight:900;color:var(--accent);">${tableKey}卓</div>
             ${endEstimateHtml}
           </div>
-          <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:22px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
+          <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+            ${todayAttendanceHtml}
+            <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:22px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
+          </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-top:2px;">
           <div>
