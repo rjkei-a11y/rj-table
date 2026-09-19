@@ -3245,7 +3245,7 @@ function buildTsukeFloorBoxesHtml() {
           return s ? `<span style="font-size:10px;margin-left:2px;" title="${s.label}">${s.icon}</span>` : '';
         }).join('');
         // 場内指名は既存の行を崩さないよう、ある時だけ追加の1行として足す（正式な担当と重複していても両方見えて構わない）
-        const baanaiHtml = baanaiName ? `<div style="font-size:8.5px;color:#7fd97f;">🚶場内:${baanaiName}</div>` : '';
+        const baanaiHtml = baanaiName ? `<div style="font-size:8.5px;color:#7fd97f;">場内:${baanaiName}</div>` : '';
         return `<div onclick="openTsukeTablePopup('${info.guestId}')" style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
           <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}${specialIconsHtml}</span><span style="font-size:8.5px;">${info.photoDisplay || `<span style="color:var(--text-dim);">${info.tanto}</span>`}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
