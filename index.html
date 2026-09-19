@@ -469,6 +469,7 @@
     if (el && document.activeElement !== el) el.value = text;
     if (window.updateBaanaiBar) window.updateBaanaiBar(text);
     if (window.renderFloorStatus) window.renderFloorStatus();
+    if (window.renderTsukeModalIfOpen) window.renderTsukeModalIfOpen();
   });
 
   // Firebaseから「卓一覧タブの公開設定」をリアルタイム受信（値が無ければデフォルトで公開扱い）
@@ -3197,6 +3198,10 @@ function buildFirstGroupPhotoSeatInfo(rows) {
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
 // 同じ卓番に複数のお客様がいる場合は、卓状況欄と同じように、その分だけBOXを並べて表示する
 function buildTsukeFloorBoxesHtml() {
+  // 【場内】欄（内勤が自由入力する簡易メモ）から卓番ごとの場内指名を取得し、ボックス上でも一目で分かるようにする
+  let baanaiText = '';
+  try { baanaiText = localStorage.getItem('rj_baanai') || ''; } catch(e) {}
+  const baanaiMap = parseBaanaiAssignments(baanaiText);
   const infoMap = {}; // { "V3": [{guestId, tanto, name, help, isFirst}, ...] }
   guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
@@ -3218,7 +3223,15 @@ function buildTsukeFloorBoxesHtml() {
     const nums = (floorData[f] || []).slice();
     const boxesHtml = nums.map(t => {
       const infoList = infoMap[t];
+      const baanaiName = baanaiMap[t];
       if (!infoList || !infoList.length) {
+        // 場内指名だけがある卓（正式な担当・お客様の入力はまだない）は、埋もれないよう分かりやすく表示する
+        if (baanaiName) {
+          return `<div style="background:#16241a;border:1px solid #4a9d5a;border-radius:6px;padding:5px 6px;min-height:34px;font-size:10px;">
+            <div style="font-weight:700;color:var(--text-dim);">${t}</div>
+            <div style="font-size:9.5px;color:#7fd97f;font-weight:700;margin-top:2px;">🚶${baanaiName}</div>
+          </div>`;
+        }
         return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 6px;min-height:34px;color:#555;font-size:10px;display:flex;align-items:center;">${t}</div>`;
       }
       return infoList.map(info => {
@@ -3237,10 +3250,13 @@ function buildTsukeFloorBoxesHtml() {
           const s = SPECIALS.find(x => x.key === k);
           return s ? `<span style="font-size:10px;margin-left:2px;" title="${s.label}">${s.icon}</span>` : '';
         }).join('');
+        // 場内指名は既存の行を崩さないよう、ある時だけ追加の1行として足す（正式な担当と重複していても両方見えて構わない）
+        const baanaiHtml = baanaiName ? `<div style="font-size:8.5px;color:#7fd97f;">🚶場内:${baanaiName}</div>` : '';
         return `<div onclick="openTsukeTablePopup('${info.guestId}')" style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
           <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}${specialIconsHtml}</span><span style="font-size:8.5px;">${info.photoDisplay || `<span style="color:var(--text-dim);">${info.tanto}</span>`}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
           ${info.help ? `<div style="font-size:8.5px;color:#e8954a;">H: ${info.help}</div>` : ''}
+          ${baanaiHtml}
           ${memberHtml}
         </div>`;
       }).join('<div style="height:4px;"></div>');
@@ -5384,6 +5400,7 @@ function saveBaanai() {
   if (window.fbSaveBaanai) window.fbSaveBaanai(val);
   updateBaanaiBar(val);
   renderFloorStatus();
+  if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
 }
 function updateBaanaiBar(val) {
   const bar = document.getElementById('baanaiBar');
