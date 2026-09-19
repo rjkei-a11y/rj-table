@@ -5365,23 +5365,38 @@ function syncFirstGroupToView(g) {
 }
 
 // ===== 場内 =====
-// 「ひろきA4」のような場内メモを解析し、卓番→キャスト名のマップを作る
-// キャスト名（呼び名含む）を先頭から最長一致で判定し、残り文字列が実在する卓番と一致すれば採用する
+// 「ひろきA4」「B6縁」のような場内メモを解析し、卓番→キャスト名のマップを作る（名前→卓番・卓番→名前の
+// どちらの並び順でも拾えるようにする）。キャスト名（呼び名含む）・卓番はどちらも先頭から最長一致で判定する
 function parseBaanaiAssignments(text) {
   const result = {};
   if (!text) return result;
   const aliasIndex = buildAliasIndex();
-  const allTables = new Set([
+  // 長い卓番から先にマッチさせる（"A1"と"A10"のような番号がどちらもある場合の誤マッチ防止）
+  const allTables = [...new Set([
     ...(floorData.V || []), ...(floorData.A || []), ...(floorData.B || [])
-  ].map(t => t.toUpperCase()));
+  ].map(t => t.toUpperCase()))].sort((a, b) => b.length - a.length);
+  const normalizeTablePrefix = (s) => s.toUpperCase().replace(/^P(?=\d)/, 'V');
   const tokens = text.split(/[\s,、,\/]+/).map(s => s.trim()).filter(Boolean);
   tokens.forEach(token => {
     const normToken = toHiragana(token);
-    const match = aliasIndex.find(entry => normToken.startsWith(entry.norm));
-    if (!match) return;
-    const remainder = token.slice(match.text.length).toUpperCase().replace(/^P/, 'V');
-    if (allTables.has(remainder)) {
-      result[remainder] = match.name;
+    // パターン1：名前が先頭（例：カルマB3）
+    const nameFirst = aliasIndex.find(entry => normToken.startsWith(entry.norm));
+    if (nameFirst) {
+      const remainder = normalizeTablePrefix(token.slice(nameFirst.text.length));
+      if (allTables.includes(remainder)) {
+        result[remainder] = nameFirst.name;
+        return;
+      }
+    }
+    // パターン2：卓番が先頭（例：B6縁）
+    const normalizedToken = normalizeTablePrefix(token);
+    const tableFirst = allTables.find(tb => normalizedToken.startsWith(tb));
+    if (tableFirst) {
+      const remainder = toHiragana(token.slice(tableFirst.length));
+      const nameMatch = aliasIndex.find(entry => remainder.startsWith(entry.norm));
+      if (nameMatch) {
+        result[tableFirst] = nameMatch.name;
+      }
     }
   });
   return result;
