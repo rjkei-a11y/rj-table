@@ -1378,6 +1378,8 @@ function printTablesList() {
 // イベントがそこで止まらずbubbleしてくるが、target自体はoverlayにならないので誤って閉じることはない）
 document.addEventListener('click', function(e) {
   const target = e.target;
+  // 「あなたは誰ですか？」は選択必須のため、背景タップでは閉じさせない（未選択のまま中に入れてしまうため）
+  if (target && target.id === 'identityModal') return;
   if (target && target.classList && target.classList.contains('modal-overlay') && target.classList.contains('show')) {
     target.classList.remove('show');
   }
@@ -6553,9 +6555,9 @@ function promptIdentityModal(onDone) {
     <div class="modal" style="max-width:320px;max-height:70vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <span>あなたは誰ですか？</span>
-        <button onclick="document.getElementById('identityModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;">
+        <p style="font-size:11px;color:var(--text-dim);margin:0 0 10px;">選択するまでこの画面を閉じることはできません。</p>
         ${options || '<p style="color:var(--text-dim);text-align:center;">スタッフが未登録です</p>'}
       </div>
     </div>`;
