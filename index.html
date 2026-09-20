@@ -43,6 +43,7 @@
   const eventTantoRef = ref(db, 'eventTantoToday');
   const tempAdminAccessRef = ref(db, 'tempAdminAccess');
   const mainPasswordsRef = ref(db, 'mainPasswords');
+  const staffPasswordsRef = ref(db, 'staffPasswords');
 
   // 閲覧専用モード（開きっぱなしのPC等、受信だけして絶対に書き込みをしたくない端末向け）。
   // この端末のlocalStorageだけを見るローカル設定で、Firebaseへの書き込み関数は全てこれを確認してから実行する。
@@ -217,6 +218,18 @@
     set(mainPasswordsRef, data).catch(e => console.error('FB mainPasswords save error:', e));
   };
 
+  // 各キャストの個別ログインパスワード（{名前: {password, updatedAt}}）を保存
+  window.fbSaveStaffPasswords = function(obj) {
+    if (isViewOnlyMode()) return;
+    const hasData = obj && Object.keys(obj).length > 0;
+    set(staffPasswordsRef, hasData ? obj : null).catch(e => console.error('FB staffPasswords save error:', e));
+  };
+  // 1人分だけをピンポイントで更新・削除する（衝突回避：他の人のパスワードを巻き込まない）
+  window.fbSaveStaffPasswordFor = function(name, entry) {
+    if (isViewOnlyMode() || !name) return;
+    set(ref(db, 'staffPasswords/' + name), entry).catch(e => console.error('FB staffPassword save error:', e));
+  };
+
   // Firebaseに卓状況（フロア構成）を保存
   window.fbSaveFloor = function(floorDataObj) {
     if (isViewOnlyMode()) return;
@@ -340,6 +353,9 @@
       } else if (window._fbStaffReady) {
         window._fbStaffReady();
       }
+      // 在籍リストが変わるたび、新しく増えた人のパスワードを補充し、消えた人でログイン中の端末がいれば締め出す
+      if (typeof ensureStaffPasswordsSeeded === 'function') ensureStaffPasswordsSeeded();
+      if (typeof checkStaffPasswordVersion === 'function') checkStaffPasswordVersion();
     }
   });
 
@@ -511,6 +527,17 @@
       set(mainPasswordsRef, initial).catch(e => console.error('FB mainPasswords init error:', e));
     }
     if (typeof checkPasswordVersion === 'function') checkPasswordVersion();
+  });
+
+  // Firebaseから各キャストの個別ログインパスワードをリアルタイム受信。
+  // 受信のたび、在籍中なのにまだ個別パスワードを持っていない人（導入直後・新規追加）を
+  // 補充し、自分のパスワードが変わっていないか（変わっていれば締め出す）も確認する
+  onValue(staffPasswordsRef, (snapshot) => {
+    window.staffPasswords = snapshot.val() || {};
+    try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(window.staffPasswords)); } catch(e) {}
+    if (typeof ensureStaffPasswordsSeeded === 'function') ensureStaffPasswordsSeeded();
+    if (typeof checkStaffPasswordVersion === 'function') checkStaffPasswordVersion();
+    if (typeof refreshAliasModalIfOpen === 'function') refreshAliasModalIfOpen();
   });
 
   // Firebaseから卓状況（フロア構成）をリアルタイム受信
@@ -827,13 +854,14 @@ function scheduleDailyTempAdminExpiryCheck() {
   }, next - now);
 }
 
-// メインパスワード（内勤・従業員共通のもの）が変更された場合、既にログイン済みの端末を
-// 自動的にログアウトさせる（退職者が出た時、パスワードを変更するだけで締め出せるようにするため）。
+// 内勤パスワードが変更された場合、既にログイン済みの内勤端末を自動的にログアウトさせる。
 // ログイン時に「その時点のパスワードのバージョン（updatedAt）」を端末側にも覚えておき、
-// Firebase側の値と食い違ったら、パスワードが変更された合図とみなしてログアウトする
+// Firebase側の値と食い違ったら、パスワードが変更された合図とみなしてログアウトする。
+// キャスト（host）は個別パスワード制になったため、こちらはcheckStaffPasswordVersion()が
+// 別途担当する（従業員用の共通パスワードを変えても、既存キャストのログインには影響しない）
 function checkPasswordVersion() {
   const role = localStorage.getItem('rj_role');
-  if (role !== 'admin' && role !== 'host') return;
+  if (role !== 'admin') return;
   if (localStorage.getItem('rj_loginSource') === 'temp') return; // 一時パスワードは別の仕組みで管理済み
   const current = window._fbMainPasswords;
   if (!current || !current.updatedAt) return; // まだ受信できていなければ何もしない
@@ -849,6 +877,70 @@ function checkPasswordVersion() {
     localStorage.removeItem('rj_role');
     localStorage.removeItem('rj_passwordVersion');
     location.reload();
+  }
+}
+
+// staffListの全員が必ず個別ログインパスワードを持つようにする。導入直後の既存スタッフ・
+// 新規追加されたスタッフには、その時点の共通パスワードをデフォルト値として補充しておく
+// （内勤は後から在籍スタッフ登録の呼び名編集画面で個別に変更できる）
+function ensureStaffPasswordsSeeded() {
+  if (typeof staffList === 'undefined' || !staffList.length) return;
+  const passwords = window.staffPasswords || {};
+  let changed = false;
+  staffList.forEach(name => {
+    if (!passwords[name] || !passwords[name].password) {
+      passwords[name] = { password: getCurrentHostPassword(), updatedAt: Date.now() };
+      changed = true;
+    }
+  });
+  if (changed) {
+    window.staffPasswords = passwords;
+    try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(passwords)); } catch(e) {}
+    if (window.fbSaveStaffPasswords) window.fbSaveStaffPasswords(passwords);
+  }
+}
+
+// 今の入力欄のパスワードと一致する個別パスワードを持つ、在籍中のキャスト名を返す（無ければnull）
+function findStaffNameByPassword(password) {
+  if (!password) return null;
+  const passwords = window.staffPasswords || {};
+  return (typeof staffList !== 'undefined' ? staffList : []).find(name => {
+    const entry = passwords[name];
+    return entry && entry.password === password;
+  }) || null;
+}
+
+// キャスト（host）ロールを強制的にログアウトさせ、ログイン画面に戻す
+function forceHostLogout() {
+  localStorage.removeItem('rj_role');
+  localStorage.removeItem('rj_myPasswordVersion');
+  localStorage.removeItem('rj_loginVerifiedIdentity');
+  localStorage.removeItem('rj_myIdentity');
+  location.reload();
+}
+
+// キャスト個別パスワードが変更された、またはそのキャストが在籍スタッフ登録から削除された場合、
+// ログイン中の端末を自動的にログアウトさせる（checkPasswordVersionのキャスト個別版）
+function checkStaffPasswordVersion() {
+  if (localStorage.getItem('rj_role') !== 'host') return;
+  const identity = getMyIdentity();
+  if (!identity) return; // まだ「あなたは誰か」を選んでいなければ判定しようがない
+  const entry = (window.staffPasswords || {})[identity];
+  if (!staffList.includes(identity) || !entry) {
+    // 在籍リストから削除された、または個別パスワード自体が無い（ありえないはずだが念のため）
+    forceHostLogout();
+    return;
+  }
+  const myVersion = localStorage.getItem('rj_myPasswordVersion');
+  if (!myVersion) {
+    // この機能の導入前からログイン済みだった端末は、まだパスワードが変わっていないはずなので
+    // 今の版を「自分がログインした時の版」として暗黙的に記録しておく
+    localStorage.setItem('rj_myPasswordVersion', String(entry.updatedAt));
+    localStorage.setItem('rj_loginVerifiedIdentity', identity);
+    return;
+  }
+  if (String(myVersion) !== String(entry.updatedAt)) {
+    forceHostLogout();
   }
 }
 
@@ -872,10 +964,21 @@ function doLogin() {
     localStorage.removeItem('rj_loginSource');
     applyRole('admin');
     document.getElementById('loginScreen').style.display = 'none';
-  } else if (val === getCurrentHostPassword()) {
+  } else if (findStaffNameByPassword(val)) {
+    // キャストは共通パスワードではなく、個別パスワードでログインする（パスワード＝本人の証明になる）。
+    // このパスワードに紐づく名前を記録しておき、直後の「あなたは誰ですか？」で別人を選んだら弾く
+    const verifiedName = findStaffNameByPassword(val);
+    const entry = window.staffPasswords[verifiedName];
     localStorage.setItem('rj_role', 'host');
-    localStorage.setItem('rj_passwordVersion', currentVersion);
+    localStorage.setItem('rj_loginVerifiedIdentity', verifiedName);
+    localStorage.setItem('rj_myPasswordVersion', String(entry.updatedAt));
+    localStorage.removeItem('rj_passwordVersion');
     localStorage.removeItem('rj_loginSource');
+    // 既に別の人の名前がこの端末に記憶されていた場合（機種変更・共用端末の使い回しなど）は消しておき、
+    // 必ず今回ログインした本人の名前を選び直させる
+    if (getMyIdentity() && getMyIdentity() !== verifiedName) {
+      localStorage.removeItem('rj_myIdentity');
+    }
     applyRole('host');
     document.getElementById('loginScreen').style.display = 'none';
     // ログイン直後に「あなたは誰か」を選んでもらう（未選択のまま使い始めるのを防ぐ）
@@ -6222,6 +6325,11 @@ function loadStaff() {
     if (rawHairMakeStart) window.staffHairMakeStart = JSON.parse(rawHairMakeStart);
   } catch(e) {}
   if (!window.staffHairMakeStart) window.staffHairMakeStart = {};
+  try {
+    const rawStaffPasswords = localStorage.getItem('tableManager_staffPasswords');
+    if (rawStaffPasswords) window.staffPasswords = JSON.parse(rawStaffPasswords);
+  } catch(e) {}
+  if (!window.staffPasswords) window.staffPasswords = {};
   if (!window.tsukeActive) window.tsukeActive = {};
   if (!window.tsukeLog) window.tsukeLog = {};
   // Firebaseスタッフ受信時に更新
@@ -6251,7 +6359,15 @@ function getMyIdentity() {
   try { return localStorage.getItem('rj_myIdentity') || ''; } catch(e) { return ''; }
 }
 function setMyIdentity(name) {
-  try { localStorage.setItem('rj_myIdentity', name); } catch(e) {}
+  try {
+    localStorage.setItem('rj_myIdentity', name);
+    // 個別パスワードでの本人確認を、この名前に対して記録しておく（導入前からの端末もここで追従する）
+    if (localStorage.getItem('rj_role') === 'host') {
+      localStorage.setItem('rj_loginVerifiedIdentity', name);
+      const entry = (window.staffPasswords || {})[name];
+      if (entry) localStorage.setItem('rj_myPasswordVersion', String(entry.updatedAt));
+    }
+  } catch(e) {}
   prefillMrTanto();
   renderMyTodaySummary();
   if (typeof updateTsukeEntryBtn === 'function') updateTsukeEntryBtn();
@@ -6417,7 +6533,7 @@ function promptIdentityModal(onDone) {
     document.body.appendChild(modal);
   }
   const options = staffList.map(name => `
-    <button onclick="setMyIdentity('${name.replace(/'/g,"\\'")}');document.getElementById('identityModal').classList.remove('show');renderIdentityIndicator();${onDone ? 'window._identityCallback && window._identityCallback();' : ''}"
+    <button onclick="confirmIdentitySelection('${name.replace(/'/g,"\\'")}')"
       style="display:block;width:100%;text-align:left;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;margin-bottom:6px;cursor:pointer;">${name}</button>
   `).join('');
   window._identityCallback = onDone || null;
@@ -6432,6 +6548,24 @@ function promptIdentityModal(onDone) {
       </div>
     </div>`;
   modal.classList.add('show');
+}
+
+// 「あなたは誰ですか？」で選ばれた名前を確定する。ログイン時に個別パスワードで本人確認済みなら
+// （rj_loginVerifiedIdentityがあれば）、選んだ名前がそれと一致するかを必ず確認し、
+// 一致しなければ他人のパスワードで他人になりすまそうとしているとみなしてログインごと弾く
+function confirmIdentitySelection(name) {
+  const verified = localStorage.getItem('rj_loginVerifiedIdentity');
+  if (verified && name !== verified) {
+    const modal = document.getElementById('identityModal');
+    if (modal) modal.classList.remove('show');
+    showToast('選択した名前がパスワードと一致しません');
+    forceHostLogout();
+    return;
+  }
+  setMyIdentity(name);
+  document.getElementById('identityModal').classList.remove('show');
+  renderIdentityIndicator();
+  window._identityCallback && window._identityCallback();
 }
 
 // 本日出勤予定のうち、既に出勤時間を過ぎている人数を数える（内勤者専用フォーム欄の「本日出勤 ○/⬜︎」用）。
@@ -6561,8 +6695,32 @@ function renderAliasModalContent() {
             onkeydown="if(event.key==='Enter'){event.preventDefault();addAlias();}">
           <button class="btn btn-primary" onclick="addAlias()" style="width:auto;padding:8px 14px;">追加</button>
         </div>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:8px;line-height:1.6;">ログイン用の個別パスワード。変更すると、このキャストとしてログイン中の端末は次に開いた時点で自動的にログアウトされます。在籍リストからこの名前を削除した場合も同様です。</p>
+          <div style="display:flex;gap:6px;">
+            <input id="staffPasswordInput" class="form-input" value="${((window.staffPasswords || {})[name] && window.staffPasswords[name].password) || ''}" placeholder="パスワード" style="flex:1;">
+            <button class="btn btn-primary" onclick="saveStaffPassword()" style="width:auto;padding:8px 14px;">保存</button>
+          </div>
+        </div>
       </div>
     </div>`;
+}
+
+// キャスト個別のログインパスワードを保存する。パスワードが変わった合図として更新時刻を打ち直すことで、
+// checkStaffPasswordVersion()経由でログイン中の他端末を自動的にログアウトさせる
+function saveStaffPassword() {
+  if (!_currentAliasStaff) return;
+  const input = document.getElementById('staffPasswordInput');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) { showToast('パスワードを入力してください'); return; }
+  if (!window.staffPasswords) window.staffPasswords = {};
+  const entry = { password: val, updatedAt: Date.now() };
+  window.staffPasswords[_currentAliasStaff] = entry;
+  try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(window.staffPasswords)); } catch(e) {}
+  if (window.fbSaveStaffPasswordFor) window.fbSaveStaffPasswordFor(_currentAliasStaff, entry);
+  showToast(`${_currentAliasStaff}のパスワードを保存しました`);
 }
 
 function addAlias() {
@@ -7646,7 +7804,7 @@ function renderMainPasswordModalContent() {
       </div>
       <div class="modal-body">
         <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">通常パスワード</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">変更すると、既にログイン済みの端末（自分自身も含む）も含めて、全員が新しいパスワードでの再ログインが必要になります。退職者が出た時などにご利用ください。</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">内勤用を変更すると、既にログイン済みの内勤端末（自分自身も含む）も再ログインが必要になります。従業員用は、新しく在籍スタッフ登録に追加したキャストの初期パスワードとしてのみ使われます（キャスト個別のログインパスワードは呼び名編集画面から設定でき、既存キャストのログインはそちらが優先されるため、ここを変えても影響しません）。</div>
         <div class="mr-row"><label class="mr-label">内勤用</label><input class="mr-input" id="mainPassAdminInput" value="${(current.admin||'').replace(/"/g,'&quot;')}"></div>
         <div class="mr-row"><label class="mr-label">従業員用</label><input class="mr-input" id="mainPassHostInput" value="${(current.host||'').replace(/"/g,'&quot;')}"></div>
         <button class="btn btn-primary" onclick="saveMainPasswords()" style="width:100%;margin-top:6px;margin-bottom:20px;">通常パスワードを変更する</button>
@@ -8427,6 +8585,18 @@ function pruneRemovedStaffFromTeamsAndKanbu() {
   if (kanbuChanged) {
     window.staffKanbu = kanbu;
     if (window.fbSaveStaffKanbu) window.fbSaveStaffKanbu(kanbu);
+  }
+  // 個別ログインパスワードも削除する（在籍リストにいない名前は元々ログインでも弾かれるが、
+  // データとしても残さないようにしておく）
+  const passwords = window.staffPasswords || {};
+  let passwordsChanged = false;
+  Object.keys(passwords).forEach(name => {
+    if (!staffList.includes(name)) { delete passwords[name]; passwordsChanged = true; }
+  });
+  if (passwordsChanged) {
+    window.staffPasswords = passwords;
+    try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(passwords)); } catch(e) {}
+    if (window.fbSaveStaffPasswords) window.fbSaveStaffPasswords(passwords);
   }
 }
 
