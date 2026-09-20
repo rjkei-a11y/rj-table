@@ -620,6 +620,7 @@
         <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="mr-budget"></div>
         <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="mr-help"></div>
         <div class="mr-row"><label class="mr-label">備考</label><input class="mr-input" id="mr-note" readonly placeholder="タップして入力" style="cursor:pointer;" onclick="openMrNotePopup({type:'form'})"></div>
+        <div class="mr-row"><label class="mr-label" style="color:#e74c3c;">📢共有</label><input class="mr-input" id="mr-sharenote" readonly placeholder="タップして入力" style="cursor:pointer;color:#e74c3c;" onclick="openMrNotePopup({type:'form',field:'shareNote'})"></div>
         <div id="queuePreviewArea"></div>
         <button class="btn btn-ghost" id="mrQuickAddBtn" onclick="quickAddToQueue()" style="width:100%;margin-top:4px;display:none;">＋ 予定を追加</button>
         <button class="btn btn-primary" id="mrSubmitBtn" onclick="addToReportQueue()" style="width:100%;margin-top:4px;">報告内容を確認</button>
@@ -1402,7 +1403,7 @@ function prefillMrTanto() {
 }
 
 function clearMrForm() {
-  ['mr-name','mr-arrive','mr-leave','mr-budget','mr-help','mr-note'].forEach(id => {
+  ['mr-name','mr-arrive','mr-leave','mr-budget','mr-help','mr-note','mr-sharenote'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -1414,15 +1415,17 @@ function clearMrForm() {
   updateQuickAddBtnVisibility();
 }
 
-// 予定報告の備考欄は、入力欄が1行しかなく全容が見えない・改行できないため、
+// 予定報告の備考欄・共有事項欄は、入力欄が1行しかなく全容が見えない・改行できないため、
 // タップするとポップアップ（テキストエリア）で入力できるようにする。
-// 入力フォーム本体（mr-note）とキュー内の項目編集（_multiReportQueue[i].note）の両方から使う
-let _mrNotePopupTarget = null; // { type: 'form' } または { type: 'queue', index }
+// 入力フォーム本体（mr-note/mr-sharenote）とキュー内の項目編集（_multiReportQueue[i]）の両方から使う
+let _mrNotePopupTarget = null; // { type: 'form'|'queue', index?, field?: 'note'|'shareNote' }
 function openMrNotePopup(target) {
   _mrNotePopupTarget = target;
+  const field = target.field || 'note';
+  const isShare = field === 'shareNote';
   const currentValue = target.type === 'queue'
-    ? (_multiReportQueue[target.index].note || '')
-    : (document.getElementById('mr-note').value || '');
+    ? (_multiReportQueue[target.index][field] || '')
+    : (document.getElementById(isShare ? 'mr-sharenote' : 'mr-note').value || '');
   let modal = document.getElementById('mrNotePopup');
   if (!modal) {
     modal = document.createElement('div');
@@ -1430,14 +1433,16 @@ function openMrNotePopup(target) {
     modal.id = 'mrNotePopup';
     document.body.appendChild(modal);
   }
+  const shareStyle = isShare ? 'border-color:#e74c3c;color:#e74c3c;' : '';
+  const sharePlaceholder = isShare ? '例：みんなへのお土産をもらったので席着くときにお礼をお願いします！' : '';
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;width:92vw;">
       <div class="modal-header">
-        <span>備考</span>
+        <span style="${isShare ? 'color:#e74c3c;' : ''}">${isShare ? '📢 共有事項' : '備考'}</span>
         <button onclick="document.getElementById('mrNotePopup').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body">
-        <textarea id="mrNotePopupInput" rows="6" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${currentValue}</textarea>
+        <textarea id="mrNotePopupInput" rows="6" placeholder="${sharePlaceholder}" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;${shareStyle}">${currentValue}</textarea>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('mrNotePopup').classList.remove('show')">キャンセル</button>
@@ -1448,12 +1453,13 @@ function openMrNotePopup(target) {
   setTimeout(() => { const el = document.getElementById('mrNotePopupInput'); if (el) el.focus(); }, 50);
 }
 function saveMrNotePopup() {
+  const field = (_mrNotePopupTarget && _mrNotePopupTarget.field) || 'note';
   const value = document.getElementById('mrNotePopupInput').value;
   if (_mrNotePopupTarget && _mrNotePopupTarget.type === 'queue') {
-    updateQueueField(_mrNotePopupTarget.index, 'note', value);
+    updateQueueField(_mrNotePopupTarget.index, field, value);
     openQueuePopup(); // 一覧側の表示も更新する
   } else {
-    const input = document.getElementById('mr-note');
+    const input = document.getElementById(field === 'shareNote' ? 'mr-sharenote' : 'mr-note');
     if (input) input.value = value;
   }
   document.getElementById('mrNotePopup').classList.remove('show');
@@ -1506,6 +1512,7 @@ function pushCurrentEntryToQueue() {
     budget: formatBudgetText(document.getElementById('mr-budget').value.trim()),
     help:   document.getElementById('mr-help').value.trim(),
     note:   document.getElementById('mr-note').value.trim(),
+    shareNote: document.getElementById('mr-sharenote').value.trim(),
     aiban,
     aibanTanto: _mrAiban.tanto,
     aibanName: _mrAiban.name,
@@ -1579,13 +1586,15 @@ function openQueuePopup() {
       <label class="mr-label" style="width:44px;">${label}</label>
       <input class="mr-input" value="${(_multiReportQueue[i][key] || '').replace(/"/g,'&quot;')}" oninput="updateQueueField(${i},'${key}',this.value)">
     </div>`;
-  // 備考は1行入力だと全容が見えず改行もできないため、タップでポップアップ（テキストエリア）を開く形にする
-  const noteFieldRow = (i) => {
-    const note = _multiReportQueue[i].note || '';
+  // 備考・共有事項は1行入力だと全容が見えず改行もできないため、タップでポップアップ（テキストエリア）を開く形にする
+  const noteFieldRow = (i, field, label) => {
+    const isShare = field === 'shareNote';
+    const value = _multiReportQueue[i][field] || '';
+    const color = isShare ? '#e74c3c' : (value ? 'var(--text)' : 'var(--text-dim)');
     return `
     <div class="mr-row" style="margin-bottom:3px;">
-      <label class="mr-label" style="width:44px;">備考</label>
-      <div class="mr-input" style="cursor:pointer;min-height:14px;white-space:pre-wrap;word-break:break-word;color:${note ? 'var(--text)' : 'var(--text-dim)'};" onclick="openMrNotePopup({type:'queue',index:${i}})">${note || 'タップして入力'}</div>
+      <label class="mr-label" style="width:44px;${isShare ? 'color:#e74c3c;' : ''}">${label}</label>
+      <div class="mr-input" style="cursor:pointer;min-height:14px;white-space:pre-wrap;word-break:break-word;color:${color};" onclick="openMrNotePopup({type:'queue',index:${i},field:'${field}'})">${value || 'タップして入力'}</div>
     </div>`;
   };
   // アイバンは他の項目と違い、最初の入力画面と全く同じスタイル（幅いっぱいの独立ボックス）に統一する
@@ -1622,6 +1631,7 @@ function openQueuePopup() {
           <div><span style="color:var(--text-dim);">予算：</span>${p.budget || '未定'}</div>
           <div><span style="color:var(--text-dim);">ヘルプ：</span>${p.help || 'なし'}</div>
           <div><span style="color:var(--text-dim);">備考：</span>${p.note || 'なし'}</div>
+          <div><span style="color:var(--text-dim);">共有事項：</span><span style="color:${p.shareNote ? '#e74c3c' : 'inherit'};">${p.shareNote || 'なし'}</span></div>
         </div>
       </div>`;
     }
@@ -1642,7 +1652,8 @@ function openQueuePopup() {
         ${fieldRow(i, 'leave', '退店時間')}
         ${fieldRow(i, 'budget', '予算')}
         ${fieldRow(i, 'help', 'ヘルプ')}
-        ${noteFieldRow(i)}
+        ${noteFieldRow(i, 'note', '備考')}
+        ${noteFieldRow(i, 'shareNote', '📢共有')}
       </div>`;
   }).join('');
   modal.innerHTML = `
