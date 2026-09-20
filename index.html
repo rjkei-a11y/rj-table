@@ -901,13 +901,15 @@ function ensureStaffPasswordsSeeded() {
 }
 
 // 今の入力欄のパスワードと一致する個別パスワードを持つ、在籍中のキャスト名を返す（無ければnull）
-function findStaffNameByPassword(password) {
-  if (!password) return null;
+// 導入直後・新規追加時は全員が同じ共通パスワードのままなので、それだけでは「誰か」を一意に特定できない。
+// 一致した人が複数いる場合は呼び出し側で「本人確認はまだ出来ない（自己申告のまま）」として扱う
+function findStaffNamesByPassword(password) {
+  if (!password) return [];
   const passwords = window.staffPasswords || {};
-  return (typeof staffList !== 'undefined' ? staffList : []).find(name => {
+  return (typeof staffList !== 'undefined' ? staffList : []).filter(name => {
     const entry = passwords[name];
     return entry && entry.password === password;
-  }) || null;
+  });
 }
 
 // キャスト（host）ロールを強制的にログアウトさせ、ログイン画面に戻す
@@ -964,20 +966,30 @@ function doLogin() {
     localStorage.removeItem('rj_loginSource');
     applyRole('admin');
     document.getElementById('loginScreen').style.display = 'none';
-  } else if (findStaffNameByPassword(val)) {
+  } else if (findStaffNamesByPassword(val).length > 0) {
     // キャストは共通パスワードではなく、個別パスワードでログインする（パスワード＝本人の証明になる）。
-    // このパスワードに紐づく名前を記録しておき、直後の「あなたは誰ですか？」で別人を選んだら弾く
-    const verifiedName = findStaffNameByPassword(val);
-    const entry = window.staffPasswords[verifiedName];
+    // ただし内勤がまだそのキャストのパスワードを変更しておらず、他の人と同じ（導入時の共通パスワードの
+    // ままの）人が複数いる場合は、このパスワードだけでは「誰か」を一意に特定できない。
+    // その間は今まで通り自己申告のままにし、内勤が個別に変更して一意になった人からこの端末を
+    // その人専用として扱う（「あなたは誰ですか？」で別人を選んだら弾く）
+    const matches = findStaffNamesByPassword(val);
+    const verifiedName = matches.length === 1 ? matches[0] : null;
     localStorage.setItem('rj_role', 'host');
-    localStorage.setItem('rj_loginVerifiedIdentity', verifiedName);
-    localStorage.setItem('rj_myPasswordVersion', String(entry.updatedAt));
     localStorage.removeItem('rj_passwordVersion');
     localStorage.removeItem('rj_loginSource');
-    // 既に別の人の名前がこの端末に記憶されていた場合（機種変更・共用端末の使い回しなど）は消しておき、
-    // 必ず今回ログインした本人の名前を選び直させる
-    if (getMyIdentity() && getMyIdentity() !== verifiedName) {
-      localStorage.removeItem('rj_myIdentity');
+    if (verifiedName) {
+      const entry = window.staffPasswords[verifiedName];
+      localStorage.setItem('rj_loginVerifiedIdentity', verifiedName);
+      localStorage.setItem('rj_myPasswordVersion', String(entry.updatedAt));
+      // 既に別の人の名前がこの端末に記憶されていた場合（機種変更・共用端末の使い回しなど）は消しておき、
+      // 必ず今回ログインした本人の名前を選び直させる
+      if (getMyIdentity() && getMyIdentity() !== verifiedName) {
+        localStorage.removeItem('rj_myIdentity');
+      }
+    } else {
+      // まだ複数人と一致する（共通パスワードのまま）ので、本人確認の紐付けはしない
+      localStorage.removeItem('rj_loginVerifiedIdentity');
+      localStorage.removeItem('rj_myPasswordVersion');
     }
     applyRole('host');
     document.getElementById('loginScreen').style.display = 'none';
