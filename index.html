@@ -8377,6 +8377,17 @@ function openStaffSettings() {
             <div id="hairMakePreview" style="margin-top:8px;"></div>
           </div>
         </div>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleStaffPasswordSection()">
+            <span style="font-size:12px;color:var(--text-dim);font-weight:700;"><span id="staffPasswordSectionArrow">▶</span> 個別ログインパスワード</span>
+          </div>
+          <div id="staffPasswordSectionBody" style="display:none;margin-top:8px;">
+            <p style="font-size:11px;color:var(--text-dim);margin-bottom:8px;line-height:1.6;">全員分を手入力するのが大変な場合、ボタン1つで被りのない4桁のパスワードを全員に自動発行できます。実行すると、今設定済みのパスワードも含めて全員分が上書きされます（ログイン中の端末は次の同期で自動的にログアウトされます）。</p>
+            <button class="btn btn-ghost btn-sm" onclick="confirmGenerateStaffPasswords()">🎲 全員に自動でパスワードを割り当てる</button>
+            <div id="staffPasswordGenResult" style="margin-top:10px;"></div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('staffModal').classList.remove('show')">キャンセル</button>
@@ -8386,6 +8397,81 @@ function openStaffSettings() {
   modal.classList.add('show');
   renderStaffShiftPreview();
   renderHairMakePreview();
+  renderStaffPasswordGenResult();
+}
+
+// 個別ログインパスワードセクションの開閉
+function toggleStaffPasswordSection() {
+  const body = document.getElementById('staffPasswordSectionBody');
+  const arrow = document.getElementById('staffPasswordSectionArrow');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+}
+
+// 誤操作防止のため、実行前にもう一度確認する（全員分を上書きする一括操作のため）
+function confirmGenerateStaffPasswords() {
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">全${staffList.length}名分のパスワードを自動発行しますか？</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">今設定済みのパスワードも上書きされます。ログイン中の端末は次の同期で自動的にログアウトされます。</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';generateStaffPasswords()" style="flex:1;padding:10px;background:var(--accent);border:none;border-radius:6px;color:#1a1400;font-size:13px;font-weight:700;cursor:pointer;">発行する</button>
+    </div>
+  </div>`;
+  overlay.style.display = 'flex';
+}
+
+// 在籍中の全員に、被りのない4桁のパスワードをランダムに割り当てる
+function generateStaffPasswords() {
+  const used = new Set();
+  const result = {};
+  staffList.forEach(name => {
+    let pin;
+    do {
+      pin = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+    } while (used.has(pin));
+    used.add(pin);
+    result[name] = { password: pin, updatedAt: Date.now() };
+  });
+  window.staffPasswords = result;
+  try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(result)); } catch(e) {}
+  if (window.fbSaveStaffPasswords) window.fbSaveStaffPasswords(result);
+  renderStaffPasswordGenResult();
+  showToast('全員分のパスワードを発行しました');
+}
+
+// 発行結果を「名前：パスワード」の一覧として表示し、まとめてコピーできるようにする
+function renderStaffPasswordGenResult() {
+  const el = document.getElementById('staffPasswordGenResult');
+  if (!el) return;
+  const passwords = window.staffPasswords || {};
+  const rows = staffList.filter(name => passwords[name]);
+  if (!rows.length) { el.innerHTML = ''; return; }
+  const listText = rows.map(name => `${name}：${passwords[name].password}`).join('\n');
+  const rowsHtml = rows.map(name => `
+    <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);">
+      <span style="color:var(--text);">${name}</span>
+      <span style="color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;">${passwords[name].password}</span>
+    </div>`).join('');
+  el.innerHTML = `
+    ${rowsHtml}
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;" onclick="copyStaffPasswordList()">📋 全部コピー</button>
+  `;
+  window._staffPasswordListText = listText;
+}
+
+function copyStaffPasswordList() {
+  const text = window._staffPasswordListText || '';
+  if (!text) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast('コピーしました')).catch(() => showToast('コピーに失敗しました'));
+  } else {
+    showToast('コピーに失敗しました');
+  }
 }
 
 // 出勤確認票スプレッドシート（出勤時間・同伴時間）のID
