@@ -2972,9 +2972,11 @@ function renderTeamCounts() {
   if (!area) return;
   if (!window.teamDefs || window.teamDefs.length === 0) { area.style.display = 'none'; area.innerHTML = ''; return; }
   const teams = window.staffTeams || {};
-  // 未所属のスタッフは黙って集計対象から除外する
+  // 未所属のスタッフは黙って集計対象から除外する。在籍スタッフ登録から削除された人も
+  // （チーム設定に古い割り当てが残っていることがあるため）ここで併せて除外する
   const memberOf = {}; // { teamKey: [name, name, ...] }
   Object.keys(teams).forEach(name => {
+    if (!staffList.includes(name)) return;
     const key = teams[name];
     if (!memberOf[key]) memberOf[key] = [];
     memberOf[key].push(name);
@@ -3035,7 +3037,8 @@ function openTeamMembersPopup(teamKey) {
   const t = (window.teamDefs || []).find(x => x.key === teamKey);
   if (!t) return;
   const teams = window.staffTeams || {};
-  const members = Object.keys(teams).filter(name => teams[name] === teamKey);
+  // 在籍スタッフ登録から削除された人は、チーム設定に古い割り当てが残っていても一覧から外す
+  const members = Object.keys(teams).filter(name => teams[name] === teamKey && staffList.includes(name));
 
   const activeGuests = guests.filter(g => g.arrived);
   // 卓一覧が非公開設定の間は、キャストに来店確認前の予定情報を一切見せない（renderTeamCountsと同じ基準）
@@ -8397,9 +8400,34 @@ function saveStaffFromModal() {
   const raw = document.getElementById('staffInput').value;
   staffList = raw.split(/\n|\\n/).map(s => s.trim()).filter(Boolean);
   saveStaff();
+  // 在籍リストから外れたスタッフは、チーム所属・幹部フラグに古い割り当てが残らないよう併せて削除する
+  pruneRemovedStaffFromTeamsAndKanbu();
   document.getElementById('staffModal').classList.remove('show');
   renderStaffStatus();
+  if (typeof renderTeamCounts === 'function') renderTeamCounts();
   showToast('スタッフリストを保存しました');
+}
+
+// staffListに存在しないスタッフの、チーム所属・幹部フラグをFirebaseごと削除する
+function pruneRemovedStaffFromTeamsAndKanbu() {
+  const teams = window.staffTeams || {};
+  let teamsChanged = false;
+  Object.keys(teams).forEach(name => {
+    if (!staffList.includes(name)) { delete teams[name]; teamsChanged = true; }
+  });
+  if (teamsChanged) {
+    window.staffTeams = teams;
+    if (window.fbSaveStaffTeams) window.fbSaveStaffTeams(teams);
+  }
+  const kanbu = window.staffKanbu || {};
+  let kanbuChanged = false;
+  Object.keys(kanbu).forEach(name => {
+    if (!staffList.includes(name)) { delete kanbu[name]; kanbuChanged = true; }
+  });
+  if (kanbuChanged) {
+    window.staffKanbu = kanbu;
+    if (window.fbSaveStaffKanbu) window.fbSaveStaffKanbu(kanbu);
+  }
 }
 
 // チーム定義はFirebase経由のwindow.teamDefsが本体（内勤が自由に追加・削除・改名できる）。
