@@ -6709,32 +6709,8 @@ function renderAliasModalContent() {
             onkeydown="if(event.key==='Enter'){event.preventDefault();addAlias();}">
           <button class="btn btn-primary" onclick="addAlias()" style="width:auto;padding:8px 14px;">追加</button>
         </div>
-
-        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
-          <p style="font-size:11px;color:var(--text-dim);margin-bottom:8px;line-height:1.6;">ログイン用の個別パスワード。変更すると、このキャストとしてログイン中の端末は次に開いた時点で自動的にログアウトされます。在籍リストからこの名前を削除した場合も同様です。</p>
-          <div style="display:flex;gap:6px;">
-            <input id="staffPasswordInput" class="form-input" value="${((window.staffPasswords || {})[name] && window.staffPasswords[name].password) || ''}" placeholder="パスワード" style="flex:1;">
-            <button class="btn btn-primary" onclick="saveStaffPassword()" style="width:auto;padding:8px 14px;">保存</button>
-          </div>
-        </div>
       </div>
     </div>`;
-}
-
-// キャスト個別のログインパスワードを保存する。パスワードが変わった合図として更新時刻を打ち直すことで、
-// checkStaffPasswordVersion()経由でログイン中の他端末を自動的にログアウトさせる
-function saveStaffPassword() {
-  if (!_currentAliasStaff) return;
-  const input = document.getElementById('staffPasswordInput');
-  if (!input) return;
-  const val = input.value.trim();
-  if (!val) { showToast('パスワードを入力してください'); return; }
-  if (!window.staffPasswords) window.staffPasswords = {};
-  const entry = { password: val, updatedAt: Date.now() };
-  window.staffPasswords[_currentAliasStaff] = entry;
-  try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(window.staffPasswords)); } catch(e) {}
-  if (window.fbSaveStaffPasswordFor) window.fbSaveStaffPasswordFor(_currentAliasStaff, entry);
-  showToast(`${_currentAliasStaff}のパスワードを保存しました`);
 }
 
 function addAlias() {
@@ -7818,10 +7794,17 @@ function renderMainPasswordModalContent() {
       </div>
       <div class="modal-body">
         <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">通常パスワード</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">内勤用を変更すると、既にログイン済みの内勤端末（自分自身も含む）も再ログインが必要になります。従業員用は、新しく在籍スタッフ登録に追加したキャストの初期パスワードとしてのみ使われます（キャスト個別のログインパスワードは呼び名編集画面から設定でき、既存キャストのログインはそちらが優先されるため、ここを変えても影響しません）。</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">内勤用を変更すると、既にログイン済みの内勤端末（自分自身も含む）も再ログインが必要になります。従業員用は、新しく在籍スタッフ登録に追加したキャストの初期パスワードとしてのみ使われます（キャスト個別のログインパスワードは下の「キャスト個別パスワード」から設定でき、既存キャストのログインはそちらが優先されるため、ここを変えても影響しません）。</div>
         <div class="mr-row"><label class="mr-label">内勤用</label><input class="mr-input" id="mainPassAdminInput" value="${(current.admin||'').replace(/"/g,'&quot;')}"></div>
         <div class="mr-row"><label class="mr-label">従業員用</label><input class="mr-input" id="mainPassHostInput" value="${(current.host||'').replace(/"/g,'&quot;')}"></div>
         <button class="btn btn-primary" onclick="saveMainPasswords()" style="width:100%;margin-top:6px;margin-bottom:20px;">通常パスワードを変更する</button>
+
+        <div style="border-top:1px solid var(--border);padding-top:16px;margin-bottom:20px;">
+          <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">🎭 キャスト個別パスワード</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">キャストは共通パスワードではなく、ここで設定した個別パスワードでログインします。変更すると、そのキャストとしてログイン中の端末は次に開いた時点で自動的にログアウトされます。在籍スタッフ登録から名前を削除した場合も同様です。</div>
+          <button class="btn btn-ghost btn-sm" style="margin-bottom:10px;" onclick="confirmGenerateStaffPasswords()">🎲 全員に自動でパスワードを割り当てる（被りなし）</button>
+          <div id="staffPasswordListArea"></div>
+        </div>
 
         <div style="border-top:1px solid var(--border);padding-top:16px;">
           <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:8px;">🔑 一時パスワード</div>
@@ -7836,6 +7819,7 @@ function renderMainPasswordModalContent() {
         </div>
       </div>
     </div>`;
+  renderStaffPasswordList();
 }
 
 function saveMainPasswords() {
@@ -8377,17 +8361,6 @@ function openStaffSettings() {
             <div id="hairMakePreview" style="margin-top:8px;"></div>
           </div>
         </div>
-
-        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
-          <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleStaffPasswordSection()">
-            <span style="font-size:12px;color:var(--text-dim);font-weight:700;"><span id="staffPasswordSectionArrow">▶</span> 個別ログインパスワード</span>
-          </div>
-          <div id="staffPasswordSectionBody" style="display:none;margin-top:8px;">
-            <p style="font-size:11px;color:var(--text-dim);margin-bottom:8px;line-height:1.6;">全員分を手入力するのが大変な場合、ボタン1つで被りのない4桁のパスワードを全員に自動発行できます。実行すると、今設定済みのパスワードも含めて全員分が上書きされます（ログイン中の端末は次の同期で自動的にログアウトされます）。</p>
-            <button class="btn btn-ghost btn-sm" onclick="confirmGenerateStaffPasswords()">🎲 全員に自動でパスワードを割り当てる</button>
-            <div id="staffPasswordGenResult" style="margin-top:10px;"></div>
-          </div>
-        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="document.getElementById('staffModal').classList.remove('show')">キャンセル</button>
@@ -8397,17 +8370,6 @@ function openStaffSettings() {
   modal.classList.add('show');
   renderStaffShiftPreview();
   renderHairMakePreview();
-  renderStaffPasswordGenResult();
-}
-
-// 個別ログインパスワードセクションの開閉
-function toggleStaffPasswordSection() {
-  const body = document.getElementById('staffPasswordSectionBody');
-  const arrow = document.getElementById('staffPasswordSectionArrow');
-  if (!body) return;
-  const isOpen = body.style.display !== 'none';
-  body.style.display = isOpen ? 'none' : 'block';
-  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
 }
 
 // 誤操作防止のため、実行前にもう一度確認する（全員分を上書きする一括操作のため）
@@ -8440,28 +8402,46 @@ function generateStaffPasswords() {
   window.staffPasswords = result;
   try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(result)); } catch(e) {}
   if (window.fbSaveStaffPasswords) window.fbSaveStaffPasswords(result);
-  renderStaffPasswordGenResult();
+  renderStaffPasswordList();
   showToast('全員分のパスワードを発行しました');
 }
 
-// 発行結果を「名前：パスワード」の一覧として表示し、まとめてコピーできるようにする
-function renderStaffPasswordGenResult() {
-  const el = document.getElementById('staffPasswordGenResult');
+// キャスト個別パスワードの一覧を表示する（インライン編集可）。パスワード管理モーダルから呼ぶ
+function renderStaffPasswordList() {
+  const el = document.getElementById('staffPasswordListArea');
   if (!el) return;
   const passwords = window.staffPasswords || {};
-  const rows = staffList.filter(name => passwords[name]);
-  if (!rows.length) { el.innerHTML = ''; return; }
-  const listText = rows.map(name => `${name}：${passwords[name].password}`).join('\n');
-  const rowsHtml = rows.map(name => `
-    <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);">
-      <span style="color:var(--text);">${name}</span>
-      <span style="color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;">${passwords[name].password}</span>
-    </div>`).join('');
+  if (!staffList.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">スタッフが未登録です</div>';
+    return;
+  }
+  const rowsHtml = staffList.map(name => {
+    const val = (passwords[name] && passwords[name].password) || '';
+    return `
+    <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px dashed var(--border);">
+      <span style="flex:1;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
+      <input class="mr-input" value="${val.replace(/"/g,'&quot;')}" placeholder="未設定" style="width:100px;font-size:12px;text-align:center;" onchange="saveStaffPasswordInline('${name.replace(/'/g,"\\'")}', this.value)">
+    </div>`;
+  }).join('');
+  window._staffPasswordListText = staffList.filter(name => passwords[name]).map(name => `${name}：${passwords[name].password}`).join('\n');
   el.innerHTML = `
-    ${rowsHtml}
-    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;" onclick="copyStaffPasswordList()">📋 全部コピー</button>
+    <div style="max-height:240px;overflow-y:auto;margin-bottom:8px;">${rowsHtml}</div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="copyStaffPasswordList()">📋 全部コピー</button>
   `;
-  window._staffPasswordListText = listText;
+}
+
+// 1人分だけをその場で保存する（パスワードが変わった合図として更新時刻を打ち直すことで、
+// checkStaffPasswordVersion()経由でログイン中の他端末を自動的にログアウトさせる）
+function saveStaffPasswordInline(name, value) {
+  const val = value.trim();
+  if (!val) { showToast('パスワードを入力してください'); renderStaffPasswordList(); return; }
+  if (!window.staffPasswords) window.staffPasswords = {};
+  const entry = { password: val, updatedAt: Date.now() };
+  window.staffPasswords[name] = entry;
+  try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(window.staffPasswords)); } catch(e) {}
+  if (window.fbSaveStaffPasswordFor) window.fbSaveStaffPasswordFor(name, entry);
+  showToast(`${name}のパスワードを保存しました`);
+  renderStaffPasswordList();
 }
 
 function copyStaffPasswordList() {
