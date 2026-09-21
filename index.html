@@ -933,13 +933,20 @@ function forceHostLogout() {
 }
 
 // キャスト個別パスワードが変更された、またはそのキャストが在籍スタッフ登録から削除された場合、
-// ログイン中の端末を自動的にログアウトさせる（checkPasswordVersionのキャスト個別版）
+// この端末を自動的にログアウトさせる（checkPasswordVersionのキャスト個別版）。
+// ただし判定するのはページを開いた直後の1回だけにする。ブラウザを開きっぱなしにしている間、
+// Firebaseの再接続のたびに繰り返し判定すると、在籍リストと個別パスワードの受信タイミングが
+// 一瞬ズレるだけで「削除された」と誤判定してしまうことがあったため。
+// 本当に辞めた人については、内勤が目の前でログアウトさせておけばそれで確実に締め出せるし、
+// それを忘れていても次にこの端末でアプリを開き直した時点（＝この関数が再び最初から実行される時）
+// に弾かれる
 function checkStaffPasswordVersion() {
   if (localStorage.getItem('rj_role') !== 'host') return;
+  if (window._staffPasswordVersionChecked) return; // このページを開いている間は最初の1回だけ判定する
   // 在籍リストと個別パスワードの両方をこの接続でまだ一度も受信できていない間は、
   // データが本当に空なのか単に届いていないだけなのか区別できないため判定を保留する
-  // （しばらく閉じていた端末が再接続した直後などに、誤ってログアウトさせないため）
   if (!window._staffListFbSynced || !window._staffPasswordsFbSynced) return;
+  window._staffPasswordVersionChecked = true;
   const identity = getMyIdentity();
   if (!identity) return; // まだ「あなたは誰か」を選んでいなければ判定しようがない
   const entry = (window.staffPasswords || {})[identity];
@@ -6654,6 +6661,8 @@ function doLogout() {
   try {
     localStorage.removeItem('rj_role');
     localStorage.removeItem('rj_myIdentity');
+    localStorage.removeItem('rj_loginVerifiedIdentity');
+    localStorage.removeItem('rj_myPasswordVersion');
   } catch(e) {}
   location.reload();
 }
