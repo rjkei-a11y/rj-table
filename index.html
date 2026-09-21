@@ -342,6 +342,11 @@
   // Firebaseからスタッフリストをリアルタイム受信
   onValue(staffRef, (snapshot) => {
     const data = snapshot.val();
+    // staffRefとstaffPasswordsRefは別々のリスナーなので、再接続直後はどちらが先に届くか保証されない。
+    // 「サーバーから一度でも受信した」印だけは、dataの有無に関わらず必ず立てておく
+    // （ensureStaffPasswordsSeeded/checkStaffPasswordVersionが、もう一方をまだ受信できていない
+    // 一瞬だけの状態を「本当に空・削除された」と誤判定しないようにするため）
+    window._staffListFbSynced = true;
     if (data) {
       const list = Array.isArray(data) ? data : String(data).split('\n').map(s => s.trim()).filter(Boolean);
       window._fbStaff = list;
@@ -534,6 +539,7 @@
   // 補充し、自分のパスワードが変わっていないか（変わっていれば締め出す）も確認する
   onValue(staffPasswordsRef, (snapshot) => {
     window.staffPasswords = snapshot.val() || {};
+    window._staffPasswordsFbSynced = true;
     try { localStorage.setItem('tableManager_staffPasswords', JSON.stringify(window.staffPasswords)); } catch(e) {}
     if (typeof ensureStaffPasswordsSeeded === 'function') ensureStaffPasswordsSeeded();
     if (typeof checkStaffPasswordVersion === 'function') checkStaffPasswordVersion();
@@ -885,6 +891,11 @@ function checkPasswordVersion() {
 // （内勤は後から在籍スタッフ登録の呼び名編集画面で個別に変更できる）
 function ensureStaffPasswordsSeeded() {
   if (typeof staffList === 'undefined' || !staffList.length) return;
+  // 在籍リストと個別パスワードは別々のFirebaseリスナーで届くため、再接続直後などは
+  // 片方だけがまだ受信できていない一瞬がありうる。その状態で「パスワードが無い人がいる」と
+  // 判断すると、実際は持っている人にまで新しいデフォルトパスワードを上書きしてしまい、
+  // ログイン中の端末を誤って締め出すことになる。両方を受信できるまでは何もしない
+  if (!window._staffListFbSynced || !window._staffPasswordsFbSynced) return;
   const passwords = window.staffPasswords || {};
   let changed = false;
   staffList.forEach(name => {
@@ -925,6 +936,10 @@ function forceHostLogout() {
 // ログイン中の端末を自動的にログアウトさせる（checkPasswordVersionのキャスト個別版）
 function checkStaffPasswordVersion() {
   if (localStorage.getItem('rj_role') !== 'host') return;
+  // 在籍リストと個別パスワードの両方をこの接続でまだ一度も受信できていない間は、
+  // データが本当に空なのか単に届いていないだけなのか区別できないため判定を保留する
+  // （しばらく閉じていた端末が再接続した直後などに、誤ってログアウトさせないため）
+  if (!window._staffListFbSynced || !window._staffPasswordsFbSynced) return;
   const identity = getMyIdentity();
   if (!identity) return; // まだ「あなたは誰か」を選んでいなければ判定しようがない
   const entry = (window.staffPasswords || {})[identity];
