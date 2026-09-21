@@ -7974,7 +7974,7 @@ function buildSummaryTable(summary, editable) {
       ${cell(name, 'photoCount', photo)}
       ${cell(name, 'helpCount', help)}
       ${cell(name, 'selfCount', self, '#2ecc71')}
-      ${cell(name, 'proxyCount', proxy, '#e67e22')}
+      ${cell(name, 'proxyCount', proxy, '#f1c40f')}
       ${cell(name, 'offCount', off, '#e74c3c')}
       ${cell(name, 'halfOffCount', half, '#e67e22')}
     </tr>`;
@@ -8120,13 +8120,13 @@ function renderStaffStatus() {
     // 半休でも勤務する時間帯の予定がまだ決まっていないことがあるため、
     // 予定未定は「status==='pending'」だけでなく「半休＋pendingフラグ」でも成立する
     const isPending = dayStatus === 'pending' || !!(entry && entry.pending);
-    // ドットの色は「報告状況」を表す：報告済み(緑、代理入力ならオレンジ) > 休み/有休(赤) > 予定未定(青) > 未報告(グレー)
+    // ドットの色は「報告状況」を表す：報告済み(緑、代理入力なら黄) > 休み/有休(赤) > 予定未定(青) > 未報告(グレー)
     // 半休であること自体は色とは別に「半」バッジで示すため、半休＋予定未定なら青ドット＋「半」バッジの両方が付く
     let color, textColor;
     if (done) {
       // 卓一覧非公開中は、報告済み(緑/オレンジ)をそのまま出すと「予定あり」がキャストにバレてしまうため、
       // 予定未定と同じ青にして区別がつかないようにする
-      color = textColor = shouldMaskSensitiveFields() ? '#3498db' : (isProxyReported ? '#e67e22' : '#2ecc71');
+      color = textColor = shouldMaskSensitiveFields() ? '#3498db' : (isProxyReported ? '#f1c40f' : '#2ecc71');
     } else if (dayStatus === 'off' || dayStatus === 'paid_off') {
       color = textColor = '#e74c3c';
     } else if (isPending) {
