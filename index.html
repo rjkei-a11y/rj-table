@@ -2188,10 +2188,10 @@ function applyAutoLeaveTime(g) {
 // カタカナ/ひらがな混在・長音符の有無を問わず「初回◯ぴ◯と」の形なら一致させる
 const FIRST_RP_PATTERN_SRC = '初回(リピート|りぴーと)';
 
-// テキストに「初回RP」または「初回リピート」系の表記ゆれが含まれているか判定する
+// テキストに「初回RP」（大文字小文字問わず）または「初回リピート」系の表記ゆれが含まれているか判定する
 function includesFirstRpText(text) {
   if (!text) return false;
-  if (text.includes('初回RP')) return true;
+  if (/初回RP/i.test(text)) return true;
   return new RegExp(FIRST_RP_PATTERN_SRC).test(text);
 }
 
@@ -2204,7 +2204,7 @@ function includesShinkiText(text) {
 // 表示用にテキストから「新規」「初指名」「初回RP」「初回リピート」系の文言（表記ゆれ含む）を取り除く
 function stripFirstRpText(text) {
   if (!text) return text;
-  return text.replace(/新規|初指名|初回RP/g, '').replace(new RegExp(FIRST_RP_PATTERN_SRC, 'g'), '');
+  return text.replace(/新規|初指名|初回RP/gi, '').replace(new RegExp(FIRST_RP_PATTERN_SRC, 'g'), '');
 }
 
 // お客様名・備考のどちらかに「新規」「初指名」「初回RP」の文言が含まれていたら🔰を自動で付ける
