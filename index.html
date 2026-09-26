@@ -2977,7 +2977,11 @@ function editCell(id, field, td) {
     if (field === 'tableNum') renderEmptyTablesArea();
     if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   }
-  input.addEventListener('blur', save);
+  // save()が行のDOMを丸ごと差し替えるため、この入力欄自身がドキュメントから外れてしまい、
+  // documentのfocusoutイベントが発火しないことがある（発火しないとスクロール固定が解除されないまま
+  // 残ってしまい、表がスクロールできなくなる）。blur発生時にここで直接解除しておくことで、
+  // それに頼らず確実に解除する（解除済みなら何もしないので二重に呼んでも問題ない）
+  input.addEventListener('blur', () => { unlockBodyScrollForCellEdit(); save(); });
   input.addEventListener('keydown', e => {
     // 日本語入力（IME）で漢字変換を確定するEnterと区別する。変換確定中のEnterでセル編集自体を終了させない
     if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) input.blur();
@@ -3007,7 +3011,9 @@ function createAndEdit(rowNum, field, td) {
     withScrollPreserved(renderTables, td.closest('tr'));
     renderFloorStatus();
   }
-  input.addEventListener('blur', save);
+  // save()が表を丸ごと差し替えるため、documentのfocusoutイベントが発火せず
+  // スクロール固定が解除されないまま残ることがある。blur発生時にここで直接解除しておく
+  input.addEventListener('blur', () => { unlockBodyScrollForCellEdit(); save(); });
   input.addEventListener('keydown', e => {
     // 日本語入力（IME）で漢字変換を確定するEnterと区別する。変換確定中のEnterでセル編集自体を終了させない
     if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) input.blur();
@@ -5408,7 +5414,9 @@ function editFirstGroup(gid, field, td) {
       checkFirstGroupTableConflict(g);
     }
   }
-  input.addEventListener('blur', save);
+  // save()が表を丸ごと差し替えるため、documentのfocusoutイベントが発火せず
+  // スクロール固定が解除されないまま残ることがある。blur発生時にここで直接解除しておく
+  input.addEventListener('blur', () => { unlockBodyScrollForCellEdit(); save(); });
   input.addEventListener('keydown', e => { if (e.key==='Enter' && !e.isComposing && e.keyCode !== 229) input.blur(); if (e.key==='Escape') { td.textContent=current; } });
 }
 
@@ -5488,7 +5496,10 @@ function editFirstRow(gid, rid, field, td) {
     }
     renderTsukeModalIfOpen();
   }
-  input.addEventListener('blur', save);
+  // save()がこのtd自身の中身を書き換える（またはtdごと再描画する）ため、
+  // documentのfocusoutイベントが発火せずスクロール固定が解除されないまま残ることがある。
+  // blur発生時にここで直接解除しておく
+  input.addEventListener('blur', () => { unlockBodyScrollForCellEdit(); save(); });
   input.addEventListener('keydown', e => { if (e.key==='Enter' && !e.isComposing && e.keyCode !== 229) input.blur(); if (e.key==='Escape') { td.textContent=current; } });
 }
 
