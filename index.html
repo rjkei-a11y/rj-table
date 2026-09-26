@@ -1443,16 +1443,11 @@ function unlockBodyScrollForCellEdit() {
 // ・予定報告タブ本体のフォーム欄（mr-input）とアイバン入力欄（aiban-input）も対象にするが、
 // 　同じクラス名がクイック編集/編集モーダルでも使われているため、
 // 　モーダル（.modal-overlay）の外にある場合だけを対象にする
-// ・備考欄・共有事項欄のポップアップ（mrNotePopupInput）は.modal-overlayの中身だが、
-// 　開いた直後に自動でフォーカスするため、ロックしないと同じようにページが跳ねてしまう。
-// 　このポップアップ自体は画面中央に固定表示されるだけで、bodyのスクロール位置には依存しないため、
-// 　ロックしても問題ない
 function isScrollLockTargetInput(target) {
   if (!target || !target.classList) return false;
   if (target.classList.contains('cell-input')) return true;
   if (target.classList.contains('mr-input') && !target.closest('.modal-overlay')) return true;
   if (target.classList.contains('aiban-input') && !target.closest('.modal-overlay')) return true;
-  if (target.id === 'mrNotePopupInput') return true;
   return false;
 }
 
