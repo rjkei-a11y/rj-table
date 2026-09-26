@@ -651,6 +651,20 @@
     box-shadow: 0 0 0 1px #3498db;
   }
 
+  /* 予定報告・卓一覧などの入力欄はfont-sizeが16px未満のため、スマホでタップすると
+     iOS Safariが「文字が小さいから」と自動でズームインし、それに伴う画面のパン移動で
+     タップした入力欄が隠れてしまうことがある。フォーカス中だけ16px以上にしてズーム自体を
+     発生させないようにする（見た目は入力中だけ少し大きくなる程度で、通常表示は変えない） */
+  @media (max-width: 500px) {
+    .mr-input:focus,
+    .mr-textarea:focus,
+    .aiban-input:focus,
+    .cell-input:focus,
+    #mrNotePopupInput:focus {
+      font-size: 16px !important;
+    }
+  }
+
   .modal-footer {
     padding: 12px 16px;
     display: flex;
