@@ -659,8 +659,7 @@
     .mr-input:focus,
     .mr-textarea:focus,
     .aiban-input:focus,
-    .cell-input:focus,
-    #mrNotePopupInput:focus {
+    .cell-input:focus {
       font-size: 16px !important;
     }
   }
