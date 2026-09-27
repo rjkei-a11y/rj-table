@@ -2207,13 +2207,17 @@ function stripFirstRpText(text) {
   return text.replace(/新規|初指名|初回RP/gi, '').replace(new RegExp(FIRST_RP_PATTERN_SRC, 'g'), '');
 }
 
+// テキストに「新規」「初指名」「初回RP」「初回リピート」系の文言のいずれかが含まれているか
+function includesNewOrFirstRpText(text) {
+  return includesShinkiText(text) || includesFirstRpText(text);
+}
+
 // お客様名・備考のどちらかに「新規」「初指名」「初回RP」の文言が含まれていたら🔰を自動で付ける
 // （飲直による自動付与とは別ルートなので、こちらは追加のみ行い、自動での削除はしない）
 function syncNewSpecialFromText(g) {
   if (!g.specials) g.specials = [];
   const text = (g.name || '') + (g.note || '');
-  const shouldHave = includesShinkiText(text) || includesFirstRpText(text);
-  if (shouldHave && !g.specials.includes('new')) g.specials.push('new');
+  if (includesNewOrFirstRpText(text) && !g.specials.includes('new')) g.specials.push('new');
 }
 
 // ===== 👑イベント主役の「本日一度でも付いた担当者」自動判定 =====
@@ -2833,10 +2837,14 @@ function rowHTML(no, g) {
   const numCellAttrs = canEditList ? `class="p-col-num editable" onclick="openTableNumPopup(${g.id})"` : `class="p-col-num"`;
   const arriveCellAttrs = canEditList ? `class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)"` : `class="p-col-time"`;
   const tantoCellAttrs = canEditList ? `class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)"` : `class="p-col-tanto"`;
-  const nameCellAttrs = canEditList ? `class="p-col-guest editable" onclick="editCell(${g.id},'name',this)"` : `class="p-col-guest"`;
+  // 内勤ロールでは、お客様名・備考のいずれかに「新規」「初指名」「初回RP」系の文言が入っていたら、
+  // 見落とし防止のためそのセル全体の文字を赤くする（該当キャストロールには表示しないため対象外）
+  const nameHighlight = canEditList && includesNewOrFirstRpText(g.name || '');
+  const noteHighlight = canEditList && includesNewOrFirstRpText(g.note || '');
+  const nameCellAttrs = canEditList ? `class="p-col-guest editable" onclick="editCell(${g.id},'name',this)"${nameHighlight ? ' style="color:#e74c3c;"' : ''}` : `class="p-col-guest"`;
   const budgetCellAttrs = canEditList ? `class="p-col-keep editable" onclick="editCell(${g.id},'budget',this)"` : `class="p-col-keep"`;
   const helpCellAttrs = canEditList ? `class="p-col-help editable" onclick="openHelpEditPopup(${g.id})"` : `class="p-col-help" onclick="openHelpEditPopup(${g.id})" style="cursor:pointer;"`;
-  const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="openNoteEditPopup(${g.id})"` : `class="p-col-note" onclick="openNoteEditPopup(${g.id})" style="cursor:pointer;"`;
+  const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="openNoteEditPopup(${g.id})"${noteHighlight ? ' style="color:#e74c3c;"' : ''}` : `class="p-col-note" onclick="openNoteEditPopup(${g.id})" style="cursor:pointer;"`;
   return `
     <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         ${holdAttrs}>
