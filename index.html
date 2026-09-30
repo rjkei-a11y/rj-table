@@ -1453,6 +1453,30 @@ function unlockBodyScrollForCellEdit() {
   _cellEditScrollLocked = false;
 }
 
+// bodyを固定している間は普通のスクロールができないため、画面下の方の入力欄をタップすると
+// キーボードに隠れたままになってしまうことがある。キーボード表示が落ち着いたタイミング
+// （visualViewportのresize）で、対象の入力欄がまだ見えている範囲に収まっているか確認し、
+// はみ出していれば固定位置（top）を必要な分だけずらして、隠れないところまで動かす。
+// 通常のスクロールと違い、この端末・このタイミングで一度だけ動かすだけなので、
+// ブラウザ側の自動スクロールのような余計な動き（カクツキ）は起きない
+function ensureFocusedInputVisible(target) {
+  if (!_cellEditScrollLocked || !target || !target.getBoundingClientRect) return;
+  const vv = window.visualViewport;
+  const visibleTop = vv ? vv.offsetTop : 0;
+  const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+  const margin = 12;
+  const rect = target.getBoundingClientRect();
+  let delta = 0;
+  if (rect.bottom > visibleBottom - margin) {
+    delta = rect.bottom - (visibleBottom - margin);
+  } else if (rect.top < visibleTop + margin) {
+    delta = rect.top - (visibleTop + margin);
+  }
+  if (delta === 0) return;
+  _cellEditScrollLockY += delta;
+  document.body.style.top = `-${_cellEditScrollLockY}px`;
+}
+
 // 対象になる入力欄かどうかを判定する。
 // ・卓一覧/初回タブのインライン編集欄（cell-input）は常に対象。
 // ・予定報告タブ本体のフォーム欄（mr-input）とアイバン入力欄（aiban-input）も対象にするが、
@@ -1469,6 +1493,7 @@ function isScrollLockTargetInput(target) {
 document.addEventListener('focusin', function(e) {
   if (isScrollLockTargetInput(e.target)) {
     lockBodyScrollForCellEdit();
+    setTimeout(() => ensureFocusedInputVisible(e.target), 50);
   }
 });
 document.addEventListener('focusout', function(e) {
@@ -1476,6 +1501,15 @@ document.addEventListener('focusout', function(e) {
     unlockBodyScrollForCellEdit();
   }
 });
+// キーボードの表示・非表示でvisualViewportの高さが変わった時にも、その時点で
+// フォーカス中の対象入力欄が隠れていないか再確認する（開閉アニメーションの完了後に効く）
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    if (_cellEditScrollLocked && isScrollLockTargetInput(document.activeElement)) {
+      ensureFocusedInputVisible(document.activeElement);
+    }
+  });
+}
 
 // ===== 1件ずつ入力してキューに追加する方式 =====
 let _multiReportQueue = [];
