@@ -7340,8 +7340,14 @@ function doUndoReset() {
 // 1回だけ取得するだけの読み取り専用画面（「今どの日付を見ているか」もFirebaseには保存しない、
 // 各端末だけのローカルな状態のため、他端末や自分自身の通常画面には一切影響しない）
 let _pastDataState = { dateKey: '', loading: false, data: null, searched: false };
+// 情報漏洩対策として、開くたびに本人確認（自分自身の今のログインパスワード）を求める。
+// 一度確認できればこのモーダルを開いている間は再入力不要だが、閉じると次回また求める
+let _pastDataUnlocked = false;
+let _pastDataPassError = '';
 
 function openPastDataModal() {
+  _pastDataUnlocked = false;
+  _pastDataPassError = '';
   _pastDataState = { dateKey: _pastDataState.dateKey || getTodayKey(-1), loading: false, data: null, searched: false };
   renderPastDataModal();
   document.getElementById('pastDataModal').classList.add('show');
@@ -7349,6 +7355,46 @@ function openPastDataModal() {
 function closePastDataModal() {
   const el = document.getElementById('pastDataModal');
   if (el) el.classList.remove('show');
+  // 閉じたら確認状態もリセットし、次に開いた時は必ずまた聞かれるようにする
+  _pastDataUnlocked = false;
+  _pastDataPassError = '';
+}
+
+// 今ログイン中の本人のパスワードと一致するかどうかを確認する（内勤は共通の内勤用パスワード、
+// キャストは各自の個別パスワードと照合。共有された端末が置きっぱなしでも第三者が覗けないようにする）
+function verifyOwnPasswordForPastData(val) {
+  if (!val) return false;
+  const role = localStorage.getItem('rj_role');
+  if (role === 'admin') {
+    if (localStorage.getItem('rj_loginSource') === 'temp') {
+      return !!(window._fbTempAdminAccess && val === window._fbTempAdminAccess.password && isTempAdminAccessValid());
+    }
+    return val === getCurrentAdminPassword();
+  }
+  if (role === 'host') {
+    const identity = getMyIdentity();
+    if (!identity) return false;
+    const entry = (window.staffPasswords || {})[identity];
+    return !!(entry && val === entry.password);
+  }
+  return false;
+}
+
+function submitPastDataPassword() {
+  const input = document.getElementById('pastDataPassInput');
+  const val = input ? input.value : '';
+  if (verifyOwnPasswordForPastData(val)) {
+    _pastDataUnlocked = true;
+    _pastDataPassError = '';
+    renderPastDataModal();
+    return;
+  }
+  _pastDataPassError = 'パスワードが違います';
+  renderPastDataModal();
+  setTimeout(() => {
+    const el = document.getElementById('pastDataPassInput');
+    if (el) { el.value = ''; el.focus(); }
+  }, 50);
 }
 
 function renderPastDataModal() {
@@ -7358,6 +7404,23 @@ function renderPastDataModal() {
     modal.className = 'modal-overlay';
     modal.id = 'pastDataModal';
     document.body.appendChild(modal);
+  }
+  if (!_pastDataUnlocked) {
+    modal.innerHTML = `
+      <div class="modal" style="max-width:320px;">
+        <div class="modal-header">
+          <span>📅 過去のデータ確認</span>
+          <button onclick="closePastDataModal()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.6;">情報保護のため、確認する前にご自身の今のログインパスワードを入力してください。</div>
+          <input type="password" id="pastDataPassInput" class="mr-input" style="width:100%;box-sizing:border-box;margin-bottom:8px;" placeholder="パスワード" onkeydown="if(event.key==='Enter')submitPastDataPassword()">
+          ${_pastDataPassError ? `<div style="font-size:11px;color:#e74c3c;margin-bottom:8px;">${_pastDataPassError}</div>` : ''}
+          <button class="btn btn-primary" onclick="submitPastDataPassword()" style="width:100%;">確認する</button>
+        </div>
+      </div>`;
+    setTimeout(() => { const el = document.getElementById('pastDataPassInput'); if (el) el.focus(); }, 50);
+    return;
   }
   const state = _pastDataState;
   let resultsHtml;
