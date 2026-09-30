@@ -7457,15 +7457,19 @@ function renderPastDataModal() {
     return;
   }
   const state = _pastDataState;
+  // どの日を見ているか結果を見ている間も分かるよう、検索済みなら常に日付を見出しとして出す
+  const dateCaption = (state.searched && state.dateKey)
+    ? `<div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px;">📅 ${formatDateKeyForDisplay(state.dateKey)} 時点のデータ</div>`
+    : '';
   let resultsHtml;
   if (state.loading) {
-    resultsHtml = `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">読み込み中…</div>`;
+    resultsHtml = dateCaption + `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">読み込み中…</div>`;
   } else if (!state.searched) {
     resultsHtml = `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">日付を選んで確認してください</div>`;
   } else if (!state.data) {
-    resultsHtml = `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">この日のデータは見つかりませんでした</div>`;
+    resultsHtml = dateCaption + `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">この日のデータは見つかりませんでした</div>`;
   } else {
-    resultsHtml = renderPastDataTable(state.data);
+    resultsHtml = dateCaption + renderPastDataTable(state.data);
   }
   modal.innerHTML = `
     <div class="modal" style="max-width:600px;max-height:85vh;display:flex;flex-direction:column;">
@@ -7475,8 +7479,9 @@ function renderPastDataModal() {
       </div>
       <div class="modal-body" style="overflow-y:auto;">
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">本日分リセットを行った日の卓一覧データを、そのリセット時点の状態で確認できます（閲覧専用・現在のデータには影響しません）。</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">確認したい日付</div>
         <div style="display:flex;gap:6px;margin-bottom:14px;">
-          <input type="date" id="pastDataDateInput" value="${state.dateKey}" style="flex:1;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:8px 10px;">
+          <input type="date" id="pastDataDateInput" value="${state.dateKey}" style="flex:1;box-sizing:border-box;background:#fff;border:1px solid var(--border);border-radius:6px;color:#000;font-family:var(--font-main);font-size:14px;padding:8px 10px;color-scheme:light;">
           <button class="btn btn-primary" onclick="searchPastData()">確認する</button>
         </div>
         ${resultsHtml}
@@ -7519,12 +7524,12 @@ function renderPastDataTable(archiveData) {
       <td class="p-col-tanto">${esc(g.tanto)}</td>
       <td class="p-col-guest">${esc(g.name)}</td>
       <td class="p-col-keep">${esc(formatBudgetCompact(g.budget) || g.budget || '')}</td>
-      <td class="p-col-help">${esc(g.help)}</td>
-      <td class="p-col-note">${esc(g.note)}</td>
+      <td class="p-col-help" style="white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;">${esc(g.help)}</td>
+      <td class="p-col-note" style="white-space:normal;overflow:visible;text-overflow:clip;word-break:break-word;">${esc(g.note)}</td>
     </tr>`).join('');
   return `
     <div style="overflow-x:auto;">
-      <table class="paper-table">
+      <table class="paper-table" style="table-layout:auto;">
         <thead>
           <tr>
             <th class="p-col-no">No.</th>
@@ -7533,8 +7538,8 @@ function renderPastDataTable(archiveData) {
             <th class="p-col-tanto">担当</th>
             <th class="p-col-guest">お客様名</th>
             <th class="p-col-keep">予算</th>
-            <th class="p-col-help">ヘルプ</th>
-            <th class="p-col-note">備考</th>
+            <th class="p-col-help" style="width:120px;">ヘルプ</th>
+            <th class="p-col-note" style="width:140px;">備考</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
