@@ -171,6 +171,20 @@
     set(backupRef, backupData).catch(e => console.error('FB backup save error:', e));
   };
 
+  // 本日分リセットのたびに、その日の卓データ等をdateKey別に保存しておく（過去のデータ確認用）。
+  // resetBackup（直前リセットの取り消し用、単一スロット）とは別物で、こちらは全て残し続ける。
+  // customerHistoryと同じく常時購読(onValue)はせず、閲覧時にその場で1回だけ取得する
+  window.fbSaveDailyArchive = function(dateKey, data) {
+    if (isViewOnlyMode() || !dateKey) return;
+    set(ref(db, 'dailyArchive/' + dateKey), data).catch(e => console.error('FB dailyArchive save error:', e));
+  };
+  window.fbGetDailyArchive = function(dateKey) {
+    if (!dateKey) return Promise.resolve(null);
+    return get(ref(db, 'dailyArchive/' + dateKey))
+      .then(snapshot => snapshot.val())
+      .catch(e => { console.error('FB dailyArchive get error:', e); return null; });
+  };
+
   // Firebaseに呼び名データを保存
   window.fbSaveAliases = function(aliasData) {
     if (isViewOnlyMode()) return;
@@ -611,6 +625,7 @@
     <button id="resetReportsBtn" onclick="confirmResetReports()" style="background:none;border:1px solid #c0392b;border-radius:4px;color:#c0392b;font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">🔄 本日分リセット</button>
     <button id="summaryBtn" onclick="openSummaryModal()" style="background:none;border:1px solid var(--accent-dim);border-radius:4px;color:var(--accent);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">📊 集計</button>
     <button id="undoResetBtn" onclick="confirmUndoReset()" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">↩ 復元</button>
+    <button id="pastDataBtn" onclick="openPastDataModal()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:11px;padding:5px 9px;cursor:pointer;font-family:var(--font-main);white-space:nowrap;">📅 過去のデータ</button>
   </div>
 </header>
 
@@ -7029,6 +7044,8 @@ function doResetReports(dateKey) {
   try { localStorage.setItem('rj_resetBackup', JSON.stringify(backup)); } catch(e) {}
   if (window.fbSaveBackup) window.fbSaveBackup(backup);
   window._fbBackup = backup;
+  // ===== 「過去のデータ確認」用に、選んだ日付をキーとして残しておく（resetBackupとは別に全て保存） =====
+  if (window.fbSaveDailyArchive) window.fbSaveDailyArchive(dateKey || getTodayKey(), backup);
 
   // ===== 月次集計ログに保存（リセットで消える前に数値だけ残す）。日付は選択されたものを使う（未指定なら本日扱い） =====
   saveTodayToMonthlyLog(dateKey || getTodayKey());
@@ -7315,6 +7332,117 @@ function doUndoReset() {
   renderFloorStatus();
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast('リセット前の状態に復元しました');
+}
+
+// ===== 過去のデータ確認 =====
+// 本日分リセットのたびにdailyArchiveへ保存された、その日の卓一覧データを日付指定で閲覧する。
+// キャスト・内勤どちらも閲覧可能。今のguests等のライブ変数には一切触れず、選んだ日付をその場で
+// 1回だけ取得するだけの読み取り専用画面（「今どの日付を見ているか」もFirebaseには保存しない、
+// 各端末だけのローカルな状態のため、他端末や自分自身の通常画面には一切影響しない）
+let _pastDataState = { dateKey: '', loading: false, data: null, searched: false };
+
+function openPastDataModal() {
+  _pastDataState = { dateKey: _pastDataState.dateKey || getTodayKey(-1), loading: false, data: null, searched: false };
+  renderPastDataModal();
+  document.getElementById('pastDataModal').classList.add('show');
+}
+function closePastDataModal() {
+  const el = document.getElementById('pastDataModal');
+  if (el) el.classList.remove('show');
+}
+
+function renderPastDataModal() {
+  let modal = document.getElementById('pastDataModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'pastDataModal';
+    document.body.appendChild(modal);
+  }
+  const state = _pastDataState;
+  let resultsHtml;
+  if (state.loading) {
+    resultsHtml = `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">読み込み中…</div>`;
+  } else if (!state.searched) {
+    resultsHtml = `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">日付を選んで確認してください</div>`;
+  } else if (!state.data) {
+    resultsHtml = `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">この日のデータは見つかりませんでした</div>`;
+  } else {
+    resultsHtml = renderPastDataTable(state.data);
+  }
+  modal.innerHTML = `
+    <div class="modal" style="max-width:600px;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span>📅 過去のデータ確認</span>
+        <button onclick="closePastDataModal()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">本日分リセットを行った日の卓一覧データを、そのリセット時点の状態で確認できます（閲覧専用・現在のデータには影響しません）。</div>
+        <div style="display:flex;gap:6px;margin-bottom:14px;">
+          <input type="date" id="pastDataDateInput" value="${state.dateKey}" style="flex:1;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:8px 10px;">
+          <button class="btn btn-primary" onclick="searchPastData()">確認する</button>
+        </div>
+        ${resultsHtml}
+      </div>
+    </div>`;
+}
+
+function searchPastData() {
+  const dateInput = document.getElementById('pastDataDateInput');
+  const dateKey = dateInput ? dateInput.value : _pastDataState.dateKey;
+  if (!dateKey) { showToast('日付を選んでください'); return; }
+  _pastDataState = { dateKey, loading: true, data: null, searched: true };
+  renderPastDataModal();
+  if (!window.fbGetDailyArchive) {
+    _pastDataState = { dateKey, loading: false, data: null, searched: true };
+    renderPastDataModal();
+    return;
+  }
+  window.fbGetDailyArchive(dateKey).then(data => {
+    // 日付を切り替えている間に古い結果で上書きしないよう、今の対象と一致する時だけ反映する
+    if (_pastDataState.dateKey !== dateKey) return;
+    _pastDataState = { dateKey, loading: false, data: data || null, searched: true };
+    renderPastDataModal();
+  });
+}
+
+// アーカイブされたguestsを、卓一覧タブと同じ列構成で読み取り専用テーブルとして描画する
+function renderPastDataTable(archiveData) {
+  const list = Array.isArray(archiveData.guests) ? archiveData.guests.slice() : [];
+  if (!list.length) {
+    return `<div style="text-align:center;color:var(--text-dim);font-size:12px;padding:16px 0;">この日は卓データがありませんでした</div>`;
+  }
+  list.sort((a, b) => (Number(a.rowNum) || 0) - (Number(b.rowNum) || 0));
+  const esc = s => (s || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const rows = list.map(g => `
+    <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}">
+      <td class="p-col-no">${g.rowNum || ''}</td>
+      <td class="p-col-num">${esc(g.tableNum)}</td>
+      <td class="p-col-time">${esc(g.arrive)}</td>
+      <td class="p-col-tanto">${esc(g.tanto)}</td>
+      <td class="p-col-guest">${esc(g.name)}</td>
+      <td class="p-col-keep">${esc(formatBudgetCompact(g.budget) || g.budget || '')}</td>
+      <td class="p-col-help">${esc(g.help)}</td>
+      <td class="p-col-note">${esc(g.note)}</td>
+    </tr>`).join('');
+  return `
+    <div style="overflow-x:auto;">
+      <table class="paper-table">
+        <thead>
+          <tr>
+            <th class="p-col-no">No.</th>
+            <th class="p-col-num">卓</th>
+            <th class="p-col-time">来店</th>
+            <th class="p-col-tanto">担当</th>
+            <th class="p-col-guest">お客様名</th>
+            <th class="p-col-keep">予算</th>
+            <th class="p-col-help">ヘルプ</th>
+            <th class="p-col-note">備考</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 // ===== 本日の集計 =====
