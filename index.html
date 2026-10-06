@@ -3381,6 +3381,18 @@ function doLeaveTsuke(kanbuName, shouldRender, temporary) {
   }
 }
 
+// 「元に戻す」専用：誤って選んでしまった直後の着席を、対応記録として残さず完全に取り消す。
+// doLeaveTsukeは実際に対応した記録としてtsukeLogに残してしまうため、それを使うと
+// 取り消したはずなのに「着いた回数」や幹部カードの対応分数が加算されたままになってしまう。
+// このundoは「そもそも着いていなかった」ことにしたいので、ログを残さずtsukeActiveから消すだけにする
+function undoJoinTsuke(kanbuName) {
+  if (!window.tsukeActive || !window.tsukeActive[kanbuName]) return;
+  delete window.tsukeActive[kanbuName];
+  if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
+  renderTsukeModalIfOpen();
+  renderFloorStatus();
+}
+
 // 初回の写真指名を、席（左/中/右）ラベル付き・席ごとの色で表示用HTMLにする（tanto照合用の生データとは別に表示専用で使う）
 // 左=ピンク・中=青・右=緑（席未設定の1名グループはピンクを既定色にする）
 const TSUKE_SEAT_COLORS = {
@@ -3902,9 +3914,10 @@ function confirmJoinTsuke(name, guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
   showToast(`${name}さんが${tableKey}卓に着きました`);
-  // キャスト選択画面で誤って別の人を選んでしまった時のために、すぐ取り消せるようにしておく
+  // キャスト選択画面で誤って別の人を選んでしまった時のために、すぐ取り消せるようにしておく。
+  // ここはdoLeaveTsukeではなくundoJoinTsukeを使い、対応記録（着いた回数）に残さず完全に取り消す
   offerUndo(`${name}さんを${tableKey}卓に割り当てました`, () => {
-    doLeaveTsuke(name);
+    undoJoinTsuke(name);
     if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
   });
   // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
