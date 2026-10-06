@@ -3905,6 +3905,11 @@ function confirmJoinTsuke(name, guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
   showToast(`${name}さんが${tableKey}卓に着きました`);
+  // キャスト選択画面で誤って別の人を選んでしまった時のために、すぐ取り消せるようにしておく
+  offerUndo(`${name}さんを${tableKey}卓に割り当てました`, () => {
+    doLeaveTsuke(name);
+    if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
+  });
   // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
 }
@@ -9222,7 +9227,9 @@ function offerUndo(label, undoFn) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'undoBar';
-    el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#242424;border:1px solid var(--accent-dim);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:1000;box-shadow:0 4px 16px rgba(0,0,0,0.5);max-width:90vw;';
+    // z-indexは付け回しのフルスクリーン画面（z-index:1012）など、既存のどのモーダルよりも
+    // 必ず手前に表示されるよう高めの値にしている（このバー自体はトーストの下に出るだけなので邪魔にはならない）
+    el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#242424;border:1px solid var(--accent-dim);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:2000;box-shadow:0 4px 16px rgba(0,0,0,0.5);max-width:90vw;';
     document.body.appendChild(el);
   }
   el.innerHTML = `<span style="font-size:13px;color:var(--text);white-space:nowrap;">${label}</span><button onclick="runUndo()" style="background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:12px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);font-weight:700;white-space:nowrap;">元に戻す</button>`;
