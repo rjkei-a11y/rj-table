@@ -7973,7 +7973,7 @@ function normalizeHelpNamesWithRole(text) {
     }
     if (!match) return part;
     const role = staffRole[match.name];
-    return role ? `${match.name}<span style="font-size:0.85em;color:var(--text-dim);">(${role})</span>` : match.name;
+    return role ? `${match.name}<span style="font-size:0.85em;color:var(--text-dim);">${role}</span>` : match.name;
   }).join('');
 }
 
