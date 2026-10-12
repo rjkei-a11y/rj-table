@@ -3460,7 +3460,7 @@ function buildTsukeFloorBoxesHtml() {
   guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
     const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
     if (!infoMap[key]) infoMap[key] = [];
-    infoMap[key].push({ guestId: g.id, tanto: g.tanto || '', name: (g.name || '').replace('△','').trim(), help: g.help || '', specials: g.specials || [] });
+    infoMap[key].push({ guestId: g.id, tanto: g.tanto || '', name: (g.name || '').replace('△','').trim(), help: normalizeHelpNamesWithRole(g.help || ''), specials: g.specials || [] });
   });
   // 初回グループも対象にする（来店フラグが立っていて、まだ全員が飲直等に転換しきっていないもの）
   (firstGroups || []).filter(g => g.tableNum && g.arrived).forEach(g => {
@@ -3895,7 +3895,7 @@ function openTsukeTablePopup(guestId) {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-top:2px;">
           <div>
             <div style="font-size:12px;color:var(--text-dim);">${guest.tantoDisplay || pairTanto}${isFirstGroup ? '' : '・' + pairGuestName}</div>
-            ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${guest.help}</div>` : ''}
+            ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${normalizeHelpNamesWithRole(guest.help)}</div>` : ''}
             ${noteHtml}
           </div>
           <div style="text-align:right;flex-shrink:0;">
@@ -3921,7 +3921,7 @@ function openTsukeTablePopup(guestId) {
           <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:20px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
         </div>
         <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">${guest.tantoDisplay || pairTanto}${isFirstGroup ? '' : '・' + pairGuestName}</div>
-        ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${guest.help}</div>` : ''}
+        ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${normalizeHelpNamesWithRole(guest.help)}</div>` : ''}
         ${noteHtml}
       </div>
       <div style="flex:1;overflow-y:auto;padding:12px 18px 18px;">
@@ -4993,7 +4993,7 @@ function openTableDetailModal(tableKey, guestId) {
       ['退店時間', guest.leave],
       // 卓一覧が非公開設定の間は、キャストロールに対して予算・備考も一緒に隠す（内勤は常に見える）
       ...(shouldMaskSensitiveFields() ? [] : [['予算', guest.budget], ['備考', guest.note]]),
-      ['ヘルプ', normalizeStaffNamesInText(guest.help)],
+      ['ヘルプ', normalizeHelpNamesWithRole(guest.help)],
       ['📢 共有事項', guest.shareNote],
       ['アイバン', guest.aiban],
       ['場内指名', baanaiName],
@@ -5909,7 +5909,7 @@ function openNoteDetailModal(id) {
     document.body.appendChild(modal);
   }
   // 卓一覧が非公開設定の間は、キャストロールに対して備考も一緒に隠す（ヘルプ指名は対象外、内勤は常に見える）
-  const rows = [['ヘルプ', g.help], ...(shouldMaskSensitiveFields() ? [] : [['備考', g.note]]), ['アイバン', g.aiban]].filter(([,v]) => v);
+  const rows = [['ヘルプ', g.help ? normalizeHelpNamesWithRole(g.help) : ''], ...(shouldMaskSensitiveFields() ? [] : [['備考', g.note]]), ['アイバン', g.aiban]].filter(([,v]) => v);
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;">
       <div class="modal-header">
@@ -6193,7 +6193,7 @@ function renderLeaveTimeEditModal(guestId) {
         <div class="mr-row"><label class="mr-label">${guest.arrived ? '実来店' : '来店'}</label><input class="mr-input" id="qe-arrive" value="${guest.arrived ? (guest.actualArrive || '') : (guest.arrive || '')}"></div>
         <div class="mr-row"><label class="mr-label">退店</label><input class="mr-input" id="qe-leave" value="${guest.leave || ''}" placeholder="例: 24時 / ラスト"></div>
         <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="qe-budget" value="${guest.budget || ''}"></div>
-        <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="qe-help" value="${guest.help || ''}"></div>
+        <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="qe-help" value="${normalizeHelpNamesWithRolePlainText(guest.help || '')}"></div>
         <div class="mr-row-top"><label class="mr-label" style="padding-top:4px;">備考</label><textarea class="mr-textarea" id="qe-note" rows="2">${guest.note || ''}</textarea></div>
         <div class="mr-row-top">
           <label class="mr-label" style="color:#e74c3c;padding-top:4px;">📢共有</label>
@@ -8680,7 +8680,7 @@ function renderEditModalContent(id) {
         <div class="mr-row"><label class="mr-label">退店時間</label><input class="mr-input" id="e-leave" value="${g.leave || ''}"></div>
         <div class="mr-row"><label class="mr-label">担当者</label><input class="mr-input" id="e-tanto" value="${g.tanto || ''}"></div>
         <div class="mr-row"><label class="mr-label">予算</label><input class="mr-input" id="e-budget" value="${g.budget || ''}"></div>
-        <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="e-help" value="${g.help || ''}"></div>
+        <div class="mr-row"><label class="mr-label">ヘルプ</label><input class="mr-input" id="e-help" value="${normalizeHelpNamesWithRolePlainText(g.help || '')}"></div>
         <div class="mr-row-top"><label class="mr-label" style="padding-top:4px;">備考</label><textarea class="mr-textarea" id="e-note" rows="2">${g.note || ''}</textarea></div>
         <div class="mr-row-top">
           <label class="mr-label" style="color:#e74c3c;padding-top:4px;">📢共有</label>
