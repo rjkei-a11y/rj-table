@@ -2837,9 +2837,11 @@ function openHelpEditPopup(guestId) {
     modal.id = 'helpEditPopup';
     document.body.appendChild(modal);
   }
+  // 編集欄・閲覧欄とも、呼び名の表記ゆれや自己申告の役職は正式な名前・役職に補正した状態で見せる
+  // （そのまま保存すれば、キャストが入力した生のテキストではなく補正後の内容がg.helpに残る）
   const bodyHtml = canEditList
-    ? `<textarea id="helpEditPopupInput" rows="3" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${g.help || ''}</textarea>`
-    : `<div style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;padding:10px;white-space:pre-wrap;word-break:break-word;min-height:50px;">${g.help ? g.help.replace(/</g,'&lt;').replace(/>/g,'&gt;') : '（ヘルプ指名なし）'}</div>`;
+    ? `<textarea id="helpEditPopupInput" rows="3" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font-main);font-size:14px;padding:10px;outline:none;resize:vertical;">${normalizeHelpNamesWithRolePlainText(g.help || '')}</textarea>`
+    : `<div style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;padding:10px;white-space:pre-wrap;word-break:break-word;min-height:50px;">${g.help ? normalizeHelpNamesWithRole(g.help) : '（ヘルプ指名なし）'}</div>`;
   const footerHtml = canEditList
     ? `<button class="btn btn-ghost" onclick="document.getElementById('helpEditPopup').classList.remove('show')">キャンセル</button>
        <button class="btn btn-primary" onclick="saveHelpEditPopup(${guestId})">保存</button>`
@@ -7948,13 +7950,15 @@ function normalizeStaffNamesInText(text) {
   }).join('');
 }
 
-// ヘルプ指名欄の表示専用：呼び名ゆれを正式名に揃えるのはnormalizeStaffNamesInTextと同じだが、
-// その人に役職（呼び名編集画面で設定）が登録されていれば、名前の後ろに小さく添える。
-// 卓一覧・卓状況のBOX・全体タブのヘルプ表示でのみ使う（担当名の表示には使わない）
-function normalizeHelpNamesWithRole(text) {
+// ヘルプ指名の表示・プレーンテキスト化で共通して使う、呼び名→正式名＋役職の変換処理。
+// 卓一覧・卓状況のBOX・全体タブ・ヘルプ編集ポップアップのヘルプ表示でのみ使う（担当名の表示には使わない）。
+// asHtml=trueなら役職部分を薄い色の<span>で囲んだHTMLを、falseなら編集欄にそのまま
+// 入れられるプレーンテキストを返す
+function buildHelpTextWithRole(text, asHtml) {
   if (!text) return text;
   const aliasIndex = buildAliasIndex();
   const staffRole = window.staffRole || {};
+  const esc = s => asHtml ? s.replace(/</g,'&lt;').replace(/>/g,'&gt;') : s;
   const parts = text.split(/([\/,、,・\s]+)/);
   return parts.map(part => {
     if (!part || /^[\/,、,・\s]+$/.test(part)) return part;
@@ -7971,10 +7975,18 @@ function normalizeHelpNamesWithRole(text) {
         match = aliasIndex.find(entry => norm.startsWith(entry.norm, pos));
       }
     }
-    if (!match) return part;
+    if (!match) return esc(part); // 呼び名と認識できなかった部分は、誤ってHTMLとして解釈されないようエスケープしておく
     const role = staffRole[match.name];
-    return role ? `${match.name}<span style="font-size:0.85em;color:var(--text-dim);">${role}</span>` : match.name;
+    if (!role) return match.name;
+    return asHtml ? `${match.name}<span style="font-size:0.85em;color:var(--text-dim);">${role}</span>` : `${match.name}${role}`;
   }).join('');
+}
+function normalizeHelpNamesWithRole(text) {
+  return buildHelpTextWithRole(text, true);
+}
+// 編集ポップアップのテキストエリアに入れる用：HTMLタグを含まないプレーンテキスト版
+function normalizeHelpNamesWithRolePlainText(text) {
+  return buildHelpTextWithRole(text, false);
 }
 
 
