@@ -26,6 +26,7 @@
   const staffRef = ref(db, 'staff');
   const staffTeamsRef = ref(db, 'staffTeams');
   const staffKanbuRef = ref(db, 'staffKanbu');
+  const staffRoleRef = ref(db, 'staffRole');
   const staffShiftStartRef = ref(db, 'staffShiftStart');
   const staffDohanTimeRef = ref(db, 'staffDohanTime');
   const staffHairMakeRef = ref(db, 'staffHairMakeStart');
@@ -102,6 +103,12 @@
     if (isViewOnlyMode()) return;
     const hasData = kanbuObj && Object.keys(kanbuObj).length > 0;
     set(staffKanbuRef, hasData ? kanbuObj : null).catch(e => console.error('FB staffKanbu save error:', e));
+  };
+  // 役職は在籍リストから削除された人の分をまとめて消す時など、全体をまとめて保存したい場合に使う
+  window.fbSaveStaffRole = function(roleObj) {
+    if (isViewOnlyMode()) return;
+    const hasData = roleObj && Object.keys(roleObj).length > 0;
+    set(staffRoleRef, hasData ? roleObj : null).catch(e => console.error('FB staffRole save error:', e));
   };
 
   // Firebaseに各スタッフの出勤時間（{名前: "HH:MM"}形式。出勤確認票スプレッドシートから読み込む）を保存
@@ -195,6 +202,12 @@
   window.fbSaveAliasesFor = function(staffName, aliasList) {
     if (isViewOnlyMode() || !staffName) return;
     set(ref(db, 'staffAliases/' + staffName), aliasList || []).catch(e => console.error('FB alias save error:', e));
+  };
+
+  // 役職（ヘルプ指名欄に名前と一緒に表示する、自由入力の肩書き）を1名分だけ保存する
+  window.fbSaveStaffRoleFor = function(staffName, role) {
+    if (isViewOnlyMode() || !staffName) return;
+    set(ref(db, 'staffRole/' + staffName), role || null).catch(e => console.error('FB staffRole save error:', e));
   };
 
   // Firebaseに場内メモを保存
@@ -392,6 +405,17 @@
     window.staffKanbu = data || {};
     try { localStorage.setItem('tableManager_staffKanbu', JSON.stringify(window.staffKanbu)); } catch(e) {}
     if (typeof updateTsukeEntryBtn === 'function') updateTsukeEntryBtn();
+  });
+
+  // Firebaseから各スタッフの役職（ヘルプ指名欄に名前と一緒に表示する肩書き）をリアルタイム受信
+  onValue(staffRoleRef, (snapshot) => {
+    const data = snapshot.val();
+    window.staffRole = data || {};
+    try { localStorage.setItem('tableManager_staffRole', JSON.stringify(window.staffRole)); } catch(e) {}
+    if (typeof refreshAliasModalIfOpen === 'function') refreshAliasModalIfOpen();
+    if (window.renderTables) window.renderTables();
+    if (window.renderFloorStatus) window.renderFloorStatus();
+    if (window.renderView && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) window.renderView();
   });
 
   // Firebaseから各スタッフの出勤時間・同伴時間をリアルタイム受信
@@ -2903,7 +2927,7 @@ function rowHTML(no, g) {
       <td ${tantoCellAttrs}>${normalizeStaffNamesInText(g.tanto||'')}</td>
       <td ${nameCellAttrs}>${aibanIcon}${g.name||''}</td>
       <td ${budgetCellAttrs}>${budgetDisplay}</td>
-      <td ${helpCellAttrs}>${normalizeStaffNamesInText(g.help||'')}</td>
+      <td ${helpCellAttrs}>${normalizeHelpNamesWithRole(g.help||'')}</td>
       <td ${noteCellAttrs}>${g.note||''}</td>
     </tr>`;
 }
@@ -4866,7 +4890,7 @@ function renderFloorStatus() {
     infoMap[key].push({
       tanto: g.tanto || '',
       name: (g.name || '').replace('△','').trim(),
-      help: normalizeStaffNamesInText(g.help || ''),
+      help: normalizeHelpNamesWithRole(g.help || ''),
       leave: g.leave || '',
       budget: g.budget || '',
       shareNote: g.shareNote || '',
@@ -5833,7 +5857,7 @@ function renderView() {
 
 function viewRow(g) {
   // 卓一覧が非公開設定の間は、キャストロールに対して備考も一緒に隠す（ヘルプ指名は対象外、内勤は常に見える）
-  const noteStr = [g.help ? 'H: ' + normalizeStaffNamesInText(g.help) : '', (shouldMaskSensitiveFields() ? '' : (g.note || ''))].filter(Boolean).join(' ／ ');
+  const noteStr = [g.help ? 'H: ' + normalizeHelpNamesWithRole(g.help) : '', (shouldMaskSensitiveFields() ? '' : (g.note || ''))].filter(Boolean).join(' ／ ');
   const specialIcons = (g.specials || []).map(k => {
     const s = SPECIALS.find(x => x.key === k);
     return s ? `<span style="font-size:15px;" title="${s.label}">${s.icon}</span>` : '';
@@ -6430,6 +6454,11 @@ function loadStaff() {
   } catch(e) {}
   if (!window.staffKanbu) window.staffKanbu = {};
   try {
+    const rawRole = localStorage.getItem('tableManager_staffRole');
+    if (rawRole) window.staffRole = JSON.parse(rawRole);
+  } catch(e) {}
+  if (!window.staffRole) window.staffRole = {};
+  try {
     const rawShiftStart = localStorage.getItem('tableManager_staffShiftStart');
     if (rawShiftStart) window.staffShiftStart = JSON.parse(rawShiftStart);
   } catch(e) {}
@@ -6802,6 +6831,7 @@ function renderAliasModalContent() {
         </span>`).join('')
     : '<div style="color:var(--text-dim);font-size:12px;padding:8px 0;">まだ呼び名が登録されていません</div>';
 
+  const role = (window.staffRole || {})[name] || '';
   modal.innerHTML = `
     <div class="modal" style="max-width:340px;">
       <div class="modal-header">
@@ -6811,13 +6841,36 @@ function renderAliasModalContent() {
       <div class="modal-body">
         <p style="font-size:11px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">ヘルプ欄などで使われる呼び方・ひらがな表記・ニックネームを登録しておくと、集計時に自動でこのキャストとしてカウントされます。</p>
         <div style="display:flex;flex-wrap:wrap;margin-bottom:12px;">${chips}</div>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;margin-bottom:16px;">
           <input id="aliasInput" class="form-input" placeholder="例：なる（ひらがな表記）" style="flex:1;"
             onkeydown="if(event.key==='Enter'){event.preventDefault();addAlias();}">
           <button class="btn btn-primary" onclick="addAlias()" style="width:auto;padding:8px 14px;">追加</button>
         </div>
+        <div style="border-top:1px solid var(--border);padding-top:12px;">
+          <p style="font-size:11px;color:var(--text-dim);margin-bottom:8px;line-height:1.6;">役職を設定すると、ヘルプ指名として名前が表示される時（卓一覧・卓状況・全体タブ）に名前の横へ一緒に表示されます。空欄なら何も表示されません。</p>
+          <div style="display:flex;gap:6px;">
+            <input id="staffRoleInput" class="form-input" placeholder="例：幹部" value="${role.replace(/"/g,'&quot;')}" style="flex:1;"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();saveStaffRole();}">
+            <button class="btn btn-primary" onclick="saveStaffRole()" style="width:auto;padding:8px 14px;">保存</button>
+          </div>
+        </div>
       </div>
     </div>`;
+}
+
+function saveStaffRole() {
+  if (!_currentAliasStaff) return;
+  const input = document.getElementById('staffRoleInput');
+  const val = input ? input.value.trim() : '';
+  if (!window.staffRole) window.staffRole = {};
+  if (val) window.staffRole[_currentAliasStaff] = val;
+  else delete window.staffRole[_currentAliasStaff];
+  try { localStorage.setItem('tableManager_staffRole', JSON.stringify(window.staffRole)); } catch(e) {}
+  if (window.fbSaveStaffRoleFor) window.fbSaveStaffRoleFor(_currentAliasStaff, val);
+  showToast(val ? `${_currentAliasStaff}の役職を「${val}」にしました` : `${_currentAliasStaff}の役職を削除しました`);
+  if (window.renderTables) window.renderTables();
+  if (window.renderFloorStatus) window.renderFloorStatus();
+  if (window.renderView && document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) window.renderView();
 }
 
 function addAlias() {
@@ -7892,6 +7945,24 @@ function normalizeStaffNamesInText(text) {
     const norm = toHiragana(part.trim());
     const match = aliasIndex.find(entry => entry.norm === norm);
     return match ? match.name : part;
+  }).join('');
+}
+
+// ヘルプ指名欄の表示専用：呼び名ゆれを正式名に揃えるのはnormalizeStaffNamesInTextと同じだが、
+// その人に役職（呼び名編集画面で設定）が登録されていれば、名前の後ろに小さく添える。
+// 卓一覧・卓状況のBOX・全体タブのヘルプ表示でのみ使う（担当名の表示には使わない）
+function normalizeHelpNamesWithRole(text) {
+  if (!text) return text;
+  const aliasIndex = buildAliasIndex();
+  const staffRole = window.staffRole || {};
+  const parts = text.split(/([\/,、,・\s]+)/);
+  return parts.map(part => {
+    if (!part || /^[\/,、,・\s]+$/.test(part)) return part;
+    const norm = toHiragana(part.trim());
+    const match = aliasIndex.find(entry => entry.norm === norm);
+    if (!match) return part;
+    const role = staffRole[match.name];
+    return role ? `${match.name}<span style="font-size:0.85em;color:var(--text-dim);">(${role})</span>` : match.name;
   }).join('');
 }
 
@@ -8993,6 +9064,16 @@ function pruneRemovedStaffFromTeamsAndKanbu() {
   if (kanbuChanged) {
     window.staffKanbu = kanbu;
     if (window.fbSaveStaffKanbu) window.fbSaveStaffKanbu(kanbu);
+  }
+  const role = window.staffRole || {};
+  let roleChanged = false;
+  Object.keys(role).forEach(name => {
+    if (!staffList.includes(name)) { delete role[name]; roleChanged = true; }
+  });
+  if (roleChanged) {
+    window.staffRole = role;
+    try { localStorage.setItem('tableManager_staffRole', JSON.stringify(role)); } catch(e) {}
+    if (window.fbSaveStaffRole) window.fbSaveStaffRole(role);
   }
   // 個別ログインパスワードも削除する（在籍リストにいない名前は元々ログインでも弾かれるが、
   // データとしても残さないようにしておく）
