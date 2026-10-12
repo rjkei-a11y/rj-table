@@ -7959,7 +7959,18 @@ function normalizeHelpNamesWithRole(text) {
   return parts.map(part => {
     if (!part || /^[\/,、,・\s]+$/.test(part)) return part;
     const norm = toHiragana(part.trim());
-    const match = aliasIndex.find(entry => entry.norm === norm);
+    // まず区切り文字で囲まれた全体が、そのままぴったり呼び名と一致するか確認する（最も確実な判定）
+    let match = aliasIndex.find(entry => entry.norm === norm);
+    // 一致しなければ、「みやび主任」のように呼び名の後ろ（または前）に役職・敬称等が
+    // そのまま続けて書かれているケースを想定し、chunk内のどこかに呼び名が含まれていないか探す
+    // （extractStaffNamesと同じ、位置をずらしながらの前方一致走査）。
+    // 見つかった場合、その人が自己申告した役職っぽい文字列は信用せず丸ごと置き換え、
+    // 代わりに在籍スタッフ登録で内勤が設定した正式な役職だけを付け直す
+    if (!match) {
+      for (let pos = 0; pos < norm.length && !match; pos++) {
+        match = aliasIndex.find(entry => norm.startsWith(entry.norm, pos));
+      }
+    }
     if (!match) return part;
     const role = staffRole[match.name];
     return role ? `${match.name}<span style="font-size:0.85em;color:var(--text-dim);">(${role})</span>` : match.name;
