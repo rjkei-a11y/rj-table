@@ -6549,7 +6549,6 @@ function openReportsListForRole() {
 // 出勤打刻システム（rj-punch、別アプリ）が発行するQRをその場で表示するだけで、
 // 打刻処理自体はこの卓管理アプリでは一切行わない
 let _punchQrOpen = false;
-let _punchQrTimer = null;
 let _punchQrLastUrl = null;
 
 // 内勤（admin）だけにボタンを見せる。ロール切り替えのたびにapplyRoleから呼ばれる
@@ -6558,7 +6557,7 @@ function updatePunchQrBtn() {
   if (!btn) return;
   if (localStorage.getItem('rj_role') !== 'admin') {
     btn.style.display = 'none';
-    closePunchQrCard(); // 念のため、開いたままだったカードも閉じてポーリングを止める
+    closePunchQrCard(); // 念のため、開いたままだったカードも閉じる
     return;
   }
   btn.style.display = 'block';
@@ -6576,11 +6575,7 @@ function openPunchQrCard() {
   if (btn) btn.textContent = '📱 打刻用QRを閉じる';
   const card = document.getElementById('punchQrCard');
   if (card) card.style.display = 'block';
-  fetchPunchQr();
-  // 5分ごとに再取得。タブ切り替え等から画面に戻ってきた時にも取り直す
-  if (_punchQrTimer) clearInterval(_punchQrTimer);
-  _punchQrTimer = setInterval(fetchPunchQr, 5 * 60 * 1000);
-  document.addEventListener('visibilitychange', onPunchQrVisibilityChange);
+  fetchPunchQr(); // 開くたびに必ず最新のQRを取りに行く
 }
 
 function closePunchQrCard() {
@@ -6589,20 +6584,12 @@ function closePunchQrCard() {
   if (btn) btn.textContent = '📱 打刻用QR表示';
   const card = document.getElementById('punchQrCard');
   if (card) { card.style.display = 'none'; card.innerHTML = ''; }
-  if (_punchQrTimer) { clearInterval(_punchQrTimer); _punchQrTimer = null; }
-  document.removeEventListener('visibilitychange', onPunchQrVisibilityChange);
   _punchQrLastUrl = null; // 次に開いた時は必ず作り直す
-}
-
-function onPunchQrVisibilityChange() {
-  if (document.visibilityState === 'visible' && _punchQrOpen) fetchPunchQr();
 }
 
 function fetchPunchQr() {
   if (!_punchQrOpen) return;
-  // 既に表示できているQRがある時（5分ごとの裏取得・画面再表示時）は、
-  // 取得中も今のQRをそのまま見せ続け、「読み込み中…」のチラつきを出さない
-  if (!_punchQrLastUrl) renderPunchQrState({ loading: true });
+  renderPunchQrState({ loading: true });
   fetch('https://rj-punch.rjkei.workers.dev/api/qr')
     .then(res => res.json())
     .then(data => {
