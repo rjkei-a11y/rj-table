@@ -699,6 +699,8 @@
       </div>
 
       <button id="myReportsBtn" onclick="openReportsListForRole()" style="margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:12px;padding:8px;cursor:pointer;font-family:var(--font-main);">📋 予定の確認・編集</button>
+      <button id="punchQrBtn" onclick="togglePunchQrCard()" style="display:none;margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:12px;padding:8px;cursor:pointer;font-family:var(--font-main);">📱 打刻用QR表示</button>
+      <div id="punchQrCard" style="display:none;"></div>
       <div id="myTodaySummary" style="margin-top:10px;"></div>
     </div>
 
@@ -1135,6 +1137,7 @@ function applyRole(role) {
     if (staffTeamsBtn) staffTeamsBtn.style.display = 'none';
   }
   updateTableListVisibleBtn();
+  if (typeof updatePunchQrBtn === 'function') updatePunchQrBtn();
   if (typeof updateMainPassBtn === 'function') updateMainPassBtn();
   if (typeof updateTsukeEntryBtn === 'function') updateTsukeEntryBtn();
   if (typeof updateViewOnlyBtn === 'function') updateViewOnlyBtn();
@@ -6540,6 +6543,154 @@ function openReportsListForRole() {
   } else {
     openMyReportsModal();
   }
+}
+
+// ===== 打刻用QR表示（内勤のみ） =====
+// 出勤打刻システム（rj-punch、別アプリ）が発行するQRをその場で表示するだけで、
+// 打刻処理自体はこの卓管理アプリでは一切行わない
+let _punchQrOpen = false;
+let _punchQrTimer = null;
+let _punchQrLastUrl = null;
+
+// 内勤（admin）だけにボタンを見せる。ロール切り替えのたびにapplyRoleから呼ばれる
+function updatePunchQrBtn() {
+  const btn = document.getElementById('punchQrBtn');
+  if (!btn) return;
+  if (localStorage.getItem('rj_role') !== 'admin') {
+    btn.style.display = 'none';
+    closePunchQrCard(); // 念のため、開いたままだったカードも閉じてポーリングを止める
+    return;
+  }
+  btn.style.display = 'block';
+}
+
+function togglePunchQrCard() {
+  if (localStorage.getItem('rj_role') !== 'admin') return; // 念のための二重チェック
+  if (_punchQrOpen) closePunchQrCard();
+  else openPunchQrCard();
+}
+
+function openPunchQrCard() {
+  _punchQrOpen = true;
+  const btn = document.getElementById('punchQrBtn');
+  if (btn) btn.textContent = '📱 打刻用QRを閉じる';
+  const card = document.getElementById('punchQrCard');
+  if (card) card.style.display = 'block';
+  fetchPunchQr();
+  // 5分ごとに再取得。タブ切り替え等から画面に戻ってきた時にも取り直す
+  if (_punchQrTimer) clearInterval(_punchQrTimer);
+  _punchQrTimer = setInterval(fetchPunchQr, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', onPunchQrVisibilityChange);
+}
+
+function closePunchQrCard() {
+  _punchQrOpen = false;
+  const btn = document.getElementById('punchQrBtn');
+  if (btn) btn.textContent = '📱 打刻用QR表示';
+  const card = document.getElementById('punchQrCard');
+  if (card) { card.style.display = 'none'; card.innerHTML = ''; }
+  if (_punchQrTimer) { clearInterval(_punchQrTimer); _punchQrTimer = null; }
+  document.removeEventListener('visibilitychange', onPunchQrVisibilityChange);
+  _punchQrLastUrl = null; // 次に開いた時は必ず作り直す
+}
+
+function onPunchQrVisibilityChange() {
+  if (document.visibilityState === 'visible' && _punchQrOpen) fetchPunchQr();
+}
+
+function fetchPunchQr() {
+  if (!_punchQrOpen) return;
+  // 既に表示できているQRがある時（5分ごとの裏取得・画面再表示時）は、
+  // 取得中も今のQRをそのまま見せ続け、「読み込み中…」のチラつきを出さない
+  if (!_punchQrLastUrl) renderPunchQrState({ loading: true });
+  fetch('https://rj-punch.rjkei.workers.dev/api/qr')
+    .then(res => res.json())
+    .then(data => {
+      if (!_punchQrOpen) return; // 取得中に閉じられていたら何もしない
+      if (!data || !data.ok || !data.url) {
+        renderPunchQrState({ error: (data && data.msg) || 'QRを取得できませんでした' });
+        return;
+      }
+      renderPunchQrState({ date: data.date || '', url: data.url });
+    })
+    .catch(() => {
+      if (!_punchQrOpen) return;
+      renderPunchQrState({ error: 'QRを取得できませんでした' });
+    });
+}
+
+// カードの状態を描画する。urlが前回取得時と同じなら、QRそのものは描き直さない（チラつき防止）
+function renderPunchQrState(state) {
+  const card = document.getElementById('punchQrCard');
+  if (!card) return;
+  if (state.loading) {
+    card.innerHTML = `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center;color:var(--text-dim);font-size:12px;">読み込み中…</div>`;
+    return;
+  }
+  if (state.error) {
+    card.innerHTML = `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center;">
+        <div style="color:#e74c3c;font-size:12px;margin-bottom:10px;">${state.error}</div>
+        <button class="btn btn-ghost btn-sm" onclick="fetchPunchQr()">再試行</button>
+      </div>`;
+    _punchQrLastUrl = null;
+    return;
+  }
+  const dateLabel = formatPunchQrDate(state.date);
+  if (state.url === _punchQrLastUrl) {
+    // URLが変わっていなければ日付表示だけ念のため更新し、QR自体は描き直さない
+    const dateEl = document.getElementById('punchQrDateLabel');
+    if (dateEl) dateEl.textContent = dateLabel;
+    return;
+  }
+  _punchQrLastUrl = state.url;
+  card.innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;">
+      <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:4px;">出勤打刻QR</div>
+      <div id="punchQrDateLabel" style="font-size:11px;color:var(--text-dim);margin-bottom:10px;">${dateLabel}</div>
+      <div id="punchQrCanvas" style="display:inline-block;background:#fff;padding:10px;border-radius:6px;"></div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:10px;line-height:1.5;">キャストはスマホの打刻アプリ（またはカメラ）でこのQRを読み取って出勤</div>
+    </div>`;
+  renderPunchQrCode(state.url);
+}
+
+// 「2026/10/17」形式のdateを「10/17 営業日」の表示用テキストにする
+function formatPunchQrDate(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return `${dateStr} 営業日`;
+  return `${parseInt(parts[1],10)}/${parseInt(parts[2],10)} 営業日`;
+}
+
+// qrcodejsをまだ読み込んでいなければ、初めてカードを開いた時に動的に読み込む
+let _qrcodeLibLoading = null;
+function loadQrcodeLib() {
+  if (typeof QRCode !== 'undefined') return Promise.resolve();
+  if (_qrcodeLibLoading) return _qrcodeLibLoading;
+  _qrcodeLibLoading = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    script.onload = () => resolve();
+    script.onerror = () => { _qrcodeLibLoading = null; reject(new Error('qrcodejs load failed')); };
+    document.head.appendChild(script);
+  });
+  return _qrcodeLibLoading;
+}
+
+function renderPunchQrCode(url) {
+  loadQrcodeLib().then(() => {
+    const el = document.getElementById('punchQrCanvas');
+    if (!el || !_punchQrOpen) return; // 読み込み中に閉じられていたら何もしない
+    el.innerHTML = '';
+    new QRCode(el, {
+      text: url,
+      width: 200,
+      height: 200,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }).catch(() => {
+    if (_punchQrOpen) renderPunchQrState({ error: 'QRライブラリの読み込みに失敗しました' });
+  });
 }
 
 // 予定報告タブの空きスペースに、ログイン中のキャスト本人の本日の予定を一覧表示する
