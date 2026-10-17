@@ -3058,6 +3058,7 @@ function editCell(id, field, td) {
     // キーボードが閉じる際の画面ズレを防ぐため、行の更新をキーボードが閉じきるまで少し待ってから行い、
     // 更新後も同じ行が画面上の同じ位置に見えるようスクロール位置を補正する
     withScrollPreserved(() => updateSingleGuestRow(id), td.closest('tr'));
+    if (field === 'tanto') renderStaffStatus();
     renderFloorStatus();
     // 卓番が変わった場合、空き卓一覧はupdateSingleGuestRow（行だけの軽量更新）には含まれないため、別途更新する
     if (field === 'tableNum') renderEmptyTablesArea();
@@ -3095,6 +3096,7 @@ function createAndEdit(rowNum, field, td) {
     repackRowNums();
     saveToStorage();
     withScrollPreserved(renderTables, td.closest('tr'));
+    if (field === 'tanto') renderStaffStatus();
     renderFloorStatus();
   }
   // save()が表を丸ごと差し替えるため、documentのfocusoutイベントが発火せず
@@ -5405,9 +5407,12 @@ function syncNominaoshiToTable(g, r) {
   const nomi = (r.nominaoshi || '').trim();
   // 飲直がない or「なし」の場合は卓一覧から削除
   if (!nomi || nomi === 'なし') {
+    const removed = guests.find(x => x.firstKey === key);
     guests = guests.filter(x => x.firstKey !== key);
     saveToStorage();
+    if (removed) syncPendingStatusAfterReportRemoved(removed.tanto);
     renderTables();
+    renderStaffStatus();
     renderFloorStatus();
     return;
   }
@@ -5452,6 +5457,7 @@ function syncNominaoshiToTable(g, r) {
   repackRowNums();
   saveToStorage();
   renderTables();
+  renderStaffStatus();
   renderFloorStatus();
   // 飲直転換で卓が確定した際、その卓に別の予約が重複していないか確認する（アイバンは正常な重複として除外）
   checkNominaoshiTableConflict(g, r, key);
@@ -6237,6 +6243,7 @@ function saveQuickLeaveTime(guestId) {
   saveToStorage();
   document.getElementById('leaveTimeEditModal').classList.remove('show');
   renderTables();
+  renderStaffStatus();
   renderFloorStatus();
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast('保存しました');
@@ -8897,6 +8904,7 @@ function saveEdit(id) {
   saveToStorage();
   document.getElementById('editModal').classList.remove('show');
   renderTables();
+  renderStaffStatus();
   renderFloorStatus();
   if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast('保存しました');
