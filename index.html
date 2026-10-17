@@ -8677,6 +8677,7 @@ function renderStaffStatus() {
     const entry = staffDayStatus[name] || null;
     const dayStatus = entry ? entry.status : null;
     const isHalfOff = dayStatus === 'half_off';
+    const isPaidOff = dayStatus === 'paid_off';
     // 半休でも勤務する時間帯の予定がまだ決まっていないことがあるため、
     // 予定未定は「status==='pending'」だけでなく「半休＋pendingフラグ」でも成立する
     const isPending = dayStatus === 'pending' || !!(entry && entry.pending);
@@ -8696,10 +8697,12 @@ function renderStaffStatus() {
       textColor = 'var(--text-dim)';
     }
     const halfBadge = isHalfOff ? `<span style="font-size:8px;font-weight:700;color:#e67e22;border:1px solid #e67e22;border-radius:3px;padding:0 3px;line-height:1.4;flex-shrink:0;">半</span>` : '';
+    // お休みと有休はどちらも赤ドット・赤文字（色はそのまま）だが、見分けられるよう有休だけ「半」バッジと同じ見た目のバッジを付ける
+    const paidOffBadge = isPaidOff ? `<span style="font-size:8px;font-weight:700;color:#e74c3c;border:1px solid #e74c3c;border-radius:3px;padding:0 3px;line-height:1.4;flex-shrink:0;">有</span>` : '';
     const nameEsc = name.replace(/'/g, "\\'");
     return `<div onclick="openAliasModal('${nameEsc}')" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px;cursor:pointer;">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
-      ${halfBadge}
+      ${halfBadge}${paidOffBadge}
       <span style="color:${textColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</span>
     </div>`;
   }).join('');
