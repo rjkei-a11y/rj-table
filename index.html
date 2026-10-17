@@ -6301,10 +6301,13 @@ function toggleBottle(id) {
 // お休み・有休（勤務なし）や既に予定未定・半休＋予定未定の人はそのままにする
 function syncPendingStatusAfterReportRemoved(tantoName) {
   if (!tantoName) return;
-  const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
+  // 生のtantoだけで突き合わせると、ひらがな入力などの表記ゆれを吸収できないため、
+  // renderStaffStatusと同じくmatchStaffNameで正式名に解決してから比較する
+  const resolvedRemoved = matchStaffName(tantoName);
+  const reportedResolved = guests.map(g => g.tanto ? matchStaffName(g.tanto) : null).filter(Boolean);
   staffList.forEach(name => {
-    if (!(tantoName.includes(name) || name.includes(tantoName))) return;
-    const stillReported = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
+    if (!(resolvedRemoved === name || resolvedRemoved.includes(name) || name.includes(resolvedRemoved))) return;
+    const stillReported = reportedResolved.some(t => t === name || t.includes(name) || name.includes(t));
     if (stillReported) return;
     const entry = staffDayStatus[name];
     if (entry && (entry.status === 'off' || entry.status === 'paid_off')) return;
@@ -8690,17 +8693,21 @@ function renderStaffStatus() {
     container.innerHTML = '<div style="color:var(--text-dim);font-size:10px;">⚙ 編集からスタッフを登録</div>';
     return;
   }
-  // 報告済み担当名を収集（部分一致）
-  const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
+  // 報告済み担当名を収集。生のtantoだけで部分一致させると、初回タブ等でひらがな入力された
+  // 表記ゆれ（例：「あすか」→本名「明日華」）を拾えないため、matchStaffNameで正式名に解決してから突き合わせる
+  const reportedEntries = guests
+    .filter(g => g.tanto)
+    .map(g => ({ resolved: matchStaffName(g.tanto), reportType: g.reportType }));
+  const matchesStaffName = (resolved, name) => resolved === name || resolved.includes(name) || name.includes(resolved);
   container.innerHTML = staffList.map(name => {
-    const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
+    const done = reportedEntries.some(e => matchesStaffName(e.resolved, name));
     // 予定ありの報告のうち、内勤が代理入力したものが1件でもあれば、本人報告と見分けられるよう色を変える。
     // ただし本人が1件でも自分で入力していれば、代理入力分が混ざっていても緑を優先する
-    const hasSelfReported = guests.some(g => g.tanto && (g.tanto.includes(name) || name.includes(g.tanto)) && g.reportType === 'self');
+    const hasSelfReported = reportedEntries.some(e => matchesStaffName(e.resolved, name) && e.reportType === 'self');
     // 幹部は代理入力でも自己申告と見分けがつかないよう、常に緑扱いにする
     // （下のキャストへの示しのため、内勤が代わりに入力してあげたことを可視化させない）
     const isKanbu = !!(window.staffKanbu || {})[name];
-    const isProxyReported = !hasSelfReported && !isKanbu && guests.some(g => g.tanto && (g.tanto.includes(name) || name.includes(g.tanto)) && g.reportType === 'proxy');
+    const isProxyReported = !hasSelfReported && !isKanbu && reportedEntries.some(e => matchesStaffName(e.resolved, name) && e.reportType === 'proxy');
     const entry = staffDayStatus[name] || null;
     const dayStatus = entry ? entry.status : null;
     const isHalfOff = dayStatus === 'half_off';
