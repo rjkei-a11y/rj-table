@@ -6289,6 +6289,23 @@ function toggleBottle(id) {
   renderTables();
 }
 
+// 予定（guestsの行）の削除などでキャストの報告件数が0件に戻った時、報告状況の表示が
+// 「未報告」(グレー)に戻ってしまうのを防ぎ、代わりに「予定未定」(青)として扱う。
+// お休み・有休（勤務なし）や既に予定未定・半休＋予定未定の人はそのままにする
+function syncPendingStatusAfterReportRemoved(tantoName) {
+  if (!tantoName) return;
+  const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
+  staffList.forEach(name => {
+    if (!(tantoName.includes(name) || name.includes(tantoName))) return;
+    const stillReported = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
+    if (stillReported) return;
+    const entry = staffDayStatus[name];
+    if (entry && (entry.status === 'off' || entry.status === 'paid_off')) return;
+    if (entry && (entry.status === 'pending' || entry.pending)) return;
+    setStaffDayStatus(name, 'pending', true);
+  });
+}
+
 function deleteGuest(id) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const g = guests.find(x => x.id === id);
@@ -6300,6 +6317,7 @@ function deleteGuest(id) {
   saveToStorage();
   // 差分比較を待たず、削除対象のIDに対して直接Firebaseへ削除指示を送る（比較タイミングのズレで消えない事態を防ぐ）
   if (window.fbRemoveGuest) window.fbRemoveGuest(id);
+  syncPendingStatusAfterReportRemoved(backup.tanto);
   renderTables();
   renderStaffStatus();
   renderFloorStatus();
@@ -6797,7 +6815,9 @@ function doDeleteMyReservation(id) {
   repackRowNums();
   saveToStorage();
   if (window.fbRemoveGuest) window.fbRemoveGuest(id);
+  syncPendingStatusAfterReportRemoved(backup.tanto);
   renderTables();
+  renderStaffStatus();
   renderFloorStatus();
   renderMyTodaySummary();
   openMyReportsModal();
