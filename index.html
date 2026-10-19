@@ -8009,31 +8009,16 @@ function computeTsukeFloorReadyCount() {
 
 // 本日出勤カウントの内訳（キャストごとの根拠とカウント対象かどうか）を返す。「本日出勤 ○/⬜︎」表示の
 // タップで開く内訳モーダル、および①②それぞれの集計関数の共通ロジックとして使う。
-// mode='simple': ①内勤者専用フォーム欄と同じ判定（半休→同伴→出勤時間。ヘアメ表は見ない）
-// mode='priority': ②付け回しモーダルと同じ判定（半休→ヘアメ表→同伴→出勤時間。computeStaffReadyThresholdを使う）
+// mode引数は呼び出し元（内訳モーダルのタイトルなど）の表示切り替えのためだけに残しており、
+// 判定ロジック自体は①②とも同じcomputeStaffReadyThresholdで統一（半休→ヘアメ表→同伴→出勤時間。
+// ヘアメ表がある人はヘアメ終了時刻で、ない人は従来どおり同伴・出勤時間でカウントする）
 function computeAttendanceDetail(mode) {
   const now = new Date();
   const nowShift = toShiftMinutes(now.getHours(), now.getMinutes());
-  const dohanCastNamesToday = computeDohanCastNamesToday();
   return staffList.map(name => {
     const status = (staffDayStatus[name] || {}).status;
     const isOff = status === 'off' || status === 'paid_off';
-    let threshold = null;
-    if (!isOff) {
-      if (mode === 'priority') {
-        threshold = computeStaffReadyThreshold(name);
-      } else {
-        const isHalfOff = status === 'half_off';
-        if (isHalfOff) {
-          threshold = { time: '22:30', label: '半休' };
-        } else if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
-          threshold = { time: window.staffDohanTime[name], label: '同伴' };
-        } else {
-          const shiftStart = (window.staffShiftStart || {})[name];
-          threshold = shiftStart ? { time: shiftStart, label: '出勤' } : null;
-        }
-      }
-    }
+    const threshold = isOff ? null : computeStaffReadyThreshold(name);
     let counted = false;
     if (!isOff && threshold) {
       const t = parseTimeText(threshold.time);
