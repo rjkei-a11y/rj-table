@@ -8,7 +8,7 @@
 <!-- Firebase SDK（有効） -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, update, onValue, remove, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, update, onValue, remove, get, query, orderByKey, startAt, endAt } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCdOu7waepEH5WXQkvFKLLFRah-FODcOUI",
@@ -295,12 +295,16 @@
     if (isViewOnlyMode() || !customerKey || !entryId) return;
     set(ref(db, 'customerHistory/' + customerKey + '/' + entryId), entry).catch(e => console.error('FB customerHistory save error:', e));
   };
-  // 指定した担当・お客様名キーの履歴を、その場で一度だけ取得する（onValueの常時購読はしない）
-  window.fbGetCustomerHistory = function(customerKey) {
-    if (!customerKey) return Promise.resolve(null);
-    return get(ref(db, 'customerHistory/' + customerKey))
-      .then(snapshot => snapshot.val())
-      .catch(e => { console.error('FB customerHistory get error:', e); return null; });
+  // 指定した担当（サニタイズ済みキー）に紐づく全お客様分の履歴を、キー範囲検索でまとめて一度だけ取得する
+  // （onValueの常時購読はしない）。「新規」「2回目」等の文言付きで保存された過去のキーも全て拾えるよう、
+  // 担当名プレフィックスだけで絞り込み、お客様名側の一致判定は呼び出し側（searchCustomerHistory）で行う
+  window.fbGetCustomerHistoryByTanto = function(sanitizedTanto) {
+    if (!sanitizedTanto) return Promise.resolve({});
+    const prefix = sanitizedTanto + '__';
+    const q = query(ref(db, 'customerHistory'), orderByKey(), startAt(prefix), endAt(prefix + ''));
+    return get(q)
+      .then(snapshot => snapshot.val() || {})
+      .catch(e => { console.error('FB customerHistory byTanto error:', e); return {}; });
   };
 
   // ゲストの配列内容が実質的に同じかどうかを比較する（id順に揃えてから比較するので、
@@ -2805,20 +2809,30 @@ function searchCustomerHistory() {
   const tantoEl = document.getElementById('chQueryTanto');
   const nameEl = document.getElementById('chQueryName');
   const tanto = ((tantoEl ? tantoEl.value : _customerHistoryQuery.tanto) || '').trim();
-  const name = stripVisitLabelForHistory(((nameEl ? nameEl.value : _customerHistoryQuery.name) || '').replace('△','').trim());
+  const name = stripVisitLabelForHistory(stripEdaSuffixForHistory(((nameEl ? nameEl.value : _customerHistoryQuery.name) || '').replace('△','').trim()));
   _customerHistoryQuery = { tanto, name };
   if (!tanto || !name) {
     showToast('担当とお客様名を両方入力してください');
     return;
   }
   renderCustomerHistoryPopup({ loading: true, results: null, searched: true });
-  if (!window.fbGetCustomerHistory) {
+  if (!window.fbGetCustomerHistoryByTanto) {
     renderCustomerHistoryPopup({ loading: false, results: [], searched: true });
     return;
   }
-  const customerKey = buildCustomerHistoryKey(matchStaffName(tanto) || tanto, name);
-  window.fbGetCustomerHistory(customerKey).then(data => {
-    const records = data ? Object.values(data) : [];
+  const resolvedTanto = matchStaffName(tanto) || tanto;
+  // 担当名だけで絞り込み、お客様名の一致判定はここで行う（stripEdaSuffixForHistory・
+  // stripVisitLabelForHistoryで正規化してから比較するので、「新規」「2回目」等の文言付きで
+  // 保存された過去の記録も、同じお客様として一緒に見つかる）
+  window.fbGetCustomerHistoryByTanto(sanitizeHistoryKeyPart(resolvedTanto)).then(data => {
+    const records = [];
+    Object.values(data || {}).forEach(group => {
+      Object.values(group || {}).forEach(entry => {
+        if (!entry) return;
+        const entryName = stripVisitLabelForHistory(stripEdaSuffixForHistory((entry.name || '').replace('△', '').trim()));
+        if (entryName === name) records.push(entry);
+      });
+    });
     records.sort((a, b) => {
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
       return (b.timestamp || 0) - (a.timestamp || 0);
