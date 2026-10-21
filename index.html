@@ -7992,9 +7992,11 @@ function dohanTextFieldsOf(g) {
   return [g.arrive, g.name, g.note, g.shareNote];
 }
 
-// 「同伴」の報告があり、かつ既に来店確認済みのゲストがいれば、その実来店時刻を返す
+// 「同伴」の報告があり、かつ既に来店確認済みのゲストがいれば、その実来店時刻を返す。
+// 卓が退店済み(g.left)になっていても、その人が今日同伴で来店した事実自体は変わらないため、
+// 退店の有無は問わない（本日分リセットで日が変われば自然にクリアされる）
 function computeArrivedDohanTimeToday(name) {
-  const g = guests.find(g => !g.left && g.arrived && matchStaffName(g.tanto) === name &&
+  const g = guests.find(g => g.arrived && matchStaffName(g.tanto) === name &&
     dohanTextFieldsOf(g).some(text => (text || '').includes('同伴')));
   return g ? (g.actualArrive || g.arrive || null) : null;
 }
@@ -8002,7 +8004,7 @@ function computeArrivedDohanTimeToday(name) {
 // まだ来店していない「同伴」報告があるゲストを1件返す（無ければnull）。同伴は出勤時間管理シート
 // ではなく、来店時間・お客様名・備考・共有事項欄に自由入力で書かれているため、その文言から探す
 function findUnarrivedDohanGuest(name) {
-  return guests.find(g => !g.left && !g.arrived && matchStaffName(g.tanto) === name &&
+  return guests.find(g => !g.arrived && matchStaffName(g.tanto) === name &&
     dohanTextFieldsOf(g).some(text => (text || '').includes('同伴'))) || null;
 }
 
