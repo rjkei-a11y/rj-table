@@ -3684,27 +3684,11 @@ function openTsukeTablePopup(guestId) {
     if (active && active.isFirst) tableIds.add(active.guestId || (active.tanto + '　' + active.guestName));
     return tableIds.size;
   };
-  // 今日、来店予定が「同伴」になっているお客様の担当キャスト名一覧（1回だけ計算しておく）。
-  // 出勤時間管理シートの同伴時間(window.staffDohanTime)だけで同伴扱いにすると、シート側に
-  // 入力されているだけで実際には同伴していない人まで同伴表示になってしまうため、
-  // 必ずゲスト側の「同伴」報告と突き合わせてから使う
-  const dohanCastNamesToday = computeDohanCastNamesToday();
-  // このキャストの出勤・同伴の目安時刻を返す。今日担当しているお客様の来店予定に「同伴」が含まれていれば、
-  // 出勤時間の代わりに同伴時間を目安にする（出勤・同伴時間は「これより遅れないでね」というラインなので、
-  // 目安時刻前でも選択自体はできるようにし、ボタンの見た目だけを変えるために使う）
-  const getShiftThresholdFor = (name) => {
-    // ヘアメ表に載っている人は、出勤していてもヘアメ待ちで稼働できないため、
-    // ヘアメ終了目安（出勤時間の方が遅ければそちらを優先）を稼働開始の目安にする。
-    // 表にない人（個人でヘアメする人）は出勤時間がそのまま稼働開始時刻のまま。
-    // お休み・有休の人はそもそも候補一覧に出てこない（このthreshold判定より前で除外済み）ため、ここでは気にしなくてよい
-    const hairMakeThreshold = computeHairMakeReadyThreshold(name);
-    if (hairMakeThreshold) return hairMakeThreshold;
-    if (dohanCastNamesToday.has(name) && (window.staffDohanTime || {})[name]) {
-      return { time: window.staffDohanTime[name], label: '同伴' };
-    }
-    const shiftStart = (window.staffShiftStart || {})[name];
-    return shiftStart ? { time: shiftStart, label: '出勤' } : null;
-  };
+  // このキャストの出勤・同伴の目安時刻を返す（お休み・有休の人はそもそも候補一覧に出てこないため
+  // 半休判定も含めてcomputeStaffReadyThresholdにそのまま委ねてよい。出勤・同伴時間は
+  // 「これより遅れないでね」というラインなので、目安時刻前でも選択自体はできるようにし、
+  // ボタンの見た目だけを変えるために使う）
+  const getShiftThresholdFor = (name) => computeStaffReadyThreshold(name);
 
   // 卓一覧の備考・共有事項を、付け回し画面からも確認できるようにする（初回卓にはこの2項目自体が存在しないため対象外）。
   // 共有事項はもともと「席に着く人へ向けた連絡」なのでマスク対象にせず常に見せ、備考は卓一覧と同じ基準でマスクする
@@ -8009,13 +7993,26 @@ function computeDohanCastNamesToday() {
   );
 }
 
+// 「同伴」の報告があり、かつ既に来店確認済みのゲストがいれば、その実来店時刻を返す。
+// 出勤時間管理シートの同伴時間(staffDohanTime)は、その日急に決まった同伴等でシートに未反映のまま
+// 実際には同伴していることがあるため、シートより確実な「実際に同伴で来店した」事実の方を優先して使う
+function computeArrivedDohanTimeToday(name) {
+  const g = guests.find(g => !g.left && g.arrived && matchStaffName(g.tanto) === name &&
+    [g.arrive, g.name, g.note].some(text => (text || '').includes('同伴')));
+  return g ? (g.actualArrive || g.arrive || null) : null;
+}
+
 // このキャストが実際に稼働できる目安時刻を、優先順位に沿って1つ算出する（付け回しモーダルの
 // 「本日出勤」カウント用。個々の候補行バッジ（getShiftThresholdFor）とは別に、こちらは半休を
-// 最優先で扱う）。優先順位：半休(22:30固定・ヘアメ表があってもこちらを優先) > ヘアメ表
-// （出勤時間の方が遅ければそちらを優先） > 同伴 > 出勤時間
+// 最優先で扱う）。優先順位：半休(22:30固定・ヘアメ表があってもこちらを優先) > 同伴で来店済み
+// （実来店時刻） > ヘアメ表（出勤時間の方が遅ければそちらを優先） > 同伴（シートの時間、未来店） > 出勤時間
 function computeStaffReadyThreshold(name) {
   if ((staffDayStatus[name] || {}).status === 'half_off') {
     return { time: '22:30', label: '半休' };
+  }
+  const arrivedDohanTime = computeArrivedDohanTimeToday(name);
+  if (arrivedDohanTime) {
+    return { time: arrivedDohanTime, label: '同伴' };
   }
   const hairMakeThreshold = computeHairMakeReadyThreshold(name);
   if (hairMakeThreshold) return hairMakeThreshold;
