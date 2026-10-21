@@ -7978,23 +7978,30 @@ function computeHairMakeReadyThreshold(name) {
   return { time: hairMakeEnd, label: 'ヘアメ終' };
 }
 
+// 「同伴」の文言をゲストのどの欄から拾うかの一覧（来店時間・お客様名・備考・共有事項）。
+// 予定報告タブでキャスト自身が入力した分も、内勤が卓一覧タブで直接書き込んだ分も同じ欄に
+// 保存されるため、入力元を問わず拾える
+function dohanTextFieldsOf(g) {
+  return [g.arrive, g.name, g.note, g.shareNote];
+}
+
 // 「同伴」の報告があり、かつ既に来店確認済みのゲストがいれば、その実来店時刻を返す
 function computeArrivedDohanTimeToday(name) {
   const g = guests.find(g => !g.left && g.arrived && matchStaffName(g.tanto) === name &&
-    [g.arrive, g.name, g.note].some(text => (text || '').includes('同伴')));
+    dohanTextFieldsOf(g).some(text => (text || '').includes('同伴')));
   return g ? (g.actualArrive || g.arrive || null) : null;
 }
 
 // まだ来店していない同伴の目安時刻を返す。同伴は出勤時間管理シートではなく、来店時間・お客様名・
-// 備考欄に「同伴20:30」のように書かれた自由入力で管理されているため、「同伴」の文言と一緒に
-// 書かれている時刻をparseTimeTextでそのまま読み取る（時刻が書かれていなければnull）。
+// 備考・共有事項欄に「同伴20:30」のように書かれた自由入力で管理されているため、「同伴」の文言と
+// 一緒に書かれている時刻をparseTimeTextでそのまま読み取る（時刻が書かれていなければnull）。
 // 以前はwindow.staffDohanTime（出勤時間管理シートの同伴欄）を見ていたが、実際には運用されておらず、
 // 古い値が残ったままになって実際は同伴でない人まで同伴表示になる不具合があったため参照をやめた
 function computeUnarrivedDohanTimeToday(name) {
   const g = guests.find(g => !g.left && !g.arrived && matchStaffName(g.tanto) === name &&
-    [g.arrive, g.name, g.note].some(text => (text || '').includes('同伴')));
+    dohanTextFieldsOf(g).some(text => (text || '').includes('同伴')));
   if (!g) return null;
-  const dohanField = [g.arrive, g.name, g.note].find(text => (text || '').includes('同伴'));
+  const dohanField = dohanTextFieldsOf(g).find(text => (text || '').includes('同伴'));
   const parsed = parseTimeText(dohanField);
   if (!parsed) return null;
   return `${String(parsed.hour).padStart(2, '0')}:${String(parsed.minute).padStart(2, '0')}`;
