@@ -7999,25 +7999,19 @@ function computeArrivedDohanTimeToday(name) {
   return g ? (g.actualArrive || g.arrive || null) : null;
 }
 
-// まだ来店していない同伴の目安時刻を返す。同伴は出勤時間管理シートではなく、来店時間・お客様名・
-// 備考・共有事項欄に「同伴20:30」のように書かれた自由入力で管理されているため、「同伴」の文言と
-// 一緒に書かれている時刻をparseTimeTextでそのまま読み取る（時刻が書かれていなければnull）。
-// 以前はwindow.staffDohanTime（出勤時間管理シートの同伴欄）を見ていたが、実際には運用されておらず、
-// 古い値が残ったままになって実際は同伴でない人まで同伴表示になる不具合があったため参照をやめた
-function computeUnarrivedDohanTimeToday(name) {
-  const g = guests.find(g => !g.left && !g.arrived && matchStaffName(g.tanto) === name &&
-    dohanTextFieldsOf(g).some(text => (text || '').includes('同伴')));
-  if (!g) return null;
-  const dohanField = dohanTextFieldsOf(g).find(text => (text || '').includes('同伴'));
-  const parsed = parseTimeText(dohanField);
-  if (!parsed) return null;
-  return `${String(parsed.hour).padStart(2, '0')}:${String(parsed.minute).padStart(2, '0')}`;
+// まだ来店していない「同伴」報告があるゲストを1件返す（無ければnull）。同伴は出勤時間管理シート
+// ではなく、来店時間・お客様名・備考・共有事項欄に自由入力で書かれているため、その文言から探す
+function findUnarrivedDohanGuest(name) {
+  return guests.find(g => !g.left && !g.arrived && matchStaffName(g.tanto) === name &&
+    dohanTextFieldsOf(g).some(text => (text || '').includes('同伴'))) || null;
 }
 
 // このキャストが実際に稼働できる目安時刻を、優先順位に沿って1つ算出する（付け回しモーダルの
 // 「本日出勤」カウント用。個々の候補行バッジ（getShiftThresholdFor）とは別に、こちらは半休を
 // 最優先で扱う）。優先順位：半休(22:30固定・ヘアメ表があってもこちらを優先) > 同伴で来店済み
-// （実来店時刻） > ヘアメ表（出勤時間の方が遅ければそちらを優先） > 同伴（未来店、文言内の時刻） > 出勤時間
+// （実来店時刻） > ヘアメ表（出勤時間の方が遅ければそちらを優先） > 同伴（未来店、文言内の時刻。
+// 「同伴」とだけ書かれていて時刻が読み取れない場合は出勤時間を目安に使うが、ラベルは同伴のままにする）
+// > 出勤時間
 function computeStaffReadyThreshold(name) {
   if ((staffDayStatus[name] || {}).status === 'half_off') {
     return { time: '22:30', label: '半休' };
@@ -8028,11 +8022,16 @@ function computeStaffReadyThreshold(name) {
   }
   const hairMakeThreshold = computeHairMakeReadyThreshold(name);
   if (hairMakeThreshold) return hairMakeThreshold;
-  const unarrivedDohanTime = computeUnarrivedDohanTimeToday(name);
-  if (unarrivedDohanTime) {
-    return { time: unarrivedDohanTime, label: '同伴' };
-  }
   const shiftStart = (window.staffShiftStart || {})[name];
+  const unarrivedDohanGuest = findUnarrivedDohanGuest(name);
+  if (unarrivedDohanGuest) {
+    const dohanField = dohanTextFieldsOf(unarrivedDohanGuest).find(text => (text || '').includes('同伴'));
+    const parsed = parseTimeText(dohanField);
+    const dohanTime = parsed
+      ? `${String(parsed.hour).padStart(2, '0')}:${String(parsed.minute).padStart(2, '0')}`
+      : shiftStart;
+    if (dohanTime) return { time: dohanTime, label: '同伴' };
+  }
   return shiftStart ? { time: shiftStart, label: '出勤' } : null;
 }
 
