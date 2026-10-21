@@ -7449,13 +7449,20 @@ function stripEdaSuffixForHistory(name) {
   const m = String(name || '').match(/^(.*?)\s*[+＋]\s*(枝|同業)\s*$/);
   return (m && m[1].trim()) ? m[1].trim() : String(name || '').trim();
 }
-// お客様名欄には「新規」「初回RP」「2回目」のように、来店回数を表す文言が一緒に入力されることがある。
-// これを残したまま履歴キーを作ると、来店のたびに文言が変わって毎回別人として記録されてしまうため、
-// 保存・検索の直前に必ずこれで取り除き、同じお客様として履歴が積み上がるようにする
-// （stripFirstRpTextで「新規」「初指名」「初回RP」系を、続けて「◯回目」表記を取り除く）
+// お客様名欄には「新規」「初回RP」「2回目」「同伴20:30」のように、来店回数や来店形態を表す
+// 文言が一緒に入力されることがある。これを残したまま履歴キーを作ると、来店のたびに文言が変わって
+// 毎回別人として記録されてしまうため、保存・検索の直前に必ずこれで取り除き、同じお客様として
+// 履歴が積み上がるようにする（stripFirstRpTextで「新規」「初指名」「初回RP」系を、続けて
+// 「◯回目」表記、「同伴」とそれに付随する時刻表記を取り除く）
 function stripVisitLabelForHistory(name) {
   if (!name) return name;
-  return stripFirstRpText(name).replace(/[0-9０-９]+\s*回目/g, '').replace(/\s+/g, ' ').trim();
+  return stripFirstRpText(name)
+    .replace(/[0-9０-９]+\s*回目/g, '')
+    .replace(/[0-9０-９]{1,2}[:：][0-9０-９]{2}\s*同伴/g, '')
+    .replace(/同伴\s*[0-9０-９]{1,2}[:：][0-9０-９]{2}/g, '')
+    .replace(/同伴/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 // Firebaseのキーに使えない記号（. # $ [ ] /）を安全な文字に置き換える
 function sanitizeHistoryKeyPart(text) {
