@@ -3399,6 +3399,19 @@ function tsukeTimerColor(startedAt, isFirst) {
   return tsukeElapsedMinutes(startedAt) > threshold ? '#c0392b' : '#7fd97f';
 }
 
+// 初回卓の来店時刻（actualArrive、"19:20"のような既にシフト表記済みの文字列）から現在までの経過分数を計算する。
+// calcLeaveTimeFromNowと同じ日付跨ぎの考え方（深夜0〜5時台は前日の続きとして計算する）
+function computeFirstGroupElapsedMinutes(actualArrive) {
+  const m = String(actualArrive || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const startTotal = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  const now = new Date();
+  let hours = now.getHours();
+  if (hours < 6) hours += 24;
+  const nowTotal = hours * 60 + now.getMinutes();
+  return Math.max(0, nowTotal - startTotal);
+}
+
 // 着席する：既に他のお客様についていれば、まずそちらを自動で離席させてから、新しいお客様に着く
 function doJoinTsuke(kanbuName, guestId, tableKey, tanto, guestName) {
   const idStr = String(guestId); // 通常ゲスト(数値)・初回グループ("first_◯"文字列)どちらも、以後は文字列として統一して扱う
@@ -3475,6 +3488,67 @@ function buildFirstGroupPhotoSeatInfo(rows) {
     });
   });
   return info;
+}
+
+// 今アクティブな初回グループ（卓番が決まっていて来店済み、まだ全員が飲直等で対応完了していないもの）を返す。
+// buildTsukeFloorBoxesHtml内の初回フィルタ条件と同じもの
+function getActiveFirstGroupsForFloor() {
+  return (firstGroups || []).filter(g => {
+    if (!g.tableNum || !g.arrived) return false;
+    const allDone = (g.rows || []).length > 0 && (g.rows || []).every(r => isFirstRowDone(r));
+    return !allDone;
+  });
+}
+
+// 付け回しモーダルの「卓状況」/「初回一覧」タブを切り替える（内勤専用。切替状態は端末内のみで保持し、Firebaseには保存しない）
+function switchTsukeFloorTab(tab) {
+  window._tsukeFloorTab = tab;
+  renderTsukeModalIfOpen();
+}
+
+// 初回一覧タブ：現在アクティブな初回卓を横並びのカードで一覧表示する。
+// 5卓以上が同時進行している時に、BOXをタップして開閉せずに全卓のキャスト候補をその場で確認・操作できるようにするための画面。
+// キャスト選択の行一覧はopenTsukeTablePopupと全く同じbuildTsukeCandidateListHtmlを使うため、仕様は常に両画面で一致する
+function buildFirstGroupListCardsHtml() {
+  const activeGroups = getActiveFirstGroupsForFloor();
+  if (!activeGroups.length) {
+    return `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:20px 0;">現在進行中の初回卓はありません</div>`;
+  }
+  const cardsHtml = activeGroups.map(fg => {
+    const guestId = 'first_' + fg.id;
+    const guest = resolveTsukeGuest(guestId);
+    if (!guest) return '';
+    const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
+    const elapsed = computeFirstGroupElapsedMinutes(guest.actualArrive);
+    const outTime = (guest.actualArrive && fg.stayMinutes) ? addMinutesToTimeString(guest.actualArrive, fg.stayMinutes) : '';
+    const members = getTsukeMembersOnGuest(guestId);
+    const membersHtml = members.length
+      ? members.map(m => `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--accent);font-weight:700;background:rgba(201,168,76,0.12);border-radius:99px;padding:2px 8px;margin:0 4px 4px 0;">🚶${m.name} <span style="color:${tsukeTimerColor(m.startedAt, true)};" data-tsuke-timer="${m.startedAt}" data-tsuke-first="1">${tsukeElapsedMinutes(m.startedAt)}</span>分</span>`).join('')
+      : `<span style="font-size:10.5px;color:#666;">まだ誰もついていません</span>`;
+    const candidateList = buildTsukeCandidateListHtml(guestId, guest, true, { showBusyElsewhere: true });
+    // ヘッダー部分だけ長押しで滞在時間（60/90分）選択を開けるようにする（BOX版と同じopenFirstStayPicker経由）
+    return `<div style="flex:0 0 272px;width:272px;background:var(--surface2);border:1px solid #4a90d9;border-radius:8px;padding:10px 11px;display:flex;flex-direction:column;gap:6px;">
+      <div oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('first','${fg.id}')"
+        ontouchstart="startLeaveEditHold('first','${fg.id}')" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"
+        style="cursor:pointer;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+          <span style="font-size:14px;font-weight:700;color:#f0ece0;">${tableKey}卓</span>
+          <span style="font-size:10.5px;color:var(--text-dim);">${guest.name || ''}（${guest.count || 0}名）</span>
+        </div>
+        <div style="font-size:10px;color:#7fb8e0;margin-top:2px;">
+          ${elapsed != null ? `経過 <b>${elapsed}</b>分` : ''}${guest.actualArrive ? ` ・🕐${guest.actualArrive}` : ''}${outTime ? ` ・⏰${outTime}` : ''}
+        </div>
+        <div style="font-size:10px;margin-top:3px;">${guest.tantoDisplay || ''}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;">${membersHtml}</div>
+      <div style="height:1px;background:#2a2a2a;margin:2px 0;"></div>
+      <div style="max-height:260px;overflow-y:auto;">
+        ${candidateList.capNoteHtml}
+        ${candidateList.bodyHtml}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;">${cardsHtml}</div>`;
 }
 
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
@@ -3616,6 +3690,170 @@ function resolveTsukeGuest(guestId) {
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
 }
 
+// 内勤向けのキャスト選択リスト本体（見出し＋候補者の行一覧）を組み立てる。
+// openTsukeTablePopup（フルスクリーンポップアップ版）と初回一覧カード（横並び版）の両方から呼ばれる
+// 共通ロジック。ここを直せば両方の画面に同じ変更が反映されるので、挙動が食い違う心配がない。
+// opts.showBusyElsewhere: trueにすると、他の卓に今ついている人も一覧からは消さず、
+// 「◯◯卓に△分着卓中」とグレー表示して「着」ボタンを無効化する（初回一覧カードだけで使う追加表示。
+// 通常のポップアップでは今まで通り、他の卓についている人はそもそも候補に出てこない）
+function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
+  opts = opts || {};
+  const showBusyElsewhere = !!opts.showBusyElsewhere;
+  const idStr = String(guestId);
+  const pairTanto = guest.tanto || '';
+  const pairGuestName = (guest.name || '').replace('△', '').trim();
+  const aliasIndexForTsuke = buildAliasIndex();
+  const helpNames = extractStaffNames(guest.help || '', aliasIndexForTsuke);
+  const tantoNames = extractStaffNames(pairTanto, aliasIndexForTsuke);
+  const photoSeatInfo = guest.photoSeatInfo || {};
+  const tsukeLogData = window.tsukeLog || {};
+  const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
+  const tsukeFirstCountToday = (name) => {
+    const tableIds = new Set();
+    Object.values(tsukeLogData).forEach(e => {
+      if (e.kanbu === name && e.isFirst) tableIds.add(e.guestId || (e.tanto + '　' + e.guestName));
+    });
+    const active = (window.tsukeActive || {})[name];
+    if (active && active.isFirst) tableIds.add(active.guestId || (active.tanto + '　' + active.guestName));
+    return tableIds.size;
+  };
+  const getShiftThresholdFor = (name) => computeStaffReadyThreshold(name);
+  // このキャストが、この卓（guestId）に対して直近どういう離れ方をしたかを返す
+  // （temporary=trueの一時離席なら「戻す」、falseの通常離れるなら「対応済」として扱う）
+  const getLastLeaveFor = (name) => {
+    const entries = Object.values(tsukeLogData).filter(e => e.kanbu === name && String(e.guestId) === idStr);
+    if (!entries.length) return null;
+    entries.sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
+    return entries[0];
+  };
+  const candidateNames = getWorkingStaffList().filter(name => {
+    if (!isFirstGroup && tantoNames.includes(name)) return false; // 指名客の担当本人はこの卓の一覧には出さない
+    // 休み・有休の人は、付け回しの候補には出さない（本日の予定報告で古い休みフラグが上書きされていても、
+    // ここでは内勤が今つけている休み/有休の状態を優先する）
+    const dayStatusEntry = (staffDayStatus || {})[name];
+    if (dayStatusEntry && (dayStatusEntry.status === 'off' || dayStatusEntry.status === 'paid_off')) return false;
+    // 今すでに別の卓についている人は、誤って「移動」させてしまう事故を防ぐため、
+    // この卓の選択画面には表示しない（この卓についている本人は除く）。
+    // ただしshowBusyElsewhereがtrueの時だけは、除外せず一覧に残す（初回一覧カード用）
+    if (!showBusyElsewhere) {
+      const activeInfo = getTsukeActiveOf(name);
+      if (activeInfo && String(activeInfo.guestId) !== idStr) return false;
+    }
+    return true;
+  });
+  const rows = candidateNames.map(name => {
+    const activeInfo = getTsukeActiveOf(name);
+    const isOnThisTable = !!(activeInfo && String(activeInfo.guestId) === idStr);
+    const isBusyElsewhere = !!(activeInfo && !isOnThisTable);
+    // 一時離席／対応済の区別は初回卓だけの概念（指名卓は単発の「離れる」のみのため対象外）
+    const lastLeave = (isFirstGroup && !isOnThisTable && !isBusyElsewhere) ? getLastLeaveFor(name) : null;
+    const isDone = !!(lastLeave && !lastLeave.temporary);
+    const isTempAway = !!(lastLeave && lastLeave.temporary);
+    return { name, activeInfo, isOnThisTable, isBusyElsewhere, isDone, isTempAway };
+  });
+  // 初回卓の定員は「今その卓に実際についている人数」だけで判定する。一時離席中の人は
+  // 席を予約扱いにはせず、その間は別のキャストが空いた枠に着けるようにする。
+  // 対応済（通常の「離れる」で完全に外れた人）も同様に枠を消費したままにしない
+  const usedSlots = rows.filter(r => r.isOnThisTable).length;
+  const capacityLeft = (isFirstGroup && guest.count) ? guest.count - usedSlots : null;
+  let capNoteHtml = '';
+  if (capacityLeft !== null) {
+    capNoteHtml = `<div style="font-size:11.5px;color:var(--text-dim);">定員${guest.count}名中 ${usedSlots}名</div>`;
+  }
+  // 指名卓（担当・ヘルプ指名）と初回卓（写真指名の席色）は見るべき情報が違うため、説明文を使い回さず分ける
+  const headingDesc = isFirstGroup
+    ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">））</span>`
+    : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
+  // 並び順は状態で並べ替えず、在籍スタッフ登録（設定画面）で入力した順番のまま表示する
+  const sortedRows = rows;
+
+  const rowsHtml = sortedRows.map(r => {
+    const name = r.name;
+    const isHelpRequested = helpNames.includes(name);
+    const photoSeat = photoSeatInfo[name];
+    // 指名卓は「この担当・お客様に何回付いたか」、初回卓は「本日すでに何回初回卓に付いたか」を回数として使う
+    const countForDisplay = isFirstGroup ? tsukeFirstCountToday(name) : tsukePastCount(name);
+    // 半休の人は候補には出すが、名前の横に分かるように「半休」を付ける
+    const isHalfOff = (staffDayStatus || {})[name] && staffDayStatus[name].status === 'half_off';
+    const halfOffBadge = isHalfOff ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid #e67e22;color:#e67e22;margin-left:6px;">半休</span>` : '';
+    const countPill = countForDisplay > 0 ? `<span style="font-size:10.5px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;background:rgba(201,168,76,0.22);color:var(--accent);">${countForDisplay}</span>` : '';
+
+    if (r.isBusyElsewhere) {
+      // 他の卓についている最中：一覧からは消さず、どこに何分ついているか分かるようにして「着」は押せなくする
+      // （これは今のポップアップには無い、初回一覧カードだけの追加表示）
+      const seatBadge = photoSeat && photoSeat.seat ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid ${photoSeat.hex};color:${photoSeat.hex};margin-left:6px;">${photoSeat.seat}</span>` : '';
+      const otherTableLabel = r.activeInfo.tableKey || '';
+      const busyLabel = `（${otherTableLabel}卓に${tsukeElapsedMinutes(r.activeInfo.startedAt)}分着卓中）`;
+      const actionsHtml = `<span style="opacity:0.5;background:transparent;border:1px solid #444;border-radius:99px;color:#555;font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;display:inline-block;">着</span>`;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);border-radius:6px;">
+        <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:#3a3a3a;"></div>
+        <div style="flex:1;min-width:0;">
+          <span style="font-size:13.5px;color:#666;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${busyLabel}${seatBadge}${halfOffBadge}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
+      </div>`;
+    }
+
+    // 名前をタップすると「次に着かせる予定」の目印◯を付けたり消したりできる（本人を着席させる操作とは無関係の、
+    // 内勤が自分用にメモするための印。端末内だけの一時的な状態でFirebaseには保存しない）
+    const isNextPick = !!(window._tsukeNextPicks && window._tsukeNextPicks[String(guestId)] && window._tsukeNextPicks[String(guestId)][name]);
+    const nextPickMark = isNextPick ? `<span style="color:var(--accent);font-weight:900;margin-left:4px;">◯</span>` : '';
+    // 別の卓で既に◯が付いている人は、その卓番を小さく添えて二重に予定してしまわないよう気付けるようにする
+    const otherPickTable = findOtherTsukeNextPickTable(name, guestId);
+    const otherPickHtml = otherPickTable ? `<div style="font-size:10px;color:var(--accent);margin-top:1px;">→ ${otherPickTable}卓に次に着く予定</div>` : '';
+    const barColor = r.isOnThisTable ? 'var(--accent)'
+      : r.isTempAway ? '#c0392b'
+      : r.isDone ? '#444'
+      : photoSeat ? photoSeat.hex
+      : isHelpRequested ? '#e05a9e' : 'var(--accent)';
+    const nameColor = r.isDone ? '#888'
+      : r.isOnThisTable ? 'var(--accent)'
+      : photoSeat ? photoSeat.hex
+      : isHelpRequested ? '#e05a9e' : 'var(--text)';
+    const seatBadge = photoSeat && photoSeat.seat ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid ${photoSeat.hex};color:${photoSeat.hex};margin-left:6px;">${photoSeat.seat}</span>` : '';
+
+    let actionsHtml;
+    if (r.isDone) {
+      actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>`;
+    } else if (r.isOnThisTable) {
+      const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
+      // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
+      const tempLeaveBtn = isFirstGroup ? `<button onclick="confirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
+      actionsHtml = tempLeaveBtn + leaveBtn;
+    } else {
+      // 着（初めて呼ぶ）／戻す（この卓に一時離席していた人を呼び戻す）。
+      // 他の卓に今ついている人はcandidateNamesの時点で除外済み（showBusyElsewhereがtrueの時は別枝で処理済み）のため、
+      // ここには出てこない（誤って別の卓から引き抜いてしまう「移動」操作は廃止した）
+      const label = r.isTempAway ? '戻す' : '着';
+      const isCappedOut = capacityLeft !== null && capacityLeft <= 0;
+      const threshold = getShiftThresholdFor(name);
+      const isPending = !!(threshold && !isTimeOverdue(threshold.time)) && !r.isTempAway;
+      const btnBg = label === '着' ? 'transparent' : '#c0392b';
+      const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
+      const btnColor = label === '着' ? 'var(--accent)' : '#fff';
+      const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
+      const btn = `<button ${isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
+      actionsHtml = timeTag + btn;
+    }
+
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
+      <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
+      <div style="flex:1;min-width:0;">
+        <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}</span>
+        ${otherPickHtml}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
+    </div>`;
+  }).join('');
+
+  const bodyHtml = `
+    <div style="font-size:11px;color:var(--text-dim);padding:0 4px 6px;">キャスト ${headingDesc}</div>
+    ${rowsHtml || `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">対象のキャストがいません</div>`}
+  `;
+
+  return { bodyHtml, capNoteHtml, usedSlots, capacityLeft };
+}
+
 // フルスクリーン系ポップアップ共通：上部のつまみエリアを下にスワイプすると閉じる
 function setupSwipeToClose(sheetEl, handleEl, onClose) {
   if (!sheetEl || !handleEl) return;
@@ -3680,35 +3918,8 @@ function openTsukeTablePopup(guestId) {
   // このお客様の「担当・お客様名」ペア（卓移動があっても、この組み合わせで過去の実績を追う）
   const pairTanto = guest.tanto || '';
   const pairGuestName = (guest.name || '').replace('△','').trim();
-  const aliasIndexForTsuke = buildAliasIndex();
-  // ヘルプ指名欄に書かれているキャスト名を抽出する（担当が来てほしいと書いた人を、選択時に目立たせるため）
-  const helpNames = extractStaffNames(guest.help || '', aliasIndexForTsuke);
-  // 担当欄（指名客の指名先）に書かれているキャスト名。指名客本人はキャスト選択画面には出さない
-  // （初回の写真指名は「非表示」ではなく、下のphotoSeatInfoで選択画面上に色付きで出す扱いにする）
-  const tantoNames = extractStaffNames(pairTanto, aliasIndexForTsuke);
   // 初回の卓かどうか（初回は同じキャストが同じ組に何度も付くことはないため、一度付いたら選択肢から外す）
   const isFirstGroup = typeof guestId === 'string' && guestId.indexOf('first_') === 0;
-  // 初回の写真指名キャスト→席の色。選択画面のボタンを担当と同じ色（左=ピンク・中=青・右=緑）で目立たせるために使う
-  const photoSeatInfo = guest.photoSeatInfo || {};
-  // tsukeLogはリセット操作のたびに空にされる（index.html:5279-5281）ため、日付での絞り込みなしで「本日分」として扱える
-  const tsukeLogData = window.tsukeLog || {};
-  const tsukePastCount = (name) => Object.values(tsukeLogData).filter(e => e.kanbu === name && e.tanto === pairTanto && e.guestName === pairGuestName).length;
-  // 本日すでに何卓の初回に付いたか（guestIdで判定するので、写真指名やお客様名がたまたま同じでも別の卓として正しく数えられる。
-  // 同じ初回卓（同じguestId）に2度付いても1卓として数える。着卓中（まだ離席していない）分も含める）
-  const tsukeFirstCountToday = (name) => {
-    const tableIds = new Set();
-    Object.values(tsukeLogData).forEach(e => {
-      if (e.kanbu === name && e.isFirst) tableIds.add(e.guestId || (e.tanto + '　' + e.guestName));
-    });
-    const active = (window.tsukeActive || {})[name];
-    if (active && active.isFirst) tableIds.add(active.guestId || (active.tanto + '　' + active.guestName));
-    return tableIds.size;
-  };
-  // このキャストの出勤・同伴の目安時刻を返す（お休み・有休の人はそもそも候補一覧に出てこないため
-  // 半休判定も含めてcomputeStaffReadyThresholdにそのまま委ねてよい。出勤・同伴時間は
-  // 「これより遅れないでね」というラインなので、目安時刻前でも選択自体はできるようにし、
-  // ボタンの見た目だけを変えるために使う）
-  const getShiftThresholdFor = (name) => computeStaffReadyThreshold(name);
 
   // 卓一覧の備考・共有事項を、付け回し画面からも確認できるようにする（初回卓にはこの2項目自体が存在しないため対象外）。
   // 共有事項はもともと「席に着く人へ向けた連絡」なのでマスク対象にせず常に見せ、備考は卓一覧と同じ基準でマスクする
@@ -3777,118 +3988,11 @@ function openTsukeTablePopup(guestId) {
   if (isAdmin) {
     // 内勤：キャスト名を縦一列に並べ、行ごとに「着／離れる／一時離席／戻す／移動」を直接操作する。
     // 卓状況で選べる対象は幹部に絞らず、本日出勤している従業員全員にする
-    // （「本日の幹部稼働」カードの集計対象は幹部だけのまま、こことは別の話）
-    const idStr = String(guestId);
-    // このキャストが、この卓（guestId）に対して直近どういう離れ方をしたかを返す
-    // （temporary=trueの一時離席なら「戻す」、falseの通常離れるなら「対応済」として扱う）
-    const getLastLeaveFor = (name) => {
-      const entries = Object.values(tsukeLogData).filter(e => e.kanbu === name && String(e.guestId) === idStr);
-      if (!entries.length) return null;
-      entries.sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
-      return entries[0];
-    };
-    const candidateNames = getWorkingStaffList().filter(name => {
-      if (!isFirstGroup && tantoNames.includes(name)) return false; // 指名客の担当本人はこの卓の一覧には出さない
-      // 休み・有休の人は、付け回しの候補には出さない（本日の予定報告で古い休みフラグが上書きされていても、
-      // ここでは内勤が今つけている休み/有休の状態を優先する）
-      const dayStatusEntry = (staffDayStatus || {})[name];
-      if (dayStatusEntry && (dayStatusEntry.status === 'off' || dayStatusEntry.status === 'paid_off')) return false;
-      // 今すでに別の卓についている人は、誤って「移動」させてしまう事故を防ぐため、
-      // この卓の選択画面には表示しない（この卓についている本人は除く）
-      const activeInfo = getTsukeActiveOf(name);
-      if (activeInfo && String(activeInfo.guestId) !== idStr) return false;
-      return true;
-    });
-    const rows = candidateNames.map(name => {
-      const activeInfo = getTsukeActiveOf(name);
-      const isOnThisTable = !!(activeInfo && String(activeInfo.guestId) === idStr);
-      // 一時離席／対応済の区別は初回卓だけの概念（指名卓は単発の「離れる」のみのため対象外）
-      const lastLeave = (isFirstGroup && !isOnThisTable) ? getLastLeaveFor(name) : null;
-      const isDone = !!(lastLeave && !lastLeave.temporary);
-      const isTempAway = !!(lastLeave && lastLeave.temporary);
-      return { name, activeInfo, isOnThisTable, isDone, isTempAway };
-    });
-    // 初回卓の定員は「今その卓に実際についている人数」だけで判定する。一時離席中の人は
-    // 席を予約扱いにはせず、その間は別のキャストが空いた枠に着けるようにする。
-    // 対応済（通常の「離れる」で完全に外れた人）も同様に枠を消費したままにしない
-    const usedSlots = rows.filter(r => r.isOnThisTable).length;
-    const capacityLeft = (isFirstGroup && guest.count) ? guest.count - usedSlots : null;
-    if (capacityLeft !== null) {
-      capNoteHtml = `<div style="font-size:11.5px;color:var(--text-dim);">定員${guest.count}名中 ${usedSlots}名</div>`;
-    }
-    // 指名卓（担当・ヘルプ指名）と初回卓（写真指名の席色）は見るべき情報が違うため、説明文を使い回さず分ける
-    const headingDesc = isFirstGroup
-      ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">））</span>`
-      : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
-    // 並び順は状態で並べ替えず、在籍スタッフ登録（設定画面）で入力した順番のまま表示する
-    const sortedRows = rows;
-
-    const rowsHtml = sortedRows.map(r => {
-      const name = r.name;
-      const isHelpRequested = helpNames.includes(name);
-      const photoSeat = photoSeatInfo[name];
-      // 指名卓は「この担当・お客様に何回付いたか」、初回卓は「本日すでに何回初回卓に付いたか」を回数として使う
-      const countForDisplay = isFirstGroup ? tsukeFirstCountToday(name) : tsukePastCount(name);
-      // 半休の人は候補には出すが、名前の横に分かるように「半休」を付ける
-      const isHalfOff = (staffDayStatus || {})[name] && staffDayStatus[name].status === 'half_off';
-      const halfOffBadge = isHalfOff ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid #e67e22;color:#e67e22;margin-left:6px;">半休</span>` : '';
-      // 名前をタップすると「次に着かせる予定」の目印◯を付けたり消したりできる（本人を着席させる操作とは無関係の、
-      // 内勤が自分用にメモするための印。端末内だけの一時的な状態でFirebaseには保存しない）
-      const isNextPick = !!(window._tsukeNextPicks && window._tsukeNextPicks[String(guestId)] && window._tsukeNextPicks[String(guestId)][name]);
-      const nextPickMark = isNextPick ? `<span style="color:var(--accent);font-weight:900;margin-left:4px;">◯</span>` : '';
-      // 別の卓で既に◯が付いている人は、その卓番を小さく添えて二重に予定してしまわないよう気付けるようにする
-      const otherPickTable = findOtherTsukeNextPickTable(name, guestId);
-      const otherPickHtml = otherPickTable ? `<div style="font-size:10px;color:var(--accent);margin-top:1px;">→ ${otherPickTable}卓に次に着く予定</div>` : '';
-      const barColor = r.isOnThisTable ? 'var(--accent)'
-        : r.isTempAway ? '#c0392b'
-        : r.isDone ? '#444'
-        : photoSeat ? photoSeat.hex
-        : isHelpRequested ? '#e05a9e' : 'var(--accent)';
-      const nameColor = r.isDone ? '#888'
-        : r.isOnThisTable ? 'var(--accent)'
-        : photoSeat ? photoSeat.hex
-        : isHelpRequested ? '#e05a9e' : 'var(--text)';
-      const seatBadge = photoSeat && photoSeat.seat ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid ${photoSeat.hex};color:${photoSeat.hex};margin-left:6px;">${photoSeat.seat}</span>` : '';
-      const countPill = countForDisplay > 0 ? `<span style="font-size:10.5px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;background:rgba(201,168,76,0.22);color:var(--accent);">${countForDisplay}</span>` : '';
-
-      let actionsHtml;
-      if (r.isDone) {
-        actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>`;
-      } else if (r.isOnThisTable) {
-        const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
-        // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
-        const tempLeaveBtn = isFirstGroup ? `<button onclick="confirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
-        actionsHtml = tempLeaveBtn + leaveBtn;
-      } else {
-        // 着（初めて呼ぶ）／戻す（この卓に一時離席していた人を呼び戻す）。
-        // 他の卓に今ついている人はcandidateNamesの時点で除外済みのため、ここには出てこない
-        // （誤って別の卓から引き抜いてしまう「移動」操作は廃止した）
-        const label = r.isTempAway ? '戻す' : '着';
-        const isCappedOut = capacityLeft !== null && capacityLeft <= 0;
-        const threshold = getShiftThresholdFor(name);
-        const isPending = !!(threshold && !isTimeOverdue(threshold.time)) && !r.isTempAway;
-        const btnBg = label === '着' ? 'transparent' : '#c0392b';
-        const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
-        const btnColor = label === '着' ? 'var(--accent)' : '#fff';
-        const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
-        const btn = `<button ${isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
-        actionsHtml = timeTag + btn;
-      }
-
-      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
-        <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
-        <div style="flex:1;min-width:0;">
-          <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}</span>
-          ${otherPickHtml}
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
-      </div>`;
-    }).join('');
-
-    bodyHtml = `
-      <div style="font-size:11px;color:var(--text-dim);padding:0 4px 6px;">キャスト ${headingDesc}</div>
-      ${rowsHtml || `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">対象のキャストがいません</div>`}
-    `;
+    // （「本日の幹部稼働」カードの集計対象は幹部だけのまま、こことは別の話）。
+    // 初回一覧カード（buildFirstGroupListCardsHtml）と共通のbuildTsukeCandidateListHtmlを使う
+    const candidateList = buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, {});
+    bodyHtml = candidateList.bodyHtml;
+    capNoteHtml = candidateList.capNoteHtml;
   } else if (isFirstGroup) {
     // 初回卓は内勤が全て着卓・離席を指示するため、キャストロールからは着卓操作をさせない
     bodyHtml = membersHtml + `<div style="font-size:11px;color:var(--text-dim);text-align:center;margin-top:12px;">初回卓の着卓・離席は内勤が行います</div>`;
@@ -3991,6 +4095,7 @@ function toggleTsukeNextPick(guestId, name) {
   if (window._tsukeNextPicks[gid][name]) delete window._tsukeNextPicks[gid][name];
   else window._tsukeNextPicks[gid][name] = true;
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
+  renderTsukeModalIfOpen();
 }
 
 // この人が、今開いている卓とは別の卓で「次に着かせる予定」の◯を付けられていないか探す。
@@ -4044,6 +4149,16 @@ function closeTsukemawashiModal() {
 function renderTsukeModalIfOpen() {
   const overlay = document.getElementById('tsukeModal');
   if (!overlay || !overlay.classList.contains('show')) return;
+  const isAdmin = localStorage.getItem('rj_role') === 'admin';
+  const activeFirstCount = getActiveFirstGroupsForFloor().length;
+  // 初回一覧タブは内勤専用。対象の初回卓が0件になったら、タブ自体を消して自動的に卓状況タブに戻す
+  if (!isAdmin || activeFirstCount === 0) window._tsukeFloorTab = 'grid';
+  const currentTab = window._tsukeFloorTab || 'grid';
+  const tabBarHtml = (isAdmin && activeFirstCount >= 1) ? `
+    <div style="display:flex;gap:6px;margin-bottom:8px;">
+      <button onclick="switchTsukeFloorTab('grid')" style="flex:1;padding:6px 0;border-radius:6px;border:1px solid ${currentTab==='grid'?'var(--accent)':'#444'};background:${currentTab==='grid'?'var(--accent)':'transparent'};color:${currentTab==='grid'?'#1a1400':'var(--text-dim)'};font-size:11.5px;font-weight:700;cursor:pointer;font-family:var(--font-main);">卓状況</button>
+      <button onclick="switchTsukeFloorTab('list')" style="flex:1;padding:6px 0;border-radius:6px;border:1px solid ${currentTab==='list'?'var(--accent)':'#444'};background:${currentTab==='list'?'var(--accent)':'transparent'};color:${currentTab==='list'?'#1a1400':'var(--text-dim)'};font-size:11.5px;font-weight:700;cursor:pointer;font-family:var(--font-main);">初回一覧 (${activeFirstCount})</button>
+    </div>` : '';
   overlay.innerHTML = `
     <div class="modal" style="max-width:600px;width:96vw;max-height:88vh;display:flex;flex-direction:column;">
       <div class="modal-header" style="flex-wrap:wrap;row-gap:6px;">
@@ -4061,7 +4176,8 @@ function renderTsukeModalIfOpen() {
             <span onclick="openAttendanceBreakdown('priority')" style="font-size:10.5px;color:var(--text-dim);white-space:nowrap;cursor:pointer;">本日出勤 <span style="color:#2ecc71;font-weight:700;">${arrived}</span>/${total}</span>
           </div>`;
         })()}
-        ${buildTsukeFloorBoxesHtml()}
+        ${tabBarHtml}
+        ${currentTab === 'list' ? buildFirstGroupListCardsHtml() : buildTsukeFloorBoxesHtml()}
         <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">本日の幹部稼働</div>
         ${buildTsukeKanbuStatsHtml()}
       </div>
