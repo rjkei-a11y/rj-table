@@ -3523,32 +3523,34 @@ function buildFirstGroupListCardsHtml() {
     const outTime = (guest.actualArrive && fg.stayMinutes) ? addMinutesToTimeString(guest.actualArrive, fg.stayMinutes) : '';
     const members = getTsukeMembersOnGuest(guestId);
     const membersHtml = members.length
-      ? members.map(m => `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--accent);font-weight:700;background:rgba(201,168,76,0.12);border-radius:99px;padding:2px 8px;margin:0 4px 4px 0;">🚶${m.name} <span style="color:${tsukeTimerColor(m.startedAt, true)};" data-tsuke-timer="${m.startedAt}" data-tsuke-first="1">${tsukeElapsedMinutes(m.startedAt)}</span>分</span>`).join('')
-      : `<span style="font-size:10.5px;color:#666;">まだ誰もついていません</span>`;
+      ? members.map(m => `<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;color:var(--accent);font-weight:700;background:rgba(201,168,76,0.12);border-radius:99px;padding:1px 6px;margin:0 3px 3px 0;">🚶${m.name} <span style="color:${tsukeTimerColor(m.startedAt, true)};" data-tsuke-timer="${m.startedAt}" data-tsuke-first="1">${tsukeElapsedMinutes(m.startedAt)}</span>分</span>`).join('')
+      : `<span style="font-size:9px;color:#666;">まだ誰もついていません</span>`;
     const candidateList = buildTsukeCandidateListHtml(guestId, guest, true, { showBusyElsewhere: true });
     // ヘッダー部分だけ長押しで滞在時間（60/90分）選択を開けるようにする（BOX版と同じopenFirstStayPicker経由）
-    return `<div style="flex:0 0 272px;width:272px;background:var(--surface2);border:1px solid #4a90d9;border-radius:8px;padding:10px 11px;display:flex;flex-direction:column;gap:6px;">
+    // カード自体は幅・余白・文字サイズを縮小し、キャスト候補一覧は高さを狭めてスクロール表示にすることで、
+    // キャスト選択行自体（buildTsukeCandidateListHtmlの内部）には一切手を加えずにカード全体を約半分のサイズにしている
+    return `<div style="flex:0 0 185px;width:185px;background:var(--surface2);border:1px solid #4a90d9;border-radius:6px;padding:6px 7px;display:flex;flex-direction:column;gap:4px;">
       <div oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('first','${fg.id}')"
         ontouchstart="startLeaveEditHold('first','${fg.id}')" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"
         style="cursor:pointer;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
-          <span style="font-size:14px;font-weight:700;color:#f0ece0;">${tableKey}卓</span>
-          <span style="font-size:10.5px;color:var(--text-dim);">${guest.name || ''}（${guest.count || 0}名）</span>
+          <span style="font-size:12px;font-weight:700;color:#f0ece0;">${tableKey}卓</span>
+          <span style="font-size:9px;color:var(--text-dim);">${guest.name || ''}（${guest.count || 0}名）</span>
         </div>
-        <div style="font-size:10px;color:#7fb8e0;margin-top:2px;">
+        <div style="font-size:8.5px;color:#7fb8e0;margin-top:1px;">
           ${elapsed != null ? `経過 <b>${elapsed}</b>分` : ''}${guest.actualArrive ? ` ・🕐${guest.actualArrive}` : ''}${outTime ? ` ・⏰${outTime}` : ''}
         </div>
-        <div style="font-size:10px;margin-top:3px;">${guest.tantoDisplay || ''}</div>
+        <div style="font-size:8.5px;margin-top:2px;">${guest.tantoDisplay || ''}</div>
       </div>
       <div style="display:flex;flex-wrap:wrap;">${membersHtml}</div>
-      <div style="height:1px;background:#2a2a2a;margin:2px 0;"></div>
-      <div style="max-height:260px;overflow-y:auto;">
+      <div style="height:1px;background:#2a2a2a;margin:1px 0;"></div>
+      <div style="max-height:150px;overflow-y:auto;">
         ${candidateList.capNoteHtml}
         ${candidateList.bodyHtml}
       </div>
     </div>`;
   }).join('');
-  return `<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;">${cardsHtml}</div>`;
+  return `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;">${cardsHtml}</div>`;
 }
 
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
