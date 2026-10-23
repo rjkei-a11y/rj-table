@@ -3832,10 +3832,17 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
     if (r.isDone) {
       actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>`;
     } else if (r.isOnThisTable) {
-      const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
-      // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
-      const tempLeaveBtn = isFirstGroup ? `<button onclick="confirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
-      actionsHtml = tempLeaveBtn + leaveBtn;
+      // 「着」を押した直後だけ、誤操作に備えて本人の行に「キャンセル」ボタンを出す
+      // （離れる／一時離席の代わりに一時的に差し替え。8秒経つか他の操作をすると通常表示に戻る）
+      const isJustJoined = !!(window._tsukeJustJoined && window._tsukeJustJoined.name === name && String(window._tsukeJustJoined.guestId) === idStr);
+      if (isJustJoined) {
+        actionsHtml = `<button onclick="cancelJustJoinedTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>`;
+      } else {
+        const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
+        // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
+        const tempLeaveBtn = isFirstGroup ? `<button onclick="confirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
+        actionsHtml = tempLeaveBtn + leaveBtn;
+      }
     } else {
       // 着（初めて呼ぶ）／戻す（この卓に一時離席していた人を呼び戻す）。
       // 他の卓に今ついている人はcandidateNamesの時点で除外済み（showBusyElsewhereがtrueの時は別枝で処理済み）のため、
@@ -4097,16 +4104,31 @@ function confirmJoinTsuke(name, guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
   showToast(`${name}さんが${tableKey}卓に着きました`);
-  // キャスト選択画面で誤って別の人を選んでしまった時のために、すぐ取り消せるようにしておく。
-  // ここはdoLeaveTsukeではなくundoJoinTsukeを使い、対応記録（着いた回数）に残さず完全に取り消す。
-  // ボタンは汎用の「元に戻す」ではなく「キャンセル」表記にする（卓状況ポップアップ・初回一覧カードの
-  // どちらの「着」ボタンもconfirmJoinTsukeを共通で呼ぶため、この1箇所の変更で両画面に反映される）
-  offerUndo(`${name}さんを${tableKey}卓に割り当てました`, () => {
-    undoJoinTsuke(name);
+  // 誤って別の人を選んでしまった時のために、その人自身の行（キャスト名の横）に一定時間だけ
+  // 「キャンセル」ボタンを出す（画面下のバーではなく、本人の行に直接出すほうが分かりやすいため）。
+  // buildTsukeCandidateListHtml側でwindow._tsukeJustJoinedを見て、該当行の離れる／一時離席ボタンを
+  // 一時的にキャンセルボタンに差し替える。卓状況ポップアップ・初回一覧カードどちらも同じ関数を使うため、
+  // この1箇所の変更で両画面に反映される
+  if (window._tsukeJustJoinedTimer) clearTimeout(window._tsukeJustJoinedTimer);
+  window._tsukeJustJoined = { name, guestId: String(guestId) };
+  window._tsukeJustJoinedTimer = setTimeout(() => {
+    window._tsukeJustJoined = null;
+    window._tsukeJustJoinedTimer = null;
+    renderTsukeModalIfOpen();
     if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
-  }, 'キャンセル', 'キャンセルしました');
+  }, 8000);
   // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
+}
+
+// 「着」を押した直後だけ、その人の行に出る「キャンセル」ボタンから呼ばれる。
+// doLeaveTsukeではなくundoJoinTsukeを使うので、対応記録（着いた回数）には残らず完全に取り消される
+function cancelJustJoinedTsuke(name) {
+  if (window._tsukeJustJoinedTimer) { clearTimeout(window._tsukeJustJoinedTimer); window._tsukeJustJoinedTimer = null; }
+  window._tsukeJustJoined = null;
+  undoJoinTsuke(name);
+  showToast(`${name}さんの着席をキャンセルしました`);
+  if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
 }
 
 function confirmLeaveTsuke(name) {
@@ -9744,15 +9766,8 @@ window.addEventListener('resize', () => {
 // ===== 汎用の「元に戻す」通知バー（削除・全クリアなどで使い回す） =====
 let _lastUndo = null;
 
-// btnLabel/doneLabelを省略すると、これまで通り「元に戻す」ボタン＋「元に戻しました」トーストになる。
-// 削除の取り消しなど「元の状態に戻す」系はこのデフォルトのままでよいが、
-// 付け回しの「着」を押し間違えた時のような「その場でやめる」系の操作には、
-// 両方の画面（卓状況ポップアップ・初回一覧カード）から呼ばれるconfirmJoinTsukeで
-// btnLabel='キャンセル'を指定している（呼び出し元は1箇所なので両画面に一度に反映される）
-let _lastUndoDoneLabel = '元に戻しました';
-function offerUndo(label, undoFn, btnLabel, doneLabel) {
+function offerUndo(label, undoFn) {
   _lastUndo = undoFn;
-  _lastUndoDoneLabel = doneLabel || '元に戻しました';
   let el = document.getElementById('undoBar');
   if (!el) {
     el = document.createElement('div');
@@ -9762,7 +9777,7 @@ function offerUndo(label, undoFn, btnLabel, doneLabel) {
     el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#242424;border:1px solid var(--accent-dim);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:2000;box-shadow:0 4px 16px rgba(0,0,0,0.5);max-width:90vw;';
     document.body.appendChild(el);
   }
-  el.innerHTML = `<span style="font-size:13px;color:var(--text);white-space:nowrap;">${label}</span><button onclick="runUndo()" style="background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:12px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);font-weight:700;white-space:nowrap;">${btnLabel || '元に戻す'}</button>`;
+  el.innerHTML = `<span style="font-size:13px;color:var(--text);white-space:nowrap;">${label}</span><button onclick="runUndo()" style="background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:12px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);font-weight:700;white-space:nowrap;">元に戻す</button>`;
   el.style.display = 'flex';
   clearTimeout(el._hideTimer);
   el._hideTimer = setTimeout(() => { el.style.display = 'none'; _lastUndo = null; }, 8000);
@@ -9773,9 +9788,8 @@ function runUndo() {
   _lastUndo();
   const el = document.getElementById('undoBar');
   if (el) el.style.display = 'none';
-  const doneLabel = _lastUndoDoneLabel || '元に戻しました';
   _lastUndo = null;
-  showToast(doneLabel);
+  showToast('元に戻しました');
 }
 
 // ===== TOAST =====
