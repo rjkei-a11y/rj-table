@@ -4116,6 +4116,9 @@ function confirmJoinTsuke(name, guestId) {
   // この1箇所の変更で両画面に反映される
   if (!window._tsukeCancelableJoins) window._tsukeCancelableJoins = {};
   window._tsukeCancelableJoins[String(guestId) + '::' + name] = true;
+  // doJoinTsuke内部のrenderTsukeModalIfOpen()は、↑でこの印を立てるより前に実行されてしまっているため、
+  // ここで改めて呼び直さないと、初回一覧カード側のキャンセルボタンが次の再描画までワンテンポ遅れて出てしまう
+  renderTsukeModalIfOpen();
   // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
 }
