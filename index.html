@@ -3544,7 +3544,7 @@ function buildFirstGroupListCardsHtml() {
       </div>
       <div style="display:flex;flex-wrap:wrap;">${membersHtml}</div>
       <div style="height:1px;background:#2a2a2a;margin:1px 0;"></div>
-      <div style="max-height:150px;overflow-y:auto;">
+      <div>
         ${candidateList.capNoteHtml}
         ${candidateList.bodyHtml}
       </div>
@@ -4179,9 +4179,11 @@ function renderTsukeModalIfOpen() {
           </div>`;
         })()}
         ${tabBarHtml}
-        ${currentTab === 'list' ? buildFirstGroupListCardsHtml() : buildTsukeFloorBoxesHtml()}
-        <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">本日の幹部稼働</div>
-        ${buildTsukeKanbuStatsHtml()}
+        ${currentTab === 'list' ? buildFirstGroupListCardsHtml() : `
+          ${buildTsukeFloorBoxesHtml()}
+          <div style="font-size:10px;color:var(--accent);letter-spacing:0.08em;font-weight:700;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--accent-dim);">本日の幹部稼働</div>
+          ${buildTsukeKanbuStatsHtml()}
+        `}
       </div>
     </div>`;
 }
