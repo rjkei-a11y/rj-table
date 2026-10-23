@@ -3160,10 +3160,10 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const boxDim = isFirst ? '#1a4a66' : (isTainyu ? '#4a5a1a' : (arrived ? '#5a4a1a' : '#a68a4a'));
   let line1, line2, line3;
   if (info && info.isFirst) {
-    const arriveHtml = info.actualArrive ? ` <span style="color:${boxText};font-weight:700;">🕐${info.actualArrive}</span>` : '';
+    const arriveHtml = info.actualArrive ? ` <span style="color:${boxText};font-weight:700;">🕐入${info.actualArrive}</span>` : '';
     // 長押しで選んだ滞在時間（60/90分）が分かっている時だけ、来店時刻＋滞在時間で退店予定を表示する
     const outTime = (info.actualArrive && info.stayMinutes) ? addMinutesToTimeString(info.actualArrive, info.stayMinutes) : '';
-    const outHtml = outTime ? ` <span style="color:${boxText};font-weight:700;">⏰${outTime}</span>` : '';
+    const outHtml = outTime ? ` <span style="color:${boxText};font-weight:700;">⏰出${outTime}</span>` : '';
     line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${arriveHtml}${outHtml}`;
     line2 = info.help
       ? `<span style="color:${boxText};">${info.name}</span> <span style="color:${boxDim};">${info.help}</span>`
@@ -3541,7 +3541,7 @@ function buildFirstGroupListCardsHtml() {
           <span style="font-size:9px;color:var(--text-dim);">${guest.name || ''}（${guest.count || 0}名）</span>
         </div>
         <div style="font-size:8.5px;color:#7fb8e0;margin-top:1px;">
-          ${elapsed != null ? `経過 <b>${elapsed}</b>分` : ''}${guest.actualArrive ? ` ・🕐${guest.actualArrive}` : ''}${outTime ? ` ・⏰${outTime}` : ''}
+          ${elapsed != null ? `経過 <b>${elapsed}</b>分` : ''}${guest.actualArrive ? ` ・🕐入${guest.actualArrive}` : ''}${outTime ? ` ・⏰出${outTime}` : ''}
         </div>
         <div style="font-size:8.5px;margin-top:2px;">${guest.tantoDisplay || ''}</div>
       </div>
@@ -3610,7 +3610,7 @@ function buildTsukeFloorBoxesHtml() {
         // 初回は長押しで滞在時間（60/90分）を選べるようにし、来店時刻＋退店予定時刻を追加の1行で表示する
         const outTime = (info.isFirst && info.actualArrive && info.stayMinutes) ? addMinutesToTimeString(info.actualArrive, info.stayMinutes) : '';
         const timeHtml = (info.isFirst && info.actualArrive)
-          ? `<div style="font-size:8.5px;color:#7fb8e0;">🕐${info.actualArrive}${outTime ? ` ⏰${outTime}` : ''}</div>`
+          ? `<div style="font-size:8.5px;color:#7fb8e0;">🕐入${info.actualArrive}${outTime ? ` ⏰出${outTime}` : ''}</div>`
           : '';
         const clickAttr = info.isFirst
           ? `onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTsukeTablePopup('${info.guestId}')"
