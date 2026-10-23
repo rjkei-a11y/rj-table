@@ -4098,11 +4098,13 @@ function confirmJoinTsuke(name, guestId) {
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
   showToast(`${name}さんが${tableKey}卓に着きました`);
   // キャスト選択画面で誤って別の人を選んでしまった時のために、すぐ取り消せるようにしておく。
-  // ここはdoLeaveTsukeではなくundoJoinTsukeを使い、対応記録（着いた回数）に残さず完全に取り消す
+  // ここはdoLeaveTsukeではなくundoJoinTsukeを使い、対応記録（着いた回数）に残さず完全に取り消す。
+  // ボタンは汎用の「元に戻す」ではなく「キャンセル」表記にする（卓状況ポップアップ・初回一覧カードの
+  // どちらの「着」ボタンもconfirmJoinTsukeを共通で呼ぶため、この1箇所の変更で両画面に反映される）
   offerUndo(`${name}さんを${tableKey}卓に割り当てました`, () => {
     undoJoinTsuke(name);
     if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
-  });
+  }, 'キャンセル', 'キャンセルしました');
   // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
 }
@@ -9742,8 +9744,15 @@ window.addEventListener('resize', () => {
 // ===== 汎用の「元に戻す」通知バー（削除・全クリアなどで使い回す） =====
 let _lastUndo = null;
 
-function offerUndo(label, undoFn) {
+// btnLabel/doneLabelを省略すると、これまで通り「元に戻す」ボタン＋「元に戻しました」トーストになる。
+// 削除の取り消しなど「元の状態に戻す」系はこのデフォルトのままでよいが、
+// 付け回しの「着」を押し間違えた時のような「その場でやめる」系の操作には、
+// 両方の画面（卓状況ポップアップ・初回一覧カード）から呼ばれるconfirmJoinTsukeで
+// btnLabel='キャンセル'を指定している（呼び出し元は1箇所なので両画面に一度に反映される）
+let _lastUndoDoneLabel = '元に戻しました';
+function offerUndo(label, undoFn, btnLabel, doneLabel) {
   _lastUndo = undoFn;
+  _lastUndoDoneLabel = doneLabel || '元に戻しました';
   let el = document.getElementById('undoBar');
   if (!el) {
     el = document.createElement('div');
@@ -9753,7 +9762,7 @@ function offerUndo(label, undoFn) {
     el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#242424;border:1px solid var(--accent-dim);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:12px;z-index:2000;box-shadow:0 4px 16px rgba(0,0,0,0.5);max-width:90vw;';
     document.body.appendChild(el);
   }
-  el.innerHTML = `<span style="font-size:13px;color:var(--text);white-space:nowrap;">${label}</span><button onclick="runUndo()" style="background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:12px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);font-weight:700;white-space:nowrap;">元に戻す</button>`;
+  el.innerHTML = `<span style="font-size:13px;color:var(--text);white-space:nowrap;">${label}</span><button onclick="runUndo()" style="background:none;border:1px solid var(--accent);border-radius:4px;color:var(--accent);font-size:12px;padding:4px 10px;cursor:pointer;font-family:var(--font-main);font-weight:700;white-space:nowrap;">${btnLabel || '元に戻す'}</button>`;
   el.style.display = 'flex';
   clearTimeout(el._hideTimer);
   el._hideTimer = setTimeout(() => { el.style.display = 'none'; _lastUndo = null; }, 8000);
@@ -9764,8 +9773,9 @@ function runUndo() {
   _lastUndo();
   const el = document.getElementById('undoBar');
   if (el) el.style.display = 'none';
+  const doneLabel = _lastUndoDoneLabel || '元に戻しました';
   _lastUndo = null;
-  showToast('元に戻しました');
+  showToast(doneLabel);
 }
 
 // ===== TOAST =====
