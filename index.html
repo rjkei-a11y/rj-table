@@ -3442,6 +3442,9 @@ function doLeaveTsuke(kanbuName, shouldRender, temporary) {
   if (window.fbSaveTsukeLogEntry) window.fbSaveTsukeLogEntry(logId, entry);
   delete window.tsukeActive[kanbuName];
   if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
+  // 実際にこの卓を離れた（一時離席も含む）ので、「着」誤操作用のキャンセル印は消しておく。
+  // 戻ってきた時はconfirmJoinTsuke側で改めて印が付く
+  if (window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[String(active.guestId) + '::' + kanbuName];
   if (shouldRender !== false) {
     renderTsukeModalIfOpen();
     renderFloorStatus();
@@ -3832,17 +3835,15 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
     if (r.isDone) {
       actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>`;
     } else if (r.isOnThisTable) {
-      // 「着」を押した直後だけ、誤操作に備えて本人の行に「キャンセル」ボタンを出す
-      // （離れる／一時離席の代わりに一時的に差し替え。8秒経つか他の操作をすると通常表示に戻る）
-      const isJustJoined = !!(window._tsukeJustJoined && window._tsukeJustJoined.name === name && String(window._tsukeJustJoined.guestId) === idStr);
-      if (isJustJoined) {
-        actionsHtml = `<button onclick="cancelJustJoinedTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>`;
-      } else {
-        const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
-        // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
-        const tempLeaveBtn = isFirstGroup ? `<button onclick="confirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
-        actionsHtml = tempLeaveBtn + leaveBtn;
-      }
+      const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
+      // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
+      const tempLeaveBtn = isFirstGroup ? `<button onclick="confirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
+      // 「着」を押し間違えた時のためのキャンセル（対応記録を残さず完全に取り消す）。
+      // 8秒などの時間制限では「あとでやっぱり違った」というケースに対応できないため、
+      // 本人がこの卓を離れる（離れる／一時離席のどちらか）までずっと出しておく
+      const isCancelable = !!(window._tsukeCancelableJoins && window._tsukeCancelableJoins[idStr + '::' + name]);
+      const cancelBtn = isCancelable ? `<button onclick="cancelJustJoinedTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">キャンセル</button>` : '';
+      actionsHtml = cancelBtn + tempLeaveBtn + leaveBtn;
     } else {
       // 着（初めて呼ぶ）／戻す（この卓に一時離席していた人を呼び戻す）。
       // 他の卓に今ついている人はcandidateNamesの時点で除外済み（showBusyElsewhereがtrueの時は別枝で処理済み）のため、
@@ -4104,28 +4105,23 @@ function confirmJoinTsuke(name, guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
   showToast(`${name}さんが${tableKey}卓に着きました`);
-  // 誤って別の人を選んでしまった時のために、その人自身の行（キャスト名の横）に一定時間だけ
-  // 「キャンセル」ボタンを出す（画面下のバーではなく、本人の行に直接出すほうが分かりやすいため）。
-  // buildTsukeCandidateListHtml側でwindow._tsukeJustJoinedを見て、該当行の離れる／一時離席ボタンを
-  // 一時的にキャンセルボタンに差し替える。卓状況ポップアップ・初回一覧カードどちらも同じ関数を使うため、
+  // 誤って別の人を選んでしまった時のために、その人自身の行（キャスト名の横）に「キャンセル」ボタンを出す
+  // （画面下のバーではなく、本人の行に直接出すほうが分かりやすいため）。時間での自動非表示はしない。
+  // 「あとでやっぱりそこじゃなかった」と気づくこともあるため、本人がこの卓を離れる（離れる／一時離席）まで
+  // ずっと出しておく（クリアはdoLeaveTsuke側で行う）。
+  // 卓状況ポップアップ・初回一覧カードどちらもbuildTsukeCandidateListHtmlを共通で使うため、
   // この1箇所の変更で両画面に反映される
-  if (window._tsukeJustJoinedTimer) clearTimeout(window._tsukeJustJoinedTimer);
-  window._tsukeJustJoined = { name, guestId: String(guestId) };
-  window._tsukeJustJoinedTimer = setTimeout(() => {
-    window._tsukeJustJoined = null;
-    window._tsukeJustJoinedTimer = null;
-    renderTsukeModalIfOpen();
-    if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
-  }, 8000);
+  if (!window._tsukeCancelableJoins) window._tsukeCancelableJoins = {};
+  window._tsukeCancelableJoins[String(guestId) + '::' + name] = true;
   // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
 }
 
-// 「着」を押した直後だけ、その人の行に出る「キャンセル」ボタンから呼ばれる。
+// 「着」を押し間違えた時、本人の行に出る「キャンセル」ボタンから呼ばれる。
 // doLeaveTsukeではなくundoJoinTsukeを使うので、対応記録（着いた回数）には残らず完全に取り消される
 function cancelJustJoinedTsuke(name) {
-  if (window._tsukeJustJoinedTimer) { clearTimeout(window._tsukeJustJoinedTimer); window._tsukeJustJoinedTimer = null; }
-  window._tsukeJustJoined = null;
+  const active = getTsukeActiveOf(name);
+  if (active && window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[String(active.guestId) + '::' + name];
   undoJoinTsuke(name);
   showToast(`${name}さんの着席をキャンセルしました`);
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
