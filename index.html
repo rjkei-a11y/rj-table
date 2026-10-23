@@ -3421,7 +3421,15 @@ function doJoinTsuke(kanbuName, guestId, tableKey, tanto, guestName) {
     doLeaveTsuke(kanbuName, false); // 前の分の記録をログに残しつつ離席させる（再描画は後でまとめて行う）
   }
   if (!window.tsukeActive) window.tsukeActive = {};
-  window.tsukeActive[kanbuName] = { guestId: idStr, tableKey, tanto: tanto || '', guestName: guestName || '', startedAt: Date.now(), isFirst };
+  // 一時離席からの「戻す」の場合、経過時間が0からやり直しにならないよう、
+  // 同じ卓（guestId）で直近に一時離席した時点までの経過時間を引き継ぎ、その分だけstartedAtを遡らせる。
+  // 各一時離席ログのminutesは（このstartedAtの遡り方のおかげで）毎回「最初の着卓からの累計時間」に
+  // なっているため、合算ではなく一番新しい1件の値をそのまま使う（合算すると二重に積み上がってしまう）。
+  // 通常の「離れる」＝対応済で終わった分は含めない（対応済になると同じ卓への再着卓自体ができないため）
+  const priorMinutes = Object.values(window.tsukeLog || {})
+    .filter(e => e.kanbu === kanbuName && String(e.guestId) === idStr && e.temporary)
+    .reduce((max, e) => Math.max(max, e.minutes || 0), 0);
+  window.tsukeActive[kanbuName] = { guestId: idStr, tableKey, tanto: tanto || '', guestName: guestName || '', startedAt: Date.now() - priorMinutes * 60000, isFirst };
   if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
   renderTsukeModalIfOpen();
   renderFloorStatus();
