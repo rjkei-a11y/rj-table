@@ -3161,7 +3161,10 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   let line1, line2, line3;
   if (info && info.isFirst) {
     const arriveHtml = info.actualArrive ? ` <span style="color:${boxText};font-weight:700;">🕐${info.actualArrive}</span>` : '';
-    line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${arriveHtml}`;
+    // 長押しで選んだ滞在時間（60/90分）が分かっている時だけ、来店時刻＋滞在時間で退店予定を表示する
+    const outTime = (info.actualArrive && info.stayMinutes) ? addMinutesToTimeString(info.actualArrive, info.stayMinutes) : '';
+    const outHtml = outTime ? ` <span style="color:${boxText};font-weight:700;">⏰${outTime}</span>` : '';
+    line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${arriveHtml}${outHtml}`;
     line2 = info.help
       ? `<span style="color:${boxText};">${info.name}</span> <span style="color:${boxDim};">${info.help}</span>`
       : `<span style="color:${boxText};">${info.name}</span>`;
@@ -3192,11 +3195,17 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   const budgetBadge = budgetCompact
     ? `<div style="position:absolute;top:2px;right:4px;font-size:9px;font-weight:700;color:#ff3b30;line-height:1;">${budgetCompact}</div>`
     : '';
-  // 来店済みは今まで通りタップ・長押し両方、未来店はタップでの詳細確認だけできるようにする（備考等を事前に見られるように）
+  // 来店済みは今まで通りタップ・長押し両方、未来店はタップでの詳細確認だけできるようにする（備考等を事前に見られるように）。
+  // 初回BOXの長押しは、通常ゲストの「退店時間編集」ではなく「滞在時間（60/90分）選択」に向ける
+  // （初回のデータはguestsではなくfirstGroupsにあるため、通常ゲスト向けのopenLeaveTimeQuickEditでは
+  // 対象が見つからず「編集対象の予約が見つかりませんでした」になってしまう）
+  const holdType = isFirst ? 'first' : 'table';
+  const holdKey = isFirst ? (info && info.fgid != null ? info.fgid : '') : key;
+  const holdExtra = isFirst ? '' : `,${info && info.guestId != null ? info.guestId : 'null'}`;
   const interactiveAttrs = arrived
     ? `onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTableDetailModal('${key}',${info && info.guestId != null ? info.guestId : 'null'})"
-       oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('table','${key}',${info && info.guestId != null ? info.guestId : 'null'})"
-       ontouchstart="startLeaveEditHold('table','${key}',${info && info.guestId != null ? info.guestId : 'null'})" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"`
+       oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('${holdType}','${holdKey}'${holdExtra})"
+       ontouchstart="startLeaveEditHold('${holdType}','${holdKey}'${holdExtra})" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"`
     : (info && !info.isFirst)
     ? `onclick="openTableDetailModal('${key}',${info.guestId != null ? info.guestId : 'null'})"`
     : '';
@@ -3489,7 +3498,7 @@ function buildTsukeFloorBoxesHtml() {
     if (!infoMap[key]) infoMap[key] = [];
     const count = parseInt(g.count) || 0;
     const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    infoMap[key].push({ guestId: 'first_' + g.id, tanto: photoNames.join('/'), photoDisplay: buildFirstGroupPhotoDisplay(g.rows), name: `初回${count ? count+'名' : ''}`, help: '', isFirst: true });
+    infoMap[key].push({ guestId: 'first_' + g.id, fgid: g.id, tanto: photoNames.join('/'), photoDisplay: buildFirstGroupPhotoDisplay(g.rows), name: `初回${count ? count+'名' : ''}`, help: '', isFirst: true, actualArrive: g.actualArrive || '', stayMinutes: g.stayMinutes || null });
   });
   const floors = ['V', 'A', 'B'];
   const colsHtml = floors.map(f => {
@@ -3519,10 +3528,21 @@ function buildTsukeFloorBoxesHtml() {
         }).join('');
         // 場内指名は既存の行を崩さないよう、ある時だけ追加の1行として足す（正式な担当と重複していても両方見えて構わない）
         const baanaiHtml = baanaiName ? `<div style="font-size:8.5px;color:#7fd97f;">場内:${baanaiName}</div>` : '';
-        return `<div onclick="openTsukeTablePopup('${info.guestId}')" style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
+        // 初回は長押しで滞在時間（60/90分）を選べるようにし、来店時刻＋退店予定時刻を追加の1行で表示する
+        const outTime = (info.isFirst && info.actualArrive && info.stayMinutes) ? addMinutesToTimeString(info.actualArrive, info.stayMinutes) : '';
+        const timeHtml = (info.isFirst && info.actualArrive)
+          ? `<div style="font-size:8.5px;color:#7fb8e0;">🕐${info.actualArrive}${outTime ? ` ⏰${outTime}` : ''}</div>`
+          : '';
+        const clickAttr = info.isFirst
+          ? `onclick="if(_leaveEditHoldFired){_leaveEditHoldFired=false;return;}openTsukeTablePopup('${info.guestId}')"
+             oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('first','${info.fgid}')"
+             ontouchstart="startLeaveEditHold('first','${info.fgid}')" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"`
+          : `onclick="openTsukeTablePopup('${info.guestId}')"`;
+        return `<div ${clickAttr} style="background:${boxBg};border:1px solid ${boxBorder};border-radius:6px;padding:5px 6px;min-height:34px;cursor:pointer;">
           <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}${specialIconsHtml}</span><span style="font-size:8.5px;">${info.photoDisplay || `<span style="color:var(--text-dim);">${info.tanto}</span>`}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
           ${info.help ? `<div style="font-size:8.5px;color:#e8954a;">H: ${info.help}</div>` : ''}
+          ${timeHtml}
           ${baanaiHtml}
           ${memberHtml}
         </div>`;
@@ -4888,7 +4908,7 @@ function renderFloorStatus() {
     if (!infoMap[key]) infoMap[key] = [];
     const count = parseInt(g.count) || 0;
     const photoNames = [...new Set((g.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    infoMap[key].push({ tanto: '', name: `初回${count ? count+'名' : ''}`, help: photoNames.length ? '写指:'+photoNames.join('/') : '', specials: [], isFirst: true, arrived: true, actualArrive: g.actualArrive || '' });
+    infoMap[key].push({ tanto: '', name: `初回${count ? count+'名' : ''}`, help: photoNames.length ? '写指:'+photoNames.join('/') : '', specials: [], isFirst: true, arrived: true, actualArrive: g.actualArrive || '', fgid: g.id, stayMinutes: g.stayMinutes || null });
   });
   // 通常ゲストは「来店済み」を優先して登録する。同じ卓に複数の来店済みゲストがいる場合は全員分表示する
   guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
@@ -5181,6 +5201,44 @@ function toggleFirstGroupArrived(gid) {
   renderFloorStatus();
   if (document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast(g.arrived ? '来店確認 ✅' : '来店取消');
+}
+
+// 初回BOXの長押しで開く、滞在時間（60分/90分）選択ポップアップ。
+// 選んだ分数＋来店フラグが立った時刻（actualArrive）から、卓状況BOXに退店予定時刻（⏰）を表示する
+function openFirstStayPicker(gid) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) { showToast('編集対象の初回が見つかりませんでした'); return; }
+  let overlay = document.getElementById('firstStayPickerOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='firstStayPickerOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1002;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.onclick = (e) => { if (e.target === overlay) closeFirstStayPicker(); };
+  const durBtnStyle = (selected) => `flex:1;padding:14px;border-radius:8px;border:1px solid var(--accent);background:${selected ? 'var(--accent)' : 'transparent'};color:${selected ? '#1a1400' : 'var(--accent)'};font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-main);`;
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:280px;width:100%;">
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;text-align:center;">初回の滞在時間を選択</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="setFirstGroupStayMinutes(${gid},60)" style="${durBtnStyle(g.stayMinutes === 60)}">60分</button>
+      <button onclick="setFirstGroupStayMinutes(${gid},90)" style="${durBtnStyle(g.stayMinutes === 90)}">90分</button>
+    </div>
+    <button onclick="closeFirstStayPicker()" style="width:100%;margin-top:12px;padding:8px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:12px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
+  </div>`;
+}
+
+function closeFirstStayPicker() {
+  const overlay = document.getElementById('firstStayPickerOverlay');
+  if (overlay) overlay.remove();
+}
+
+function setFirstGroupStayMinutes(gid, minutes) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) { showToast('編集対象の初回が見つかりませんでした'); return; }
+  g.stayMinutes = minutes;
+  saveFirstData();
+  closeFirstStayPicker();
+  renderFloorStatus();
+  renderTsukeModalIfOpen();
+  if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active')) renderView();
+  showToast(`${minutes}分で設定しました`);
 }
 
 function clearFirstData() {
@@ -6151,6 +6209,11 @@ function canEditTable(guest) {
 }
 
 function openLeaveTimeQuickEdit(type, idOrKey, extraGuestId) {
+  // 初回BOXの長押しは、通常ゲストの編集とは別物（滞在時間の選択）なのでここで分岐する
+  if (type === 'first') {
+    openFirstStayPicker(parseInt(idOrKey, 10));
+    return;
+  }
   let guest = null;
   if (type === 'guest') {
     guest = guests.find(x => x.id === idOrKey);
