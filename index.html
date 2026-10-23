@@ -3773,8 +3773,11 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
   const headingDesc = isFirstGroup
     ? `<span style="color:var(--text-dim);">（写真指名は席の色（</span><span style="color:#e05a9e;">左</span><span style="color:var(--text-dim);">/</span><span style="color:#4a90d9;">中</span><span style="color:var(--text-dim);">/</span><span style="color:#7fd97f;">右</span><span style="color:var(--text-dim);">））</span>`
     : `<span style="color:#e05a9e;">（ピンク＝ヘルプ指名</span><span style="color:var(--text-dim);">・色が濃いほど対応回数が多い）</span>`;
-  // 並び順は状態で並べ替えず、在籍スタッフ登録（設定画面）で入力した順番のまま表示する
-  const sortedRows = rows;
+  // 「着いている人」「まだ着いていない人（一時離席中・他卓busyも含む）」「もう対応済みの人」で
+  // 棲み分けた方が分かりやすいという現場の声を受けて、状態別のグループに分けて並べ替える
+  // （各グループ内の順番は従来通り在籍スタッフ登録順のまま＝Array.sortは安定ソートなので崩れない）
+  const groupOrder = (r) => r.isOnThisTable ? 0 : (r.isDone ? 2 : 1);
+  const sortedRows = rows.slice().sort((a, b) => groupOrder(a) - groupOrder(b));
 
   const rowsHtml = sortedRows.map(r => {
     const name = r.name;
