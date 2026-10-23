@@ -3525,7 +3525,7 @@ function buildFirstGroupListCardsHtml() {
     const membersHtml = members.length
       ? members.map(m => `<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;color:var(--accent);font-weight:700;background:rgba(201,168,76,0.12);border-radius:99px;padding:1px 6px;margin:0 3px 3px 0;">🚶${m.name} <span style="color:${tsukeTimerColor(m.startedAt, true)};" data-tsuke-timer="${m.startedAt}" data-tsuke-first="1">${tsukeElapsedMinutes(m.startedAt)}</span>分</span>`).join('')
       : `<span style="font-size:9px;color:#666;">まだ誰もついていません</span>`;
-    const candidateList = buildTsukeCandidateListHtml(guestId, guest, true, { showBusyElsewhere: true });
+    const candidateList = buildTsukeCandidateListHtml(guestId, guest, true, { showBusyElsewhere: true, compact: true });
     // ヘッダー部分だけ長押しで滞在時間（60/90分）選択を開けるようにする（BOX版と同じopenFirstStayPicker経由）
     // カード自体は幅・余白・文字サイズを縮小し、キャスト候補一覧は高さを狭めてスクロール表示にすることで、
     // キャスト選択行自体（buildTsukeCandidateListHtmlの内部）には一切手を加えずにカード全体を約半分のサイズにしている
@@ -3701,6 +3701,10 @@ function resolveTsukeGuest(guestId) {
 function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
   opts = opts || {};
   const showBusyElsewhere = !!opts.showBusyElsewhere;
+  // compact: 行を2段組みにする（名前の行／情報・操作ボタンの行）。横幅が狭い初回一覧カードで、
+  // ヘアメ終了時刻などの長いタグが名前を押しつぶして見えなくなってしまうのを防ぐための表示モード。
+  // ポップアップ版（デフォルト）の見た目・操作性には一切影響しない
+  const compact = !!opts.compact;
   const idStr = String(guestId);
   const pairTanto = guest.tanto || '';
   const pairGuestName = (guest.name || '').replace('△', '').trim();
@@ -3787,6 +3791,16 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
       const otherTableLabel = r.activeInfo.tableKey || '';
       const busyLabel = `（${otherTableLabel}卓に${tsukeElapsedMinutes(r.activeInfo.startedAt)}分着卓中）`;
       const actionsHtml = `<span style="opacity:0.5;background:transparent;border:1px solid #444;border-radius:99px;color:#555;font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;display:inline-block;">着</span>`;
+      if (compact) {
+        return `<div style="padding:6px 6px 6px 9px;border-bottom:1px dashed var(--border);border-radius:6px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:3px;align-self:stretch;min-height:14px;border-radius:2px;flex-shrink:0;background:#3a3a3a;"></div>
+            <span style="font-size:12px;color:#666;font-weight:400;">${name}${seatBadge}${halfOffBadge}</span>
+          </div>
+          <div style="font-size:10px;color:#666;margin-top:2px;padding-left:11px;">${busyLabel}</div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px;padding-left:11px;">${countPill}${actionsHtml}</div>
+        </div>`;
+      }
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);border-radius:6px;">
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:#3a3a3a;"></div>
         <div style="flex:1;min-width:0;">
@@ -3838,10 +3852,22 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
       actionsHtml = timeTag + btn;
     }
 
+    const nameInnerHtml = `${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}`;
+
+    if (compact) {
+      return `<div style="padding:6px 6px 6px 9px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:3px;align-self:stretch;min-height:14px;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
+          <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:12px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};cursor:pointer;">${nameInnerHtml}</span>
+        </div>
+        ${otherPickHtml ? `<div style="padding-left:11px;">${otherPickHtml}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px;padding-left:11px;">${countPill}${actionsHtml}</div>
+      </div>`;
+    }
     return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
       <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
       <div style="flex:1;min-width:0;">
-        <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}</span>
+        <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${nameInnerHtml}</span>
         ${otherPickHtml}
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${countPill}${actionsHtml}</div>
