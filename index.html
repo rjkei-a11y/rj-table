@@ -3897,10 +3897,15 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
     const nameInnerHtml = `${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}`;
 
     if (compact) {
+      // 初回一覧カードだけの追加表示：◯（次に着く候補）が付いている行には、名前の横に専用の
+      // 「キャンセル」ボタンも出す。名前をタップしても外せるが、カードは1行の情報量が多く
+      // タップ対象として気付きにくいため、明示的なボタンでも外せるようにする
+      const cancelPickBtn = isNextPick ? `<button onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="flex-shrink:0;background:transparent;border:1px solid var(--accent);border-radius:99px;color:var(--accent);font-size:9px;font-weight:700;padding:1px 7px;margin-left:4px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>` : '';
       return `<div style="padding:6px 6px 6px 9px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div style="width:3px;align-self:stretch;min-height:14px;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
-          <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="flex:1;min-width:0;font-size:12px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};cursor:pointer;">${nameInnerHtml}</span>
+          <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="flex:1;min-width:0;font-size:12px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nameInnerHtml}</span>
+          ${cancelPickBtn}
         </div>
         ${otherPickHtml ? `<div style="padding-left:11px;">${otherPickHtml}</div>` : ''}
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px;padding-left:11px;">${countPill}${actionsHtml}</div>
