@@ -3844,7 +3844,8 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
     // 名前をタップすると「次に着かせる予定」の目印◯を付けたり消したりできる（本人を着席させる操作とは無関係の、
     // 内勤が自分用にメモするための印。端末内だけの一時的な状態でFirebaseには保存しない）
     const isNextPick = !!(window._tsukeNextPicks && window._tsukeNextPicks[String(guestId)] && window._tsukeNextPicks[String(guestId)][name]);
-    const nextPickMark = isNextPick ? `<span style="color:var(--accent);font-weight:900;margin-left:4px;">◯</span>` : '';
+    // 準備の◯は、着/対応済などの他の表示に埋もれて見落とされないよう、一回り大きく・光彩付きで目立たせる
+    const nextPickMark = isNextPick ? `<span style="color:var(--accent);font-weight:900;font-size:1.5em;line-height:1;vertical-align:middle;margin-left:4px;text-shadow:0 0 6px rgba(201,168,76,0.9);">◯</span>` : '';
     // 別の卓で既に◯が付いている人は、その卓番を小さく添えて二重に予定してしまわないよう気付けるようにする
     const otherPickTable = findOtherTsukeNextPickTable(name, guestId);
     const otherPickHtml = otherPickTable ? `<div style="font-size:10px;color:var(--accent);margin-top:1px;">→ ${otherPickTable}卓に次に着く予定</div>` : '';
