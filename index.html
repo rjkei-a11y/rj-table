@@ -1261,6 +1261,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderFirstTab();
     if (window.renderFloorStatus) window.renderFloorStatus();
     if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active') && window.renderView) window.renderView();
+    // 初回タブ側の卓番・人数・来店確認などの変更を、開いている付け回しモーダル（初回一覧カード含む）にも反映する
+    if (window.renderTsukeModalIfOpen) window.renderTsukeModalIfOpen();
   };
   checkLogin();
   scheduleDailyTempAdminExpiryCheck();
@@ -3505,7 +3507,9 @@ function buildFirstGroupPhotoSeatInfo(rows) {
 // buildTsukeFloorBoxesHtml内の初回フィルタ条件と同じもの
 function getActiveFirstGroupsForFloor() {
   return (firstGroups || []).filter(g => {
-    if (!g.tableNum || !g.arrived) return false;
+    // 来店フラグ（arrived）はまだ必須にしない：卓番・人数さえ入力されていれば、
+    // 来店前の準備段階でも初回一覧カードに出し、次に着く候補を事前に付けられるようにする
+    if (!g.tableNum || !(parseInt(g.count) > 0)) return false;
     const allDone = (g.rows || []).length > 0 && (g.rows || []).every(r => isFirstRowDone(r));
     return !allDone;
   });
@@ -3540,12 +3544,16 @@ function buildFirstGroupListCardsHtml() {
     // ヘッダー部分だけ長押しで滞在時間（60/90分）選択を開けるようにする（BOX版と同じopenFirstStayPicker経由）
     // カード自体は幅・余白・文字サイズを縮小し、キャスト候補一覧は高さを狭めてスクロール表示にすることで、
     // キャスト選択行自体（buildTsukeCandidateListHtmlの内部）には一切手を加えずにカード全体を約半分のサイズにしている
-    return `<div style="flex:0 0 185px;width:185px;background:var(--surface2);border:1px solid #4a90d9;border-radius:6px;padding:6px 7px;display:flex;flex-direction:column;gap:4px;">
+    // 来店フラグが立つ前（卓番・人数だけ入力された準備段階）は、カードの枠色を変えて
+    // 「まだ来店していない」ことが一目で分かるようにする
+    const cardBorder = guest.arrived ? '#4a90d9' : '#555';
+    const prepBadge = !guest.arrived ? `<span style="font-size:8.5px;color:#888;background:#2a2a2a;border:1px dashed #444;border-radius:4px;padding:1px 5px;margin-left:4px;">来店前</span>` : '';
+    return `<div style="flex:0 0 185px;width:185px;background:var(--surface2);border:1px solid ${cardBorder};border-radius:6px;padding:6px 7px;display:flex;flex-direction:column;gap:4px;">
       <div oncontextmenu="event.preventDefault();openLeaveTimeQuickEdit('first','${fg.id}')"
         ontouchstart="startLeaveEditHold('first','${fg.id}')" ontouchend="cancelLeaveEditHold()" ontouchmove="cancelLeaveEditHold()"
         style="cursor:pointer;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
-          <span style="font-size:12px;font-weight:700;color:#f0ece0;">${tableKey}卓</span>
+          <span style="font-size:12px;font-weight:700;color:#f0ece0;">${tableKey}卓${prepBadge}</span>
           <span style="font-size:9px;color:var(--text-dim);">${guest.name || ''}（${guest.count || 0}名）</span>
         </div>
         <div style="font-size:8.5px;color:#7fb8e0;margin-top:1px;">
@@ -3693,11 +3701,15 @@ function buildTsukeKanbuStatsHtml() {
 function resolveTsukeGuest(guestId) {
   if (typeof guestId === 'string' && guestId.indexOf('first_') === 0) {
     const fgId = parseInt(guestId.slice(6), 10);
-    const fg = (firstGroups || []).find(g => g.id === fgId && g.arrived);
+    // 来店フラグが立つ前の準備段階（初回タブに卓番・人数だけ入力された状態）でも、
+    // 初回一覧カードから「次に着く候補」を先に付けておけるよう、arrived必須の条件は外す
+    // （卓状況BOX側のbuildTsukeFloorBoxesHtmlは従来通りarrived必須のままなので、
+    // 来店前の卓はBOX一覧には出ず、初回一覧カードにだけ「来店前」として出る）
+    const fg = (firstGroups || []).find(g => g.id === fgId);
     if (!fg) return null;
     const count = parseInt(fg.count) || 0;
     const photoNames = [...new Set((fg.rows||[]).flatMap(r => [r.photo1, r.photo2]).filter(Boolean).map(n => normalizeStaffNamesInText(n)))];
-    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count, actualArrive: fg.actualArrive || '' };
+    return { tableNum: fg.tableNum, tanto: photoNames.join('/'), tantoDisplay: buildFirstGroupPhotoDisplay(fg.rows), photoSeatInfo: buildFirstGroupPhotoSeatInfo(fg.rows), name: `初回${count ? count+'名' : ''}`, help: '', count, actualArrive: fg.actualArrive || '', arrived: !!fg.arrived };
   }
   const numId = Number(guestId);
   return guests.find(g => g.id === numId && g.arrived && !g.left) || null;
@@ -3866,14 +3878,19 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
       // ここには出てこない（誤って別の卓から引き抜いてしまう「移動」操作は廃止した）
       const label = r.isTempAway ? '戻す' : '着';
       const isCappedOut = capacityLeft !== null && capacityLeft <= 0;
+      // 来店フラグが立つ前の準備段階の初回卓は、まだお客様がいないので実際に「着」はできない。
+      // ボタンは押せなくしつつ、ここでも◯（次に着く候補）だけは付けられるようにする
+      const notArrivedYet = isFirstGroup && !guest.arrived;
+      const isDisabled = isCappedOut || notArrivedYet;
       const threshold = getShiftThresholdFor(name);
       const isPending = !!(threshold && !isTimeOverdue(threshold.time)) && !r.isTempAway;
       const btnBg = label === '着' ? 'transparent' : '#c0392b';
       const btnBorder = label === '着' ? 'var(--accent)' : '#c0392b';
       const btnColor = label === '着' ? 'var(--accent)' : '#fff';
       const timeTag = isPending ? `<span style="font-size:9.5px;color:#d8b968;background:#3a2f14;border:1px dashed #5c4a1f;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">${threshold.label} ${threshold.time}〜</span>` : '';
-      const btn = `<button ${isCappedOut ? 'disabled' : `onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isCappedOut ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isCappedOut ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
-      actionsHtml = timeTag + btn;
+      const prepTag = notArrivedYet ? `<span style="font-size:9.5px;color:#888;background:#2a2a2a;border:1px dashed #444;border-radius:4px;padding:2px 6px;white-space:nowrap;font-weight:700;">来店前</span>` : '';
+      const btn = `<button ${isDisabled ? 'disabled' : `onclick="confirmJoinTsuke('${name.replace(/'/g,"\\'")}','${guestId}')"`} style="opacity:${isDisabled ? 0.5 : 1};background:${btnBg};border:1px solid ${btnBorder};border-radius:99px;color:${btnColor};font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;cursor:${isDisabled ? 'default' : 'pointer'};font-family:var(--font-main);">${label}</button>`;
+      actionsHtml = timeTag + prepTag + btn;
     }
 
     const nameInnerHtml = `${name}${nextPickMark}${r.isOnThisTable ? `（<span style="color:${tsukeTimerColor(r.activeInfo.startedAt, isFirstGroup)};" data-tsuke-timer="${r.activeInfo.startedAt}" data-tsuke-first="${isFirstGroup ? '1' : '0'}">${tsukeElapsedMinutes(r.activeInfo.startedAt)}</span>分・${formatTsukeStartTime(r.activeInfo.startedAt)}〜）` : ''}${seatBadge}${halfOffBadge}`;
