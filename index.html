@@ -4063,8 +4063,10 @@ function openTsukeTablePopup(guestId) {
     // 内勤：キャスト名を縦一列に並べ、行ごとに「着／離れる／一時離席／戻す／移動」を直接操作する。
     // 卓状況で選べる対象は幹部に絞らず、本日出勤している従業員全員にする
     // （「本日の幹部稼働」カードの集計対象は幹部だけのまま、こことは別の話）。
-    // 初回一覧カード（buildFirstGroupListCardsHtml）と共通のbuildTsukeCandidateListHtmlを使う
-    const candidateList = buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, {});
+    // 初回一覧カード（buildFirstGroupListCardsHtml）と共通のbuildTsukeCandidateListHtmlを使う。
+    // showBusyElsewhere:trueにして、別の卓についている人（◯を付けた人も含む）を一覧から
+    // 消さずに「◯◯卓に△分着卓中」とグレー表示する（誰がどこにいるか分からなくなるのを防ぐ）
+    const candidateList = buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, { showBusyElsewhere: true });
     bodyHtml = candidateList.bodyHtml;
     capNoteHtml = candidateList.capNoteHtml;
   } else if (isFirstGroup) {
