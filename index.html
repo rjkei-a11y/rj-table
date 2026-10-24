@@ -3454,7 +3454,18 @@ function doLeaveTsuke(kanbuName, shouldRender, temporary) {
   if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
   // 実際にこの卓を離れた（一時離席も含む）ので、「着」誤操作用のキャンセル印は消しておく。
   // 戻ってきた時はconfirmJoinTsuke側で改めて印が付く
-  if (window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[String(active.guestId) + '::' + kanbuName];
+  const cancelKey = String(active.guestId) + '::' + kanbuName;
+  if (window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[cancelKey];
+  // 初回卓の通常の「離れる」（対応済）は、一度押すとUI上は二度と戻せなくなってしまう
+  // （一時離席の「戻す」のような復帰ボタンが存在しないため）。誤操作で押してしまった時のために、
+  // この離れる記録を後から取り消せるよう印を残しておく（時間制限なし。一時離息は「戻す」で
+  // 自力で復帰できるためここでは対象外）
+  if (!window._tsukeCancelableLeaves) window._tsukeCancelableLeaves = {};
+  if (active.isFirst && !temporary) {
+    window._tsukeCancelableLeaves[cancelKey] = logId;
+  } else {
+    delete window._tsukeCancelableLeaves[cancelKey];
+  }
   if (shouldRender !== false) {
     renderTsukeModalIfOpen();
     renderFloorStatus();
@@ -3862,7 +3873,12 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
 
     let actionsHtml;
     if (r.isDone) {
-      actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>`;
+      // 対応済は一度付くと「戻す」ボタンが無く、今までは誤操作で押しても永久に復帰できなかった。
+      // この離れるがまだ取り消せる記録として残っていれば（1行目の長時間経過後も時間制限なしで残す）、
+      // バッジの横に復帰用のキャンセルボタンも出す
+      const isLeaveCancelable = !!(window._tsukeCancelableLeaves && window._tsukeCancelableLeaves[idStr + '::' + name]);
+      const cancelLeaveBtn = isLeaveCancelable ? `<button onclick="cancelLastLeaveTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10px;font-weight:700;padding:3px 9px;cursor:pointer;font-family:var(--font-main);margin-left:6px;">キャンセル</button>` : '';
+      actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>${cancelLeaveBtn}`;
     } else if (r.isOnThisTable) {
       const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
       // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
@@ -4176,6 +4192,30 @@ function cancelJustJoinedTsuke(name) {
   if (active && window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[String(active.guestId) + '::' + name];
   undoJoinTsuke(name);
   showToast(`${name}さんの着席をキャンセルしました`);
+  if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
+}
+
+// 初回卓の通常の「離れる」（対応済）を取り消す。対応済は一度付くとUI上「戻す」ボタンが無く
+// 永久に選べなくなってしまうため（一時離席の「戻す」とは違い、復帰手段が無かった）、
+// 誤って「離れる」を押してしまった時にここから復帰できるようにする。離れる前の経過時間も引き継ぐ
+function cancelLastLeaveTsuke(name, guestId) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const idStr = String(guestId);
+  const key = idStr + '::' + name;
+  const logId = window._tsukeCancelableLeaves && window._tsukeCancelableLeaves[key];
+  const entry = logId && window.tsukeLog && window.tsukeLog[logId];
+  if (!entry) { showToast('取り消せる記録が見つかりませんでした'); return; }
+  const guest = resolveTsukeGuest(guestId);
+  const tableKey = guest ? (guest.tableNum || '').toUpperCase().replace(/^P/, 'V') : '';
+  delete window.tsukeLog[logId];
+  if (window.fbSaveTsukeLogEntry) window.fbSaveTsukeLogEntry(logId, null);
+  delete window._tsukeCancelableLeaves[key];
+  if (!window.tsukeActive) window.tsukeActive = {};
+  window.tsukeActive[name] = { guestId: idStr, tableKey, tanto: entry.tanto || '', guestName: entry.guestName || '', startedAt: Date.now() - (entry.minutes || 0) * 60000, isFirst: true };
+  if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
+  showToast(`${name}さんの「離れる」をキャンセルしました`);
+  renderTsukeModalIfOpen();
+  renderFloorStatus();
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
 }
 
