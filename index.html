@@ -8265,8 +8265,9 @@ function computeStaffReadyThreshold(name) {
   if (arrivedDohanTime) {
     return { time: arrivedDohanTime, label: '同伴' };
   }
-  const hairMakeThreshold = computeHairMakeReadyThreshold(name);
-  if (hairMakeThreshold) return hairMakeThreshold;
+  // 同伴（未来店）はキャスト・内勤がその都度入力する最新の実態報告で、ヘアメ表より後に
+  // 入ってくることが多いため、ヘアメ表より先にチェックする（ヘアメ表が古いまま残っていても、
+  // 同伴の報告があればそちらを優先して反映する）
   const shiftStart = (window.staffShiftStart || {})[name];
   const unarrivedDohanGuest = findUnarrivedDohanGuest(name);
   if (unarrivedDohanGuest) {
@@ -8277,6 +8278,8 @@ function computeStaffReadyThreshold(name) {
       : shiftStart;
     if (dohanTime) return { time: dohanTime, label: '同伴' };
   }
+  const hairMakeThreshold = computeHairMakeReadyThreshold(name);
+  if (hairMakeThreshold) return hairMakeThreshold;
   return shiftStart ? { time: shiftStart, label: '出勤' } : null;
 }
 
