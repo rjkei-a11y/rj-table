@@ -8244,11 +8244,25 @@ function computeArrivedDohanTimeToday(name) {
   return g ? (g.actualArrive || g.arrive || null) : null;
 }
 
-// まだ来店していない「同伴」報告があるゲストを1件返す（無ければnull）。同伴は出勤時間管理シート
-// ではなく、来店時間・お客様名・備考・共有事項欄に自由入力で書かれているため、その文言から探す
-function findUnarrivedDohanGuest(name) {
-  return guests.find(g => !g.arrived && matchStaffName(g.tanto) === name &&
-    dohanTextFieldsOf(g).some(text => (text || '').includes('同伴'))) || null;
+// まだ来店していない「同伴」報告から、時刻が読み取れるものを優先して1件返す（無ければnull）。
+// 同伴は出勤時間管理シートではなく、来店時間・お客様名・備考・共有事項欄に自由入力で書かれているため、
+// その文言から探す。同じキャストに複数のお客様・複数の欄で同伴報告がある場合（例：来店時間欄には
+// 「同伴」とだけ、備考欄に「同伴20:30」のように時刻が別の欄・別のお客様に分かれているケース）、
+// 単純に最初に見つかった「同伴」の文字列で止まってしまうと、時刻が無い方を拾って出勤時間に
+// フォールバックしてしまい、実際の同伴時刻（20:30など）が無視されてしまう事故が起きる。
+// それを防ぐため、全ての該当ゲスト・全ての欄を見渡し、時刻が読み取れるものを優先して返す
+function findUnarrivedDohanInfo(name) {
+  const candidates = guests.filter(g => !g.arrived && matchStaffName(g.tanto) === name);
+  let fallback = null; // 時刻が読み取れない「同伴」報告（他に時刻付きの報告が無かった時の最終手段）
+  for (const g of candidates) {
+    for (const text of dohanTextFieldsOf(g)) {
+      if (!text || !text.includes('同伴')) continue;
+      const parsed = parseTimeText(text);
+      if (parsed) return { parsed };
+      if (!fallback) fallback = { parsed: null };
+    }
+  }
+  return fallback;
 }
 
 // このキャストが実際に稼働できる目安時刻を、優先順位に沿って1つ算出する（付け回しモーダルの
@@ -8269,12 +8283,10 @@ function computeStaffReadyThreshold(name) {
   // 入ってくることが多いため、ヘアメ表より先にチェックする（ヘアメ表が古いまま残っていても、
   // 同伴の報告があればそちらを優先して反映する）
   const shiftStart = (window.staffShiftStart || {})[name];
-  const unarrivedDohanGuest = findUnarrivedDohanGuest(name);
-  if (unarrivedDohanGuest) {
-    const dohanField = dohanTextFieldsOf(unarrivedDohanGuest).find(text => (text || '').includes('同伴'));
-    const parsed = parseTimeText(dohanField);
-    const dohanTime = parsed
-      ? `${String(parsed.hour).padStart(2, '0')}:${String(parsed.minute).padStart(2, '0')}`
+  const unarrivedDohanInfo = findUnarrivedDohanInfo(name);
+  if (unarrivedDohanInfo) {
+    const dohanTime = unarrivedDohanInfo.parsed
+      ? `${String(unarrivedDohanInfo.parsed.hour).padStart(2, '0')}:${String(unarrivedDohanInfo.parsed.minute).padStart(2, '0')}`
       : shiftStart;
     if (dohanTime) return { time: dohanTime, label: '同伴' };
   }
