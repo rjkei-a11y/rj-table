@@ -3762,8 +3762,11 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
     const activeInfo = getTsukeActiveOf(name);
     const isOnThisTable = !!(activeInfo && String(activeInfo.guestId) === idStr);
     const isBusyElsewhere = !!(activeInfo && !isOnThisTable);
-    // 一時離席／対応済の区別は初回卓だけの概念（指名卓は単発の「離れる」のみのため対象外）
-    const lastLeave = (isFirstGroup && !isOnThisTable && !isBusyElsewhere) ? getLastLeaveFor(name) : null;
+    // 一時離席／対応済の区別は初回卓だけの概念（指名卓は単発の「離れる」のみのため対象外）。
+    // 今まさに別の卓についているかどうか（isBusyElsewhere）に関係なく、「この卓」に対して
+    // 過去どう離れたかで判定する。対応済なら、今は別の卓で稼働中でも「対応済」として
+    // 表示・下に並べる方が、誤って二重に着かせてしまう事故も防げて分かりやすいため
+    const lastLeave = (isFirstGroup && !isOnThisTable) ? getLastLeaveFor(name) : null;
     const isDone = !!(lastLeave && !lastLeave.temporary);
     const isTempAway = !!(lastLeave && lastLeave.temporary);
     return { name, activeInfo, isOnThisTable, isBusyElsewhere, isDone, isTempAway };
@@ -3798,9 +3801,11 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
     const halfOffBadge = isHalfOff ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid #e67e22;color:#e67e22;margin-left:6px;">半休</span>` : '';
     const countPill = countForDisplay > 0 ? `<span style="font-size:10.5px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;background:rgba(201,168,76,0.22);color:var(--accent);">${countForDisplay}</span>` : '';
 
-    if (r.isBusyElsewhere) {
+    if (r.isBusyElsewhere && !r.isDone) {
       // 他の卓についている最中：一覧からは消さず、どこに何分ついているか分かるようにして「着」は押せなくする
-      // （これは今のポップアップには無い、初回一覧カードだけの追加表示）
+      // （これは今のポップアップには無い、初回一覧カードだけの追加表示）。
+      // ただし既にこの卓への対応自体は完了している（r.isDone）場合は、今どこで稼働中かより
+      // 「この卓はもう完了している」事実の方が重要なので、このbusy-elsewhere表示より対応済表示を優先する
       const seatBadge = photoSeat && photoSeat.seat ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid ${photoSeat.hex};color:${photoSeat.hex};margin-left:6px;">${photoSeat.seat}</span>` : '';
       const otherTableLabel = r.activeInfo.tableKey || '';
       const busyLabel = `（${otherTableLabel}卓に${tsukeElapsedMinutes(r.activeInfo.startedAt)}分着卓中）`;
