@@ -8269,7 +8269,8 @@ function findUnarrivedDohanInfo(name) {
 // 「本日出勤」カウント用。個々の候補行バッジ（getShiftThresholdFor）とは別に、こちらは半休を
 // 最優先で扱う）。優先順位：半休(22:30固定・ヘアメ表があってもこちらを優先) > 同伴で来店済み
 // （実来店時刻） > ヘアメ表（出勤時間の方が遅ければそちらを優先） > 同伴（未来店、文言内の時刻。
-// 「同伴」とだけ書かれていて時刻が読み取れない場合は出勤時間を目安に使うが、ラベルは同伴のままにする）
+// 「同伴」とだけ書かれていて時刻が読み取れない場合は在籍スタッフ登録のシフト表に登録済みの
+// 同伴時刻（window.staffDohanTime）を目安に使い、それも無ければ出勤時間を使う。ラベルは同伴のまま）
 // > 出勤時間
 function computeStaffReadyThreshold(name) {
   if ((staffDayStatus[name] || {}).status === 'half_off') {
@@ -8283,11 +8284,14 @@ function computeStaffReadyThreshold(name) {
   // 入ってくることが多いため、ヘアメ表より先にチェックする（ヘアメ表が古いまま残っていても、
   // 同伴の報告があればそちらを優先して反映する）
   const shiftStart = (window.staffShiftStart || {})[name];
+  const registeredDohanTime = (window.staffDohanTime || {})[name];
   const unarrivedDohanInfo = findUnarrivedDohanInfo(name);
   if (unarrivedDohanInfo) {
+    // 文言内に時刻が無い場合、出勤時間より先に「在籍スタッフ登録」のシフト表に登録済みの
+    // 同伴時刻があればそちらを使う（出勤時間と違い、同伴することが分かった上での目安時刻のため）
     const dohanTime = unarrivedDohanInfo.parsed
       ? `${String(unarrivedDohanInfo.parsed.hour).padStart(2, '0')}:${String(unarrivedDohanInfo.parsed.minute).padStart(2, '0')}`
-      : shiftStart;
+      : (registeredDohanTime || shiftStart);
     if (dohanTime) return { time: dohanTime, label: '同伴' };
   }
   const hairMakeThreshold = computeHairMakeReadyThreshold(name);
