@@ -3395,7 +3395,7 @@ function formatTsukeStartTime(startedAt) {
 
 // 着卓からの経過時間に応じた表示色。初回卓は6分まで緑・7分から赤、通常卓は15分まで緑・16分から赤
 function tsukeTimerColor(startedAt, isFirst) {
-  const threshold = isFirst ? 6 : 15;
+  const threshold = isFirst ? 6 : 20;
   return tsukeElapsedMinutes(startedAt) > threshold ? '#c0392b' : '#7fd97f';
 }
 
