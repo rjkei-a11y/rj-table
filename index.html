@@ -3569,7 +3569,7 @@ function buildFirstGroupListCardsHtml() {
       </div>
     </div>`;
   }).join('');
-  return `<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;">${cardsHtml}</div>`;
+  return `<div id="firstGroupCardsScrollRow" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;">${cardsHtml}</div>`;
 }
 
 // 付け回し用のV/A/Bフロア卓状況BOXを組み立てる（通常ゲストのみが対象。初回の卓はタップできない表示にする）。
@@ -3970,6 +3970,10 @@ function openTsukeTablePopup(guestId) {
   const guest = resolveTsukeGuest(guestId);
   if (!guest) return; // 空卓はタップしても何も起きない
   window._tsukeTablePopupGuestId = guestId; // 着卓/離席のたびにこのIDで中身だけ更新できるよう記録しておく
+  // ◯を付けるたびにinnerHTMLごと作り直すため、何もしないとスクロール位置が先頭に戻ってしまう。
+  // 作り直す前に読んでおき、作り直した後に同じ位置へ戻す
+  const prevScrollEl = document.getElementById('tsukeTablePopupScroll');
+  const prevScrollTop = prevScrollEl ? prevScrollEl.scrollTop : 0;
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   const members = getTsukeMembersOnGuest(guestId);
   let overlay = document.getElementById('tsukeTableOverlay');
@@ -4104,12 +4108,14 @@ function openTsukeTablePopup(guestId) {
         </div>
         ${otherFirstTablesHtml}
       </div>
-      <div style="flex:1;overflow-y:auto;padding:10px 14px 28px;">
+      <div id="tsukeTablePopupScroll" style="flex:1;overflow-y:auto;padding:10px 14px 28px;">
         ${bodyHtml}
       </div>
     </div>`;
     overlay.style.display = 'flex';
     setupSwipeToClose(document.getElementById('tsukeTableSheet'), document.getElementById('tsukeTableSheetHandle'), closeTsukeTablePopup);
+    const scrollEl1 = document.getElementById('tsukeTablePopupScroll');
+    if (scrollEl1) scrollEl1.scrollTop = prevScrollTop;
   } else {
     // 幹部・キャスト：内容は「自分が着くかどうか」だけなので、画面全体を覆わないコンパクトな中央ポップアップにする。
     // 背景の暗い部分をタップすれば閉じる（overlay生成時に付けたクリックハンドラで処理）
@@ -4123,11 +4129,13 @@ function openTsukeTablePopup(guestId) {
         ${guest.help ? `<div style="font-size:11px;color:#e8954a;margin-top:2px;">ヘルプ指名: ${normalizeHelpNamesWithRole(guest.help)}</div>` : ''}
         ${noteHtml}
       </div>
-      <div style="flex:1;overflow-y:auto;padding:12px 18px 18px;">
+      <div id="tsukeTablePopupScroll" style="flex:1;overflow-y:auto;padding:12px 18px 18px;">
         ${bodyHtml}
       </div>
     </div>`;
     overlay.style.display = 'flex';
+    const scrollEl2 = document.getElementById('tsukeTablePopupScroll');
+    if (scrollEl2) scrollEl2.scrollTop = prevScrollTop;
   }
 }
 
@@ -4234,6 +4242,13 @@ function closeTsukemawashiModal() {
 function renderTsukeModalIfOpen() {
   const overlay = document.getElementById('tsukeModal');
   if (!overlay || !overlay.classList.contains('show')) return;
+  // ◯（次に着く候補）を付けるたびにinnerHTMLごと作り直すため、何もしないとスクロール位置が
+  // 先頭に戻ってしまう。作り直す前に読んでおき、作り直した後に同じ位置へ戻す
+  // （縦スクロールの.modal-body本体と、初回一覧タブの横スクロール行の両方が対象）
+  const prevBodyEl = overlay.querySelector('.modal-body');
+  const prevBodyScrollTop = prevBodyEl ? prevBodyEl.scrollTop : 0;
+  const prevCardsRowEl = document.getElementById('firstGroupCardsScrollRow');
+  const prevCardsScrollLeft = prevCardsRowEl ? prevCardsRowEl.scrollLeft : 0;
   const isAdmin = localStorage.getItem('rj_role') === 'admin';
   const activeFirstCount = getActiveFirstGroupsForFloor().length;
   // 初回一覧タブは内勤専用。対象の初回卓が0件になったら、タブ自体を消して自動的に卓状況タブに戻す
@@ -4269,6 +4284,10 @@ function renderTsukeModalIfOpen() {
         `}
       </div>
     </div>`;
+  const newBodyEl = overlay.querySelector('.modal-body');
+  if (newBodyEl) newBodyEl.scrollTop = prevBodyScrollTop;
+  const newCardsRowEl = document.getElementById('firstGroupCardsScrollRow');
+  if (newCardsRowEl) newCardsRowEl.scrollLeft = prevCardsScrollLeft;
 }
 
 /* ============================================================================
