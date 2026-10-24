@@ -3834,11 +3834,15 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
       const busyLabel = `（${otherTableLabel}卓に${tsukeElapsedMinutes(r.activeInfo.startedAt)}分着卓中）`;
       // 別の卓についている本人まで出向かないと離れさせられないと、その卓が消えている等で
       // 身動きが取れなくなった時に全く操作できなくなってしまう。ここからも「離す」で直接
-      // 離席させられるようにしておく（本来のconfirmLeaveTsukeと同じ処理：記録は通常通り残る）
-      const releaseBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10px;font-weight:700;padding:3px 9px;cursor:pointer;font-family:var(--font-main);margin-left:6px;">離す</button>`;
+      // 離席させられるようにしておく（本来のconfirmLeaveTsukeと同じ処理：記録は通常通り残る）。
+      // ただし「着」のすぐ横に常時出ていると誤タップしやすいため、行をタップした時だけ出す
+      const revealKey = idStr + '::' + name;
+      const isRevealed = !!(window._tsukeBusyRevealed && window._tsukeBusyRevealed[revealKey]);
+      const releaseBtn = isRevealed ? `<button onclick="event.stopPropagation();confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10px;font-weight:700;padding:3px 9px;cursor:pointer;font-family:var(--font-main);margin-left:6px;">離す</button>` : '';
       const actionsHtml = `<span style="opacity:0.5;background:transparent;border:1px solid #444;border-radius:99px;color:#555;font-size:10.5px;font-weight:700;padding:4px 12px;min-width:46px;text-align:center;display:inline-block;">着</span>${releaseBtn}`;
+      const revealOnclick = `toggleTsukeBusyReveal('${guestId}','${name.replace(/'/g,"\\'")}')`;
       if (compact) {
-        return `<div style="padding:6px 6px 6px 9px;border-bottom:1px dashed var(--border);border-radius:6px;">
+        return `<div onclick="${revealOnclick}" style="padding:6px 6px 6px 9px;border-bottom:1px dashed var(--border);border-radius:6px;cursor:pointer;">
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="width:3px;align-self:stretch;min-height:14px;border-radius:2px;flex-shrink:0;background:#3a3a3a;"></div>
             <span style="font-size:12px;color:#666;font-weight:400;">${name}${seatBadge}${halfOffBadge}</span>
@@ -3847,7 +3851,7 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:3px;padding-left:11px;">${countPill}${actionsHtml}</div>
         </div>`;
       }
-      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);border-radius:6px;">
+      return `<div onclick="${revealOnclick}" style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);border-radius:6px;cursor:pointer;">
         <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:#3a3a3a;"></div>
         <div style="flex:1;min-width:0;">
           <span style="font-size:13.5px;color:#666;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">${name}${busyLabel}${seatBadge}${halfOffBadge}</span>
@@ -4238,6 +4242,17 @@ function toggleTsukeNextPick(guestId, name) {
   if (!window._tsukeNextPicks[gid]) window._tsukeNextPicks[gid] = {};
   if (window._tsukeNextPicks[gid][name]) delete window._tsukeNextPicks[gid][name];
   else window._tsukeNextPicks[gid][name] = true;
+  if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
+  renderTsukeModalIfOpen();
+}
+
+// busy-elsewhere行（別の卓についている人）の「離す」ボタンは、「着」のすぐ横に常時出ていると
+// 誤タップしやすいため、行をタップした時だけ表示する（端末内だけの一時的な状態。Firebaseには保存しない）
+function toggleTsukeBusyReveal(guestId, name) {
+  if (!window._tsukeBusyRevealed) window._tsukeBusyRevealed = {};
+  const key = String(guestId) + '::' + name;
+  if (window._tsukeBusyRevealed[key]) delete window._tsukeBusyRevealed[key];
+  else window._tsukeBusyRevealed[key] = true;
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
   renderTsukeModalIfOpen();
 }
