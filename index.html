@@ -146,16 +146,17 @@
   // 付け回し：「着」誤操作のキャンセル印・初回「離れる」誤操作のキャンセル印を保存する。
   // 端末内だけの状態にしていると、ページの再読み込み（バックグラウンド化したタブの自動リロード等）
   // だけで印が消えてしまい、本来まだキャンセルできるはずの操作がキャンセルできなくなってしまうため、
-  // 他の付け回し状態と同様にFirebaseへ保存してリロードや機種変更をまたいで引き継げるようにする
-  window.fbSaveTsukeCancelableJoins = function(obj) {
+  // 他の付け回し状態と同様にFirebaseへ保存してリロードや機種変更をまたいで引き継げるようにする。
+  // 1件ずつ個別のキーで保存する（tsukemawashiLogと同じ考え方）：オブジェクト全体を書き込む方式だと、
+  // 複数人・複数端末がほぼ同時に着席操作をした時、互いの端末がまだ相手の最新状態を受信し切っていない
+  // 一瞬の間に上書き保存してしまい、相手の印を消してしまう事故が起きるため、必ずこちらを使う
+  window.fbSaveTsukeCancelableJoin = function(key, isCancelable) {
     if (isViewOnlyMode()) return;
-    const hasData = obj && Object.keys(obj).length > 0;
-    set(tsukeCancelableJoinsRef, hasData ? obj : null).catch(e => console.error('FB tsukeCancelableJoins save error:', e));
+    set(ref(db, 'tsukemawashiCancelableJoins/' + key), isCancelable ? true : null).catch(e => console.error('FB tsukeCancelableJoin save error:', e));
   };
-  window.fbSaveTsukeCancelableLeaves = function(obj) {
+  window.fbSaveTsukeCancelableLeave = function(key, logId) {
     if (isViewOnlyMode()) return;
-    const hasData = obj && Object.keys(obj).length > 0;
-    set(tsukeCancelableLeavesRef, hasData ? obj : null).catch(e => console.error('FB tsukeCancelableLeaves save error:', e));
+    set(ref(db, 'tsukemawashiCancelableLeaves/' + key), logId || null).catch(e => console.error('FB tsukeCancelableLeave save error:', e));
   };
   // 本日分リセット用：付け回しの記録を全部空にする
   window.fbClearTsukeAll = function() {
@@ -3484,7 +3485,7 @@ function doLeaveTsuke(kanbuName, shouldRender, temporary) {
   // 戻ってきた時はconfirmJoinTsuke側で改めて印が付く
   const cancelKey = String(active.guestId) + '::' + kanbuName;
   if (window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[cancelKey];
-  if (window.fbSaveTsukeCancelableJoins) window.fbSaveTsukeCancelableJoins(window._tsukeCancelableJoins);
+  if (window.fbSaveTsukeCancelableJoin) window.fbSaveTsukeCancelableJoin(cancelKey, false);
   // 初回卓の通常の「離れる」（対応済）は、一度押すとUI上は二度と戻せなくなってしまう
   // （一時離席の「戻す」のような復帰ボタンが存在しないため）。誤操作で押してしまった時のために、
   // この離れる記録を後から取り消せるよう印を残しておく（時間制限なし。一時離息は「戻す」で
@@ -3495,7 +3496,7 @@ function doLeaveTsuke(kanbuName, shouldRender, temporary) {
   } else {
     delete window._tsukeCancelableLeaves[cancelKey];
   }
-  if (window.fbSaveTsukeCancelableLeaves) window.fbSaveTsukeCancelableLeaves(window._tsukeCancelableLeaves);
+  if (window.fbSaveTsukeCancelableLeave) window.fbSaveTsukeCancelableLeave(cancelKey, active.isFirst && !temporary ? logId : false);
   if (shouldRender !== false) {
     renderTsukeModalIfOpen();
     renderFloorStatus();
@@ -4218,7 +4219,7 @@ function confirmJoinTsuke(name, guestId) {
   // この1箇所の変更で両画面に反映される
   if (!window._tsukeCancelableJoins) window._tsukeCancelableJoins = {};
   window._tsukeCancelableJoins[String(guestId) + '::' + name] = true;
-  if (window.fbSaveTsukeCancelableJoins) window.fbSaveTsukeCancelableJoins(window._tsukeCancelableJoins);
+  if (window.fbSaveTsukeCancelableJoin) window.fbSaveTsukeCancelableJoin(String(guestId) + '::' + name, true);
   // doJoinTsuke内部のrenderTsukeModalIfOpen()は、↑でこの印を立てるより前に実行されてしまっているため、
   // ここで改めて呼び直さないと、初回一覧カード側のキャンセルボタンが次の再描画までワンテンポ遅れて出てしまう
   renderTsukeModalIfOpen();
@@ -4230,9 +4231,10 @@ function confirmJoinTsuke(name, guestId) {
 // doLeaveTsukeではなくundoJoinTsukeを使うので、対応記録（着いた回数）には残らず完全に取り消される
 function cancelJustJoinedTsuke(name) {
   const active = getTsukeActiveOf(name);
-  if (active && window._tsukeCancelableJoins) {
-    delete window._tsukeCancelableJoins[String(active.guestId) + '::' + name];
-    if (window.fbSaveTsukeCancelableJoins) window.fbSaveTsukeCancelableJoins(window._tsukeCancelableJoins);
+  if (active) {
+    const key = String(active.guestId) + '::' + name;
+    if (window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[key];
+    if (window.fbSaveTsukeCancelableJoin) window.fbSaveTsukeCancelableJoin(key, false);
   }
   undoJoinTsuke(name);
   showToast(`${name}さんの着席をキャンセルしました`);
@@ -4254,7 +4256,7 @@ function cancelLastLeaveTsuke(name, guestId) {
   delete window.tsukeLog[logId];
   if (window.fbSaveTsukeLogEntry) window.fbSaveTsukeLogEntry(logId, null);
   delete window._tsukeCancelableLeaves[key];
-  if (window.fbSaveTsukeCancelableLeaves) window.fbSaveTsukeCancelableLeaves(window._tsukeCancelableLeaves);
+  if (window.fbSaveTsukeCancelableLeave) window.fbSaveTsukeCancelableLeave(key, false);
   if (!window.tsukeActive) window.tsukeActive = {};
   window.tsukeActive[name] = { guestId: idStr, tableKey, tanto: entry.tanto || '', guestName: entry.guestName || '', startedAt: Date.now() - (entry.minutes || 0) * 60000, isFirst: true };
   if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
