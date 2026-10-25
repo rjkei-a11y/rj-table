@@ -3163,8 +3163,8 @@ function renderFloorBox(t, key, info, baanaiName, multiTantoNames) {
   let line1, line2, line3;
   if (info && info.isFirst) {
     const arriveHtml = info.actualArrive ? ` <span style="color:${boxText};font-weight:700;">🕐入${info.actualArrive}</span>` : '';
-    // 長押しで選んだ滞在時間（60/90分）が分かっている時だけ、来店時刻＋滞在時間で退店予定を表示する
-    const outTime = (info.actualArrive && info.stayMinutes) ? addMinutesToTimeString(info.actualArrive, info.stayMinutes) : '';
+    // 滞在時間は未選択の間も60分をデフォルト扱いにして退店予定を出す（長押しで選べば90分等に変更できる）
+    const outTime = info.actualArrive ? addMinutesToTimeString(info.actualArrive, info.stayMinutes || 60) : '';
     const outHtml = outTime ? ` <span style="color:${boxText};font-weight:700;">⏰出${outTime}</span>` : '';
     line1 = `<span style="font-weight:700;">${t}</span>${iconsHtml ? ' '+iconsHtml : ''}${arriveHtml}${outHtml}`;
     line2 = info.help
@@ -3546,7 +3546,8 @@ function buildFirstGroupListCardsHtml() {
     if (!guest) return '';
     const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
     const elapsed = computeFirstGroupElapsedMinutes(guest.actualArrive);
-    const outTime = (guest.actualArrive && fg.stayMinutes) ? addMinutesToTimeString(guest.actualArrive, fg.stayMinutes) : '';
+    // 滞在時間は未選択の間も60分をデフォルト扱いにして退店予定を出す（長押しで選べば90分等に変更できる）
+    const outTime = guest.actualArrive ? addMinutesToTimeString(guest.actualArrive, fg.stayMinutes || 60) : '';
     const members = getTsukeMembersOnGuest(guestId);
     const membersHtml = members.length
       ? members.map(m => `<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;color:var(--accent);font-weight:700;background:rgba(201,168,76,0.12);border-radius:99px;padding:1px 6px;margin:0 3px 3px 0;">🚶${m.name} <span style="color:${tsukeTimerColor(m.startedAt, true)};" data-tsuke-timer="${m.startedAt}" data-tsuke-first="1">${tsukeElapsedMinutes(m.startedAt)}</span>分</span>`).join('')
@@ -3634,8 +3635,9 @@ function buildTsukeFloorBoxesHtml() {
         }).join('');
         // 場内指名は既存の行を崩さないよう、ある時だけ追加の1行として足す（正式な担当と重複していても両方見えて構わない）
         const baanaiHtml = baanaiName ? `<div style="font-size:8.5px;color:#7fd97f;">場内:${baanaiName}</div>` : '';
-        // 初回は長押しで滞在時間（60/90分）を選べるようにし、来店時刻＋退店予定時刻を追加の1行で表示する
-        const outTime = (info.isFirst && info.actualArrive && info.stayMinutes) ? addMinutesToTimeString(info.actualArrive, info.stayMinutes) : '';
+        // 初回は長押しで滞在時間（60/90分）を選べるようにし、来店時刻＋退店予定時刻を追加の1行で表示する。
+        // 滞在時間は未選択の間も60分をデフォルト扱いにする（長押しで選べば90分等に変更できる）
+        const outTime = (info.isFirst && info.actualArrive) ? addMinutesToTimeString(info.actualArrive, info.stayMinutes || 60) : '';
         const timeHtml = (info.isFirst && info.actualArrive)
           ? `<div style="font-size:8.5px;color:#7fb8e0;">🕐入${info.actualArrive}${outTime ? ` ⏰出${outTime}` : ''}</div>`
           : '';
@@ -5504,7 +5506,7 @@ function openFirstStayPicker(gid) {
   overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:280px;width:100%;">
     <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;text-align:center;">初回の滞在時間を選択</div>
     <div style="display:flex;gap:10px;">
-      <button onclick="setFirstGroupStayMinutes(${gid},60)" style="${durBtnStyle(g.stayMinutes === 60)}">60分</button>
+      <button onclick="setFirstGroupStayMinutes(${gid},60)" style="${durBtnStyle((g.stayMinutes || 60) === 60)}">60分</button>
       <button onclick="setFirstGroupStayMinutes(${gid},90)" style="${durBtnStyle(g.stayMinutes === 90)}">90分</button>
     </div>
     <button onclick="closeFirstStayPicker()" style="width:100%;margin-top:12px;padding:8px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:12px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>
