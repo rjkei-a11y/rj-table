@@ -32,8 +32,6 @@
   const staffHairMakeRef = ref(db, 'staffHairMakeStart');
   const tsukeActiveRef = ref(db, 'tsukemawashiActive');
   const tsukeLogRef = ref(db, 'tsukemawashiLog');
-  const tsukeCancelableJoinsRef = ref(db, 'tsukemawashiCancelableJoins');
-  const tsukeCancelableLeavesRef = ref(db, 'tsukemawashiCancelableLeaves');
   const teamDefsRef = ref(db, 'teamDefs');
   const firstRef = ref(db, 'firstGroups');
   const backupRef = ref(db, 'resetBackup');
@@ -143,28 +141,11 @@
     if (isViewOnlyMode()) return;
     set(ref(db, 'tsukemawashiLog/' + logId), entry).catch(e => console.error('FB tsukeLog save error:', e));
   };
-  // 付け回し：「着」誤操作のキャンセル印・初回「離れる」誤操作のキャンセル印を保存する。
-  // 端末内だけの状態にしていると、ページの再読み込み（バックグラウンド化したタブの自動リロード等）
-  // だけで印が消えてしまい、本来まだキャンセルできるはずの操作がキャンセルできなくなってしまうため、
-  // 他の付け回し状態と同様にFirebaseへ保存してリロードや機種変更をまたいで引き継げるようにする。
-  // 1件ずつ個別のキーで保存する（tsukemawashiLogと同じ考え方）：オブジェクト全体を書き込む方式だと、
-  // 複数人・複数端末がほぼ同時に着席操作をした時、互いの端末がまだ相手の最新状態を受信し切っていない
-  // 一瞬の間に上書き保存してしまい、相手の印を消してしまう事故が起きるため、必ずこちらを使う
-  window.fbSaveTsukeCancelableJoin = function(key, isCancelable) {
-    if (isViewOnlyMode()) return;
-    set(ref(db, 'tsukemawashiCancelableJoins/' + key), isCancelable ? true : null).catch(e => console.error('FB tsukeCancelableJoin save error:', e));
-  };
-  window.fbSaveTsukeCancelableLeave = function(key, logId) {
-    if (isViewOnlyMode()) return;
-    set(ref(db, 'tsukemawashiCancelableLeaves/' + key), logId || null).catch(e => console.error('FB tsukeCancelableLeave save error:', e));
-  };
   // 本日分リセット用：付け回しの記録を全部空にする
   window.fbClearTsukeAll = function() {
     if (isViewOnlyMode()) return;
     set(tsukeActiveRef, null).catch(e => console.error('FB tsukeActive clear error:', e));
     set(tsukeLogRef, null).catch(e => console.error('FB tsukeLog clear error:', e));
-    set(tsukeCancelableJoinsRef, null).catch(e => console.error('FB tsukeCancelableJoins clear error:', e));
-    set(tsukeCancelableLeavesRef, null).catch(e => console.error('FB tsukeCancelableLeaves clear error:', e));
   };
 
   // Firebaseにチーム自体の定義（[{key, label, color}, ...]）を保存。
@@ -473,17 +454,6 @@
     window.tsukeLog = data || {};
     if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
   });
-  // 付け回し：「着」誤操作・初回「離れる」誤操作のキャンセル印をリアルタイム受信
-  // （端末だけのメモリ状態だとページ再読み込みで消えてしまうため、Firebaseで引き継ぐ）
-  onValue(tsukeCancelableJoinsRef, (snapshot) => {
-    window._tsukeCancelableJoins = snapshot.val() || {};
-    if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
-  });
-  onValue(tsukeCancelableLeavesRef, (snapshot) => {
-    window._tsukeCancelableLeaves = snapshot.val() || {};
-    if (typeof renderTsukeModalIfOpen === 'function') renderTsukeModalIfOpen();
-  });
-
   // Firebaseからチーム定義（名前・色・数）をリアルタイム受信。
   // まだ設定が無ければ（初めてこの機能を使う時）、初期値として4チームを自動的に書き込む
   onValue(teamDefsRef, (snapshot) => {
@@ -3481,22 +3451,6 @@ function doLeaveTsuke(kanbuName, shouldRender, temporary) {
   if (window.fbSaveTsukeLogEntry) window.fbSaveTsukeLogEntry(logId, entry);
   delete window.tsukeActive[kanbuName];
   if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
-  // 実際にこの卓を離れた（一時離席も含む）ので、「着」誤操作用のキャンセル印は消しておく。
-  // 戻ってきた時はconfirmJoinTsuke側で改めて印が付く
-  const cancelKey = String(active.guestId) + '::' + kanbuName;
-  if (window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[cancelKey];
-  if (window.fbSaveTsukeCancelableJoin) window.fbSaveTsukeCancelableJoin(cancelKey, false);
-  // 初回卓の通常の「離れる」（対応済）は、一度押すとUI上は二度と戻せなくなってしまう
-  // （一時離席の「戻す」のような復帰ボタンが存在しないため）。誤操作で押してしまった時のために、
-  // この離れる記録を後から取り消せるよう印を残しておく（時間制限なし。一時離息は「戻す」で
-  // 自力で復帰できるためここでは対象外）
-  if (!window._tsukeCancelableLeaves) window._tsukeCancelableLeaves = {};
-  if (active.isFirst && !temporary) {
-    window._tsukeCancelableLeaves[cancelKey] = logId;
-  } else {
-    delete window._tsukeCancelableLeaves[cancelKey];
-  }
-  if (window.fbSaveTsukeCancelableLeave) window.fbSaveTsukeCancelableLeave(cancelKey, active.isFirst && !temporary ? logId : false);
   if (shouldRender !== false) {
     renderTsukeModalIfOpen();
     renderFloorStatus();
@@ -3912,24 +3866,22 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
       : isHelpRequested ? '#e05a9e' : 'var(--text)';
     const seatBadge = photoSeat && photoSeat.seat ? `<span style="font-size:9px;padding:0 5px;border-radius:99px;font-weight:700;border:1px solid ${photoSeat.hex};color:${photoSeat.hex};margin-left:6px;">${photoSeat.seat}</span>` : '';
 
+    // 「着」の誤操作・初回の「離れる」の誤操作は、今までボタンを常時 or 条件付きで出して取り消させていたが、
+    // 条件付き表示は別端末との同期タイミング次第で見えたり見えなかったりして分かりづらかった。
+    // 代わりに、行自体を長押しするといつでも確認ダイアログから取り消せるようにする（holdCancelKindで
+    // どちらの種類の取り消しが有効か judge する。それ以外の状態の行では長押ししても何も起きない）
+    const holdCancelKind = r.isOnThisTable ? 'join' : (r.isDone ? 'leave' : null);
+    const holdAttrs = holdCancelKind
+      ? `ontouchstart="startTsukeRowHold('${holdCancelKind}','${guestId}','${name.replace(/'/g,"\\'")}')" ontouchend="cancelTsukeRowHold()" ontouchmove="cancelTsukeRowHold()" oncontextmenu="event.preventDefault();openTsukeRowCancelDialog('${holdCancelKind}','${guestId}','${name.replace(/'/g,"\\'")}')"`
+      : '';
     let actionsHtml;
     if (r.isDone) {
-      // 対応済は一度付くと「戻す」ボタンが無く、今までは誤操作で押しても永久に復帰できなかった。
-      // この離れるがまだ取り消せる記録として残っていれば（1行目の長時間経過後も時間制限なしで残す）、
-      // バッジの横に復帰用のキャンセルボタンも出す
-      const isLeaveCancelable = !!(window._tsukeCancelableLeaves && window._tsukeCancelableLeaves[idStr + '::' + name]);
-      const cancelLeaveBtn = isLeaveCancelable ? `<button onclick="cancelLastLeaveTsuke('${name.replace(/'/g,"\\'")}','${guestId}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10px;font-weight:700;padding:3px 9px;cursor:pointer;font-family:var(--font-main);margin-left:6px;">キャンセル</button>` : '';
-      actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>${cancelLeaveBtn}`;
+      actionsHtml = `<span style="font-size:10px;color:#777;border:1px solid #444;border-radius:4px;padding:2px 7px;font-weight:700;">対応済</span>`;
     } else if (r.isOnThisTable) {
       const leaveBtn = `<button onclick="confirmLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #555;border-radius:99px;color:#888;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);">離れる</button>`;
       // 一時離席（また戻ってくる前提）は初回卓だけの操作。指名卓は単発の「離れる」のみ
       const tempLeaveBtn = isFirstGroup ? `<button onclick="confirmTempLeaveTsuke('${name.replace(/'/g,"\\'")}')" style="background:#3a3a3a;border:1px solid #555;border-radius:99px;color:#ccc;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">一時離席</button>` : '';
-      // 「着」を押し間違えた時のためのキャンセル（対応記録を残さず完全に取り消す）。
-      // 8秒などの時間制限では「あとでやっぱり違った」というケースに対応できないため、
-      // 本人がこの卓を離れる（離れる／一時離席のどちらか）までずっと出しておく
-      const isCancelable = !!(window._tsukeCancelableJoins && window._tsukeCancelableJoins[idStr + '::' + name]);
-      const cancelBtn = isCancelable ? `<button onclick="cancelJustJoinedTsuke('${name.replace(/'/g,"\\'")}')" style="background:transparent;border:1px solid #c0392b;border-radius:99px;color:#c0392b;font-size:10.5px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-main);margin-right:6px;">キャンセル</button>` : '';
-      actionsHtml = cancelBtn + tempLeaveBtn + leaveBtn;
+      actionsHtml = tempLeaveBtn + leaveBtn;
     } else {
       // 着（初めて呼ぶ）／戻す（この卓に一時離席していた人を呼び戻す）。
       // 他の卓に今ついている人はcandidateNamesの時点で除外済み（showBusyElsewhereがtrueの時は別枝で処理済み）のため、
@@ -3959,7 +3911,7 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
       // タップ対象として気付きにくいため、明示的なボタンでも外せるようにする
       const cancelPickBtn = isNextPick ? `<button onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="flex-shrink:0;background:transparent;border:1px solid var(--accent);border-radius:99px;color:var(--accent);font-size:9px;font-weight:700;padding:1px 7px;margin-left:4px;cursor:pointer;font-family:var(--font-main);">キャンセル</button>` : '';
       return `<div style="padding:6px 6px 6px 9px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div ${holdAttrs} style="display:flex;align-items:center;gap:8px;">
           <div style="width:3px;align-self:stretch;min-height:14px;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
           <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="flex:1;min-width:0;font-size:12px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${nameInnerHtml}</span>
           ${cancelPickBtn}
@@ -3970,7 +3922,7 @@ function buildTsukeCandidateListHtml(guestId, guest, isFirstGroup, opts) {
     }
     return `<div style="display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-bottom:1px dashed var(--border);opacity:${r.isDone ? 0.42 : 1};background:${r.isOnThisTable ? 'rgba(201,168,76,0.08)' : 'transparent'};border-radius:6px;">
       <div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:${barColor};"></div>
-      <div style="flex:1;min-width:0;">
+      <div ${holdAttrs} style="flex:1;min-width:0;">
         <span onclick="event.stopPropagation();toggleTsukeNextPick('${guestId}','${name.replace(/'/g,"\\'")}')" style="font-size:13.5px;color:${nameColor};font-weight:${r.isOnThisTable ? '700' : '400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;cursor:pointer;">${nameInnerHtml}</span>
         ${otherPickHtml}
       </div>
@@ -4211,31 +4163,60 @@ function confirmJoinTsuke(name, guestId) {
   const tableKey = (guest.tableNum || '').toUpperCase().replace(/^P/, 'V');
   doJoinTsuke(name, guestId, tableKey, guest.tanto || '', (guest.name || '').replace('△','').trim());
   showToast(`${name}さんが${tableKey}卓に着きました`);
-  // 誤って別の人を選んでしまった時のために、その人自身の行（キャスト名の横）に「キャンセル」ボタンを出す
-  // （画面下のバーではなく、本人の行に直接出すほうが分かりやすいため）。時間での自動非表示はしない。
-  // 「あとでやっぱりそこじゃなかった」と気づくこともあるため、本人がこの卓を離れる（離れる／一時離席）まで
-  // ずっと出しておく（クリアはdoLeaveTsuke側で行う）。
-  // 卓状況ポップアップ・初回一覧カードどちらもbuildTsukeCandidateListHtmlを共通で使うため、
-  // この1箇所の変更で両画面に反映される
-  if (!window._tsukeCancelableJoins) window._tsukeCancelableJoins = {};
-  window._tsukeCancelableJoins[String(guestId) + '::' + name] = true;
-  if (window.fbSaveTsukeCancelableJoin) window.fbSaveTsukeCancelableJoin(String(guestId) + '::' + name, true);
-  // doJoinTsuke内部のrenderTsukeModalIfOpen()は、↑でこの印を立てるより前に実行されてしまっているため、
-  // ここで改めて呼び直さないと、初回一覧カード側のキャンセルボタンが次の再描画までワンテンポ遅れて出てしまう
-  renderTsukeModalIfOpen();
   // 続けて操作できるよう、ポップアップは閉じずに中身だけ更新する
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(guestId);
 }
 
-// 「着」を押し間違えた時、本人の行に出る「キャンセル」ボタンから呼ばれる。
+// ===== 付け回し：候補一覧の行を長押しすると出す「取り消し」確認ダイアログ =====
+// 以前は「着」「離れる」直後だけ取り消しボタンを出す仕組みだったが、その印を別端末とも
+// 同期させる必要がありタイミング次第で見えたり見えなかったりして分かりにくかった。
+// 代わりに、対象の行（今まさに着いている人＝kind:'join'／対応済の人＝kind:'leave'）を
+// 長押しすればいつでも確認ダイアログから取り消せるようにし、同期の心配自体をなくした
+let _tsukeRowHoldTimer = null;
+let _tsukeRowHoldFired = false;
+function startTsukeRowHold(kind, guestId, name) {
+  _tsukeRowHoldFired = false;
+  _tsukeRowHoldTimer = setTimeout(() => {
+    _tsukeRowHoldFired = true;
+    openTsukeRowCancelDialog(kind, guestId, name);
+  }, 600);
+}
+function cancelTsukeRowHold() {
+  if (_tsukeRowHoldTimer) { clearTimeout(_tsukeRowHoldTimer); _tsukeRowHoldTimer = null; }
+}
+
+function openTsukeRowCancelDialog(kind, guestId, name) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  let overlay = document.getElementById('tsukeRowCancelOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id = 'tsukeRowCancelOverlay'; overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1003;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.onclick = (e) => { if (e.target === overlay) closeTsukeRowCancelDialog(); };
+  const isJoin = kind === 'join';
+  const message = isJoin
+    ? `${name}さんの着席をキャンセルしますか？<br><span style="color:var(--text-dim);font-size:11.5px;">対応記録（着いた回数）には残りません</span>`
+    : `${name}さんの「離れる」をキャンセルして、この卓に復帰させますか？`;
+  const confirmLabel = isJoin ? 'キャンセルする' : '復帰させる';
+  const escapedName = name.replace(/'/g, "\\'");
+  const action = isJoin
+    ? `closeTsukeRowCancelDialog();cancelJustJoinedTsuke('${escapedName}');`
+    : `closeTsukeRowCancelDialog();cancelLastLeaveTsuke('${escapedName}','${guestId}');`;
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:20px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:13.5px;color:#f0ece0;margin-bottom:16px;line-height:1.6;">${message}</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="closeTsukeRowCancelDialog()" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;font-family:var(--font-main);">やめる</button>
+      <button onclick="${action}" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-main);">${confirmLabel}</button>
+    </div>
+  </div>`;
+  overlay.style.display = 'flex';
+}
+
+function closeTsukeRowCancelDialog() {
+  const overlay = document.getElementById('tsukeRowCancelOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+// 「着」を押し間違えた時、本人の行の長押しダイアログから呼ばれる。
 // doLeaveTsukeではなくundoJoinTsukeを使うので、対応記録（着いた回数）には残らず完全に取り消される
 function cancelJustJoinedTsuke(name) {
-  const active = getTsukeActiveOf(name);
-  if (active) {
-    const key = String(active.guestId) + '::' + name;
-    if (window._tsukeCancelableJoins) delete window._tsukeCancelableJoins[key];
-    if (window.fbSaveTsukeCancelableJoin) window.fbSaveTsukeCancelableJoin(key, false);
-  }
   undoJoinTsuke(name);
   showToast(`${name}さんの着席をキャンセルしました`);
   if (window._tsukeTablePopupGuestId != null) openTsukeTablePopup(window._tsukeTablePopupGuestId);
@@ -4243,20 +4224,21 @@ function cancelJustJoinedTsuke(name) {
 
 // 初回卓の通常の「離れる」（対応済）を取り消す。対応済は一度付くとUI上「戻す」ボタンが無く
 // 永久に選べなくなってしまうため（一時離席の「戻す」とは違い、復帰手段が無かった）、
-// 誤って「離れる」を押してしまった時にここから復帰できるようにする。離れる前の経過時間も引き継ぐ
+// 誤って「離れる」を押してしまった時にここから復帰できるようにする。離れる前の経過時間も引き継ぐ。
+// 取り消す対象は、この卓・この人の直近の（一時離席ではない）離れる記録をtsukeLogから直接探す
+// （専用の印を別途持たず、常にFirebase同期済みのtsukeLog自体を見るので取りこぼしが無い）
 function cancelLastLeaveTsuke(name, guestId) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const idStr = String(guestId);
-  const key = idStr + '::' + name;
-  const logId = window._tsukeCancelableLeaves && window._tsukeCancelableLeaves[key];
-  const entry = logId && window.tsukeLog && window.tsukeLog[logId];
-  if (!entry) { showToast('取り消せる記録が見つかりませんでした'); return; }
+  const logEntries = Object.entries(window.tsukeLog || {})
+    .filter(([id, e]) => e.kanbu === name && String(e.guestId) === idStr && !e.temporary)
+    .sort((a, b) => (b[1].endedAt || 0) - (a[1].endedAt || 0));
+  if (!logEntries.length) { showToast('取り消せる記録が見つかりませんでした'); return; }
+  const [logId, entry] = logEntries[0];
   const guest = resolveTsukeGuest(guestId);
   const tableKey = guest ? (guest.tableNum || '').toUpperCase().replace(/^P/, 'V') : '';
   delete window.tsukeLog[logId];
   if (window.fbSaveTsukeLogEntry) window.fbSaveTsukeLogEntry(logId, null);
-  delete window._tsukeCancelableLeaves[key];
-  if (window.fbSaveTsukeCancelableLeave) window.fbSaveTsukeCancelableLeave(key, false);
   if (!window.tsukeActive) window.tsukeActive = {};
   window.tsukeActive[name] = { guestId: idStr, tableKey, tanto: entry.tanto || '', guestName: entry.guestName || '', startedAt: Date.now() - (entry.minutes || 0) * 60000, isFirst: true };
   if (window.fbSaveTsukeActive) window.fbSaveTsukeActive(window.tsukeActive);
