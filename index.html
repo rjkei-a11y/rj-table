@@ -8432,12 +8432,18 @@ function computeAttendanceDetail(mode) {
     const status = (staffDayStatus[name] || {}).status;
     const isOff = status === 'off' || status === 'paid_off';
     const threshold = isOff ? null : computeStaffReadyThreshold(name);
+    // お客様の来店フラグがもう立っている（現に接客中）なら、ヘアメ終了・出勤予定時刻などを
+    // 待たずに即座に出勤扱いにする。すでに接客しているのに予定時刻前だからと「未」扱いになるのは
+    // おかしいため、予定時刻による判定より優先する
+    const alreadyWithGuest = !isOff && guests.some(g => g.arrived && matchStaffName(g.tanto) === name);
     let counted = false;
-    if (!isOff && threshold) {
+    if (!isOff && alreadyWithGuest) {
+      counted = true;
+    } else if (!isOff && threshold) {
       const t = parseTimeText(threshold.time);
       counted = !!(t && nowShift >= toShiftMinutes(t.hour, t.minute));
     }
-    return { name, status, isOff, threshold, counted };
+    return { name, status, isOff, threshold, counted, alreadyWithGuest };
   });
 }
 
@@ -8456,9 +8462,11 @@ function openAttendanceBreakdown(mode) {
   const rows = detail.map(d => {
     const reasonHtml = d.isOff
       ? `<span style="color:#e74c3c;">${statusLabels[d.status] || '休み'}（対象外）</span>`
-      : (d.threshold
-        ? `<span style="color:var(--text-dim);">${d.threshold.label} ${d.threshold.time}〜</span>`
-        : `<span style="color:var(--text-dim);">設定なし</span>`);
+      : (d.alreadyWithGuest
+        ? `<span style="color:#2ecc71;">接客中</span>`
+        : (d.threshold
+          ? `<span style="color:var(--text-dim);">${d.threshold.label} ${d.threshold.time}〜</span>`
+          : `<span style="color:var(--text-dim);">設定なし</span>`));
     const markHtml = d.isOff
       ? ''
       : (d.counted ? `<span style="color:#2ecc71;font-weight:700;">✓出勤</span>` : `<span style="color:var(--text-dim);">未</span>`);
