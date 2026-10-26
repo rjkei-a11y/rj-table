@@ -5628,7 +5628,10 @@ function doClearFirstData() {
   // そうしないと消去後もtsukeActiveに消えた卓(first_◯)への参照だけが残ってしまい、
   // 元に戻しても復活しない「行方不明」状態になる（deleteFirstGroupには元々あった安全策が
   // 全クリアには無かったために実際に起きた不具合）
-  firstGroups.forEach(g => releaseTsukeActiveForGuest('first_' + g.id));
+  firstGroups.forEach(g => {
+    releaseTsukeActiveForGuest('first_' + g.id);
+    if (window._tsukeNextPicks) delete window._tsukeNextPicks['first_' + g.id];
+  });
   firstGroups = [];
   firstGid = 1;
   firstRid = 1;
@@ -5969,7 +5972,12 @@ function toggleFirstRowEnded(gid, rid) {
   // この組の全席が対応済（終了または飲直）になったら、付け回しでこの卓についていた人も自動で離席させる
   // （卓自体はもう対応が終わっているのに、付け回し上はついたままの表示が残ってしまうのを防ぐ）
   const allDone = (g.rows || []).length > 0 && (g.rows || []).every(x => isFirstRowDone(x));
-  if (allDone) releaseTsukeActiveForGuest('first_' + gid);
+  if (allDone) {
+    releaseTsukeActiveForGuest('first_' + gid);
+    // まだ着席させていない「次に着く予定」の◯マークも、卓自体が終了した以上は無効なので一緒に消す
+    // （残したままだと、他の卓BOXを開くたびに「この卓に次に着く予定」という案内が出続けてしまう）
+    if (window._tsukeNextPicks) delete window._tsukeNextPicks['first_' + gid];
+  }
   saveFirstData();
   renderFirstTab();
   renderFloorStatus();
@@ -6013,7 +6021,10 @@ function editFirstRow(gid, rid, field, td) {
     // 表示が残ってしまうのを防ぐ）
     if (field === 'nominaoshi') {
       const allDone = (liveG.rows || []).length > 0 && (liveG.rows || []).every(x => isFirstRowDone(x));
-      if (allDone) releaseTsukeActiveForGuest('first_' + gid);
+      if (allDone) {
+        releaseTsukeActiveForGuest('first_' + gid);
+        if (window._tsukeNextPicks) delete window._tsukeNextPicks['first_' + gid];
+      }
     }
     saveFirstData();
     if (field === 'nominaoshi' || arrivedJustSet) {
@@ -6045,7 +6056,7 @@ function deleteFirstGroup(gid) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   let overlay = document.getElementById('deleteOverlay');
   if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
-  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;"><div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">この組を削除しますか？</div><div style="display:flex;gap:10px;"><button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button><button onclick="document.getElementById('deleteOverlay').style.display='none';releaseTsukeActiveForGuest('first_${gid}');firstGroups=firstGroups.filter(x=>x.id!==${gid});saveFirstData();renderFirstTab();renderTsukeModalIfOpen();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button></div></div>`;
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;"><div style="font-size:14px;color:#f0ece0;margin-bottom:16px;">この組を削除しますか？</div><div style="display:flex;gap:10px;"><button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button><button onclick="document.getElementById('deleteOverlay').style.display='none';releaseTsukeActiveForGuest('first_${gid}');if(window._tsukeNextPicks)delete window._tsukeNextPicks['first_${gid}'];firstGroups=firstGroups.filter(x=>x.id!==${gid});saveFirstData();renderFirstTab();renderTsukeModalIfOpen();" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">削除</button></div></div>`;
   overlay.style.display='flex';
 }
 
