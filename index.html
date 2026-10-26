@@ -2428,21 +2428,31 @@ function renderEmptyTablesArea() {
     return;
   }
   // 空き卓は「実際に今その卓にお客様が座っている卓」を指すため、卓番号だけ予約として先に
-  // 振ってあっても来店フラグが立つまでは空き卓のまま扱う（まだ埋まっていないため）
+  // 振ってあっても来店フラグが立つまでは空き卓のまま扱う（まだ埋まっていないため）。
+  // ただし予約が入っていること自体は分かるよう、該当の卓番号だけ緑色で表示する
   const usedKeys = new Set();
-  guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
-    usedKeys.add(g.tableNum.toUpperCase().replace(/^P/, 'V'));
+  const reservedKeys = new Set();
+  guests.filter(g => g.tableNum && !g.left).forEach(g => {
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    if (g.arrived) usedKeys.add(key);
+    else reservedKeys.add(key);
   });
   (firstGroups || []).forEach(g => {
-    if (!g.tableNum || !g.arrived) return;
+    if (!g.tableNum) return;
     const allDone = (g.rows||[]).length > 0 && (g.rows||[]).every(r => isFirstRowDone(r));
     if (allDone) return;
-    usedKeys.add(g.tableNum.toUpperCase().replace(/^P/, 'V'));
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    if (g.arrived) usedKeys.add(key);
+    else reservedKeys.add(key);
   });
   const allTables = [...(floorData.V||[]), ...(floorData.A||[]), ...(floorData.B||[])];
   const emptyTables = allTables.filter(t => !usedKeys.has(t.toUpperCase()));
+  const emptyTablesHtml = emptyTables.map(t => reservedKeys.has(t.toUpperCase())
+    ? `<span style="color:#2ecc71;font-weight:700;">${t}</span>`
+    : t
+  ).join(', ');
   el.innerHTML = emptyTables.length
-    ? `<span style="color:var(--accent);">空き卓：</span>${emptyTables.join(', ')}`
+    ? `<span style="color:var(--accent);">空き卓：</span>${emptyTablesHtml}`
     : `<span style="color:var(--accent);">空き卓：</span>なし`;
   el.style.display = 'block';
   updateFixedTop();
