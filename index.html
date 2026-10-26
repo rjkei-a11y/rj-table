@@ -6486,6 +6486,9 @@ function toggleLeft(id) {
   lastLeft = JSON.parse(JSON.stringify(g)); // バックアップ
   g.left = true;
   releaseTsukeActiveForGuest(id);
+  // 退店した卓に「次に着かせる予定」の◯マーク（未着席の人）が残っていると、他の卓BOXを開いた時に
+  // 「◯◯卓に次に着く予定」という案内がずっと出続けてしまうため、退店と同時に消しておく
+  if (window._tsukeNextPicks) delete window._tsukeNextPicks[String(id)];
   saveToStorage();
   renderView();
   renderEmptyTablesArea();
