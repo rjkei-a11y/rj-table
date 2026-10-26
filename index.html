@@ -2428,8 +2428,7 @@ function renderEmptyTablesArea() {
     return;
   }
   // 空き卓は「実際に今その卓にお客様が座っている卓」を指すため、卓番号だけ予約として先に
-  // 振ってあっても来店フラグが立つまでは空き卓のまま扱う（まだ埋まっていないため）。
-  // 卓番号を振った予約があること自体は、卓一覧側の行を緑にして分かるようにしている
+  // 振ってあっても来店フラグが立つまでは空き卓のまま扱う（まだ埋まっていないため）
   const usedKeys = new Set();
   guests.filter(g => g.tableNum && !g.left && g.arrived).forEach(g => {
     usedKeys.add(g.tableNum.toUpperCase().replace(/^P/, 'V'));
@@ -2950,9 +2949,6 @@ function rowHTML(no, g) {
     : '';
   // 未来店で、来店予定時刻を過ぎている行はハイライトする
   const isOverdue = !g.arrived && isTimeOverdue(g.arrive);
-  // 未来店だが卓番号は既に割り振られている（予約として卓を確保済み）行は、薄緑にして
-  // 空き卓一覧には出ていなくても「この卓は予約で埋まっている」ことが一目で分かるようにする
-  const isTableReserved = !g.arrived && !g.left && !!g.tableNum;
   // 卓一覧タブは内勤のみ編集可能。キャストロールでは閲覧専用にする（クリックしても何も起きない・編集可能に見えないようにする）
   const canEditList = localStorage.getItem('rj_role') === 'admin';
   const holdAttrs = canEditList ? `oncontextmenu="event.preventDefault();confirmDelete(${g.id})" data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()"` : '';
@@ -2969,7 +2965,7 @@ function rowHTML(no, g) {
   const helpCellAttrs = canEditList ? `class="p-col-help editable" onclick="openHelpEditPopup(${g.id})"` : `class="p-col-help" onclick="openHelpEditPopup(${g.id})" style="cursor:pointer;"`;
   const noteCellAttrs = canEditList ? `class="p-col-note editable" onclick="openNoteEditPopup(${g.id})"${noteHighlight ? ' style="color:#e74c3c;"' : ''}` : `class="p-col-note" onclick="openNoteEditPopup(${g.id})" style="cursor:pointer;"`;
   return `
-    <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : (isTableReserved ? 'table-reserved' : ''))}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
+    <tr class="${g.left ? 'left-guest' : (g.arrived ? 'arrived' : '')}${g.arrived && !g.tableNum && !g.left ? ' no-table' : ''}${isOverdue ? ' overdue-highlight' : ''}" id="card-${g.id}" data-rownum="${no}"
         ${holdAttrs}>
       <td class="p-col-no" ${noCellAttrs}>${no}${isOverdue ? ' ⏰' : ''}</td>
       <td ${numCellAttrs}>${displayTableNum(g.tableNum)}</td>
