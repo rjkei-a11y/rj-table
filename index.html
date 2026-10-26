@@ -4153,6 +4153,7 @@ function openTsukeTablePopup(guestId) {
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
             ${todayAttendanceHtml}
+            <button onclick="event.stopPropagation();openTsukeHistoryModal('${guestId}')" style="background:none;border:1px solid #444;border-radius:5px;color:var(--text-dim);font-size:11px;padding:4px 9px;cursor:pointer;font-family:var(--font-main);">履歴</button>
             <button onclick="closeTsukeTablePopup()" style="background:none;border:none;color:var(--text-dim);font-size:22px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
           </div>
         </div>
@@ -4198,6 +4199,58 @@ function openTsukeTablePopup(guestId) {
     const scrollEl2 = document.getElementById('tsukeTablePopupScroll');
     if (scrollEl2) scrollEl2.scrollTop = prevScrollTop;
   }
+}
+
+// 不備等があった時に「何時ごろ誰がこの卓についていたか」を内勤が遡って確認できるよう、
+// 対応履歴（着いた時刻〜離れた時刻）を一覧で見られるようにする。
+// 通常卓は「担当・お客様名」の組み合わせで紐付ける（卓移動があっても追え、飲直で
+// ゲストIDが変わっても同一の対応履歴として続けて見られる＝対応回数バッジと同じ考え方）。
+// 初回卓は「担当・お客様名」に一意性が無い（毎回「初回◯名」のような表記になるため）、
+// guestId（first_◯）そのもので紐付ける
+function openTsukeHistoryModal(guestId) {
+  const guest = resolveTsukeGuest(guestId);
+  if (!guest) return;
+  const isFirstGroup = typeof guestId === 'string' && guestId.indexOf('first_') === 0;
+  const pairTanto = guest.tanto || '';
+  const pairGuestName = (guest.name || '').replace('△', '').trim();
+  const tsukeLogData = window.tsukeLog || {};
+  const entries = Object.values(tsukeLogData)
+    .filter(e => isFirstGroup ? String(e.guestId) === String(guestId) : (e.tanto === pairTanto && e.guestName === pairGuestName))
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+
+  let overlay = document.getElementById('tsukeHistoryOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tsukeHistoryOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:1004;display:flex;align-items:center;justify-content:center;padding:16px;';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeTsukeHistoryModal(); });
+    document.body.appendChild(overlay);
+  }
+
+  const rowsHtml = entries.length ? entries.map(e => {
+    const startLabel = formatTsukeStartTime(e.startedAt);
+    const endLabel = e.endedAt ? formatTsukeStartTime(e.endedAt) : '進行中';
+    const tempBadge = e.temporary ? `<span style="font-size:9px;color:#c9a84c;border:1px solid #5c4a1f;border-radius:4px;padding:1px 5px;margin-left:5px;">一時離席</span>` : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed var(--border);">
+      <span style="font-size:13px;color:var(--text);">${e.kanbu}${tempBadge}</span>
+      <span style="font-size:12px;color:var(--text-dim);white-space:nowrap;">${startLabel}〜${endLabel}（${e.minutes}分）</span>
+    </div>`;
+  }).join('') : `<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:16px 0;">対応履歴がありません</div>`;
+
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:18px;max-width:360px;width:100%;max-height:70vh;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-shrink:0;">
+      <div style="font-size:14px;font-weight:700;color:var(--accent);">対応履歴</div>
+      <button onclick="closeTsukeHistoryModal()" style="background:none;border:none;color:var(--text-dim);font-size:20px;line-height:1;padding:2px 4px;cursor:pointer;">✕</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;flex-shrink:0;">${isFirstGroup ? (guest.name || '初回') : pairTanto + '・' + pairGuestName}</div>
+    <div style="overflow-y:auto;flex:1;">${rowsHtml}</div>
+  </div>`;
+  overlay.style.display = 'flex';
+}
+
+function closeTsukeHistoryModal() {
+  const overlay = document.getElementById('tsukeHistoryOverlay');
+  if (overlay) overlay.style.display = 'none';
 }
 
 // キャスト自身が「この卓に着卓する」を押した時、または内勤が行ごとの「着／戻す」ボタンを押した時に使う。
