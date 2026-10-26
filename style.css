@@ -293,8 +293,6 @@
   }
   .paper-table tr:not(.arrived):nth-child(even) td { background: #fafafa; }
   .paper-table tr:not(.arrived) td { background: #fff; }
-  /* 未来店だが卓番号は確保済み（予約）の行は薄緑。来店済み(.arrived)の濃い緑と見分けられるよう薄くする */
-  .paper-table tr.table-reserved td { background: #e8f5e9 !important; color: #000; }
   .paper-table tr.overdue-highlight td { background: #ffd6e0 !important; color: #8b2f4a !important; }
 
   .p-col-no   { width: 24px; text-align: center; color: #888; font-size: 11px; cursor:pointer; }
