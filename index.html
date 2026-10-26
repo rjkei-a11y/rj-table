@@ -1284,6 +1284,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('panel-view') && document.getElementById('panel-view').classList.contains('active') && window.renderView) window.renderView();
     // 初回タブ側の卓番・人数・来店確認などの変更を、開いている付け回しモーダル（初回一覧カード含む）にも反映する
     if (window.renderTsukeModalIfOpen) window.renderTsukeModalIfOpen();
+    // 別端末で初回の来店フラグ・卓番が変わった場合も、こちらで卓一覧タブを見ていれば空き卓一覧に反映する
+    if (window.renderEmptyTablesArea) window.renderEmptyTablesArea();
   };
   checkLogin();
   scheduleDailyTempAdminExpiryCheck();
@@ -5555,6 +5557,8 @@ function toggleFirstGroupArrived(gid) {
   saveFirstData();
   renderFirstTab();
   renderFloorStatus();
+  // 来店フラグで空き卓一覧の表示が変わるため、卓一覧タブを見ていた場合に備えて更新しておく
+  renderEmptyTablesArea();
   if (document.getElementById('panel-view').classList.contains('active')) renderView();
   showToast(g.arrived ? '来店確認 ✅' : '来店取消');
 }
@@ -6019,6 +6023,7 @@ function editFirstRow(gid, rid, field, td) {
     }
     if (arrivedJustSet) {
       syncFirstGroupToView(liveG);
+      renderEmptyTablesArea();
       showToast('写真指名欄への入力を検知したため、来店確認 ✅ も自動で入れました');
     }
     renderTsukeModalIfOpen();
