@@ -564,7 +564,7 @@
     font-weight: 700;
     color: var(--accent);
   }
-  .modal-body { padding: 16px; }
+  .modal-body { padding: 16px; overscroll-behavior: contain; }
   .form-row { margin-bottom: 12px; }
   .form-label { font-size: 11px; color: var(--text-dim); letter-spacing: 0.08em; margin-bottom: 4px; display: block; }
   .form-input {
