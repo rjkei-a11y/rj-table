@@ -3005,8 +3005,16 @@ function rowHTML(no, g) {
   const canEditList = localStorage.getItem('rj_role') === 'admin';
   const holdAttrs = canEditList ? `oncontextmenu="event.preventDefault();confirmDelete(${g.id})" data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()"` : '';
   const noCellAttrs = canEditList ? `onclick="${g.left ? `markReEntry(${g.id})` : `toggleArrived(${g.id})`}" style="cursor:pointer;user-select:none;"` : '';
-  // 卓番号が他の行と重複している（卓番の入力ミス等）場合、内勤に気付かせるため卓番を赤くする
-  const isDuplicateTable = canEditList && !g.left && g.tableNum && computeDuplicateTableNums().has(g.tableNum.toUpperCase().replace(/^P/, 'V'));
+  // 卓番号が他の行と重複している（卓番の入力ミス等）場合、内勤に気付かせるため卓番を赤くする。
+  // ただし、アイバンで相手として紐付いている行と卓番号が重複しているだけなら、相席として
+  // 意図的な重複と分かるため赤くしない（入力ミスの可能性がある重複だけを知らせたいため）
+  const aibanPartnerSharesTable = aibanInfo.linked && aibanInfo.partnerId != null && (() => {
+    const partner = guests.find(x => x.id === aibanInfo.partnerId);
+    return !!(partner && !partner.left && partner.tableNum && g.tableNum &&
+      partner.tableNum.toUpperCase().replace(/^P/, 'V') === g.tableNum.toUpperCase().replace(/^P/, 'V'));
+  })();
+  const isDuplicateTable = canEditList && !g.left && g.tableNum && !aibanPartnerSharesTable
+    && computeDuplicateTableNums().has(g.tableNum.toUpperCase().replace(/^P/, 'V'));
   const numCellAttrs = canEditList ? `class="p-col-num editable" onclick="openTableNumPopup(${g.id})"${isDuplicateTable ? ' style="color:#e74c3c;"' : ''}` : `class="p-col-num"`;
   const arriveCellAttrs = canEditList ? `class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)"` : `class="p-col-time"`;
   const tantoCellAttrs = canEditList ? `class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)"` : `class="p-col-tanto"`;
