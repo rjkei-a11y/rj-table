@@ -560,6 +560,10 @@
   onValue(tableListVisibleRef, (snapshot) => {
     const data = snapshot.val();
     window._fbTableListVisible = data === false ? false : true;
+    // この値を一度でも実際に受信できたかどうかの印。shouldMaskSensitiveFields側で、
+    // まだ一度も受信していない「本当にどちらか分からない」間だけ安全側（非公開扱い）に
+    // 倒すために使う（タブの表示/非表示側は元々の「デフォルト公開」挙動のまま変えない）
+    window._fbTableListVisibleReceived = true;
     if (window.applyTableListVisibility) window.applyTableListVisibility();
   });
 
@@ -569,9 +573,17 @@
   // という実害があるため、タブが可視状態に戻った瞬間にこの値だけ明示的に取り直して再描画する
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
+    // Firebaseから一度も受信していなければ（ページ再読み込み直後など）、受信が完了するまでの
+    // 一瞬だけ安全側（非公開扱い）にしておき、本来隠すべき予定の報告状況が素の色で見えてしまう
+    // 隙を作らないようにする（実際の値は直後に取得でき次第、上のonValue/get()で上書きされる）
+    if (!window._fbTableListVisibleReceived) {
+      window._fbTableListVisible = false;
+      if (window.renderStaffStatus) window.renderStaffStatus();
+    }
     get(tableListVisibleRef).then((snapshot) => {
       const data = snapshot.val();
       window._fbTableListVisible = data === false ? false : true;
+      window._fbTableListVisibleReceived = true;
       if (window.applyTableListVisibility) window.applyTableListVisibility();
       if (window.renderStaffStatus) window.renderStaffStatus();
     }).catch(e => console.error('FB tableListVisible resync error:', e));
@@ -1116,6 +1128,11 @@ function doLogin() {
 // 内勤ロールは常にfalse（常に閲覧可能）
 function shouldMaskSensitiveFields() {
   if (localStorage.getItem('rj_role') !== 'host') return false;
+  // Firebaseから公開設定をまだ一度も受信していない間（ページ読み込み直後・タブ復帰直後の一瞬）は、
+  // 本当は公開/非公開のどちらか分からない。ここでfalse扱い（マスクしない＝素の色で見せる）にすると、
+  // 実は非公開設定だった場合に本来隠すべき予定の報告状況が一瞬だけ見えてしまうため、
+  // 受信前は安全側（マスクする）に倒しておく
+  if (!window._fbTableListVisibleReceived) return true;
   return window._fbTableListVisible === false;
 }
 
