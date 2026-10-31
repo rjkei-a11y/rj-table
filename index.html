@@ -2593,7 +2593,21 @@ function findAibanPartner(g) {
     const cleanedName = stripFirstRpText(other.name).replace(/△/g, '');
     const otherNameNorm = toHiragana(cleanedName).replace(/[\s　]/g, '');
     if (!otherNameNorm) return false;
-    return normText.includes(otherNameNorm);
+    // お客様名だけでの判定だと、同じ夜に同名のお客様が複数いた時に別人と誤って紐付いてしまう事故が
+    // 起きるため、相手の「担当名」もアイバン欄のテキストに含まれていることを必須にし、
+    // 担当名を取り除いた残り全体がお客様名と完全一致する場合だけ同一人物とみなす
+    // （担当名は呼び名の表記揺れを許容するが、お客様名側は完全一致のみ＝部分一致はしない）
+    const otherTanto = matchStaffName(other.tanto);
+    if (!otherTanto) return false;
+    const tantoVariants = [otherTanto, ...(staffAliases[otherTanto] || [])]
+      .map(v => toHiragana(v).replace(/[\s　]/g, ''))
+      .filter(Boolean);
+    return tantoVariants.some(variant => {
+      const idx = normText.indexOf(variant);
+      if (idx === -1) return false;
+      const remainder = normText.slice(0, idx) + normText.slice(idx + variant.length);
+      return remainder === otherNameNorm;
+    });
   }) || null;
 }
 
