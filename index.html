@@ -3005,7 +3005,9 @@ function rowHTML(no, g) {
   const canEditList = localStorage.getItem('rj_role') === 'admin';
   const holdAttrs = canEditList ? `oncontextmenu="event.preventDefault();confirmDelete(${g.id})" data-hold="" ontouchstart="startHold(${g.id})" ontouchend="cancelHold()" ontouchmove="cancelHold()"` : '';
   const noCellAttrs = canEditList ? `onclick="${g.left ? `markReEntry(${g.id})` : `toggleArrived(${g.id})`}" style="cursor:pointer;user-select:none;"` : '';
-  const numCellAttrs = canEditList ? `class="p-col-num editable" onclick="openTableNumPopup(${g.id})"` : `class="p-col-num"`;
+  // 卓番号が他の行と重複している（卓番の入力ミス等）場合、内勤に気付かせるため卓番を赤くする
+  const isDuplicateTable = canEditList && !g.left && g.tableNum && computeDuplicateTableNums().has(g.tableNum.toUpperCase().replace(/^P/, 'V'));
+  const numCellAttrs = canEditList ? `class="p-col-num editable" onclick="openTableNumPopup(${g.id})"${isDuplicateTable ? ' style="color:#e74c3c;"' : ''}` : `class="p-col-num"`;
   const arriveCellAttrs = canEditList ? `class="p-col-time editable" onclick="editCell(${g.id},'arrive',this)"` : `class="p-col-time"`;
   const tantoCellAttrs = canEditList ? `class="p-col-tanto editable" onclick="editCell(${g.id},'tanto',this)"` : `class="p-col-tanto"`;
   // 内勤ロールでは、お客様名・備考のいずれかに「新規」「初指名」「初回RP」系の文言が入っていたら、
@@ -5450,6 +5452,18 @@ function computeMultiTantoNames() {
     tantoCount[resolved] = (tantoCount[resolved] || 0) + 1;
   });
   return new Set(Object.entries(tantoCount).filter(([,n]) => n >= 2).map(([name]) => name));
+}
+
+// 卓一覧タブで、同じ卓番号が複数の行（退店済みは除く）に重複して入力されていないかを検出する。
+// 卓番号はtoUpperCase+P→V正規化した上で比較する（他の重複判定・マッチングと同じ正規化ルール）
+function computeDuplicateTableNums() {
+  const active = guests.filter(g => !g.left && g.tableNum);
+  const counts = {};
+  active.forEach(g => {
+    const key = g.tableNum.toUpperCase().replace(/^P/, 'V');
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return new Set(Object.entries(counts).filter(([, n]) => n >= 2).map(([key]) => key));
 }
 
 // 担当者別の卓数集計（2卓以上の「被り」を検出する）。予定報告タブ・全体タブ両方から呼べるよう独立させる
