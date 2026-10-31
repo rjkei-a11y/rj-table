@@ -563,6 +563,20 @@
     if (window.applyTableListVisibility) window.applyTableListVisibility();
   });
 
+  // タブが長時間バックグラウンドのままになっていた後に復帰すると、その間にFirebaseとの接続が
+  // 切れていて上のonValueの更新通知を取りこぼしていることがある（特にSafariで顕著）。
+  // 卓一覧の公開設定を取りこぼすと「本来は青で隠すべき予定がキャストに緑のまま見えてしまう」
+  // という実害があるため、タブが可視状態に戻った瞬間にこの値だけ明示的に取り直して再描画する
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    get(tableListVisibleRef).then((snapshot) => {
+      const data = snapshot.val();
+      window._fbTableListVisible = data === false ? false : true;
+      if (window.applyTableListVisibility) window.applyTableListVisibility();
+      if (window.renderStaffStatus) window.renderStaffStatus();
+    }).catch(e => console.error('FB tableListVisible resync error:', e));
+  });
+
   // Firebaseから「本日一度でも👑主役が付いた担当者」の記録をリアルタイム受信（別端末での操作もすぐ反映される）
   onValue(eventTantoRef, (snapshot) => {
     const data = snapshot.val();
