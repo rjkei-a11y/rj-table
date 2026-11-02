@@ -3711,6 +3711,14 @@ function buildTsukeFloorBoxesHtml() {
           const s = SPECIALS.find(x => x.key === k);
           return s ? `<span style="font-size:10px;margin-left:2px;" title="${s.label}">${s.icon}</span>` : '';
         }).join('');
+        // アイコンだけだとタップ/ホバーしないと内容が分からないため、ボックス内にも内容（ラベル）を
+        // そのまま1行で出す（複数付いている場合は並べて表示する）
+        const specialsLabelHtml = (info.specials || []).length
+          ? `<div style="font-size:8.5px;color:#f1c40f;">${(info.specials || []).map(k => {
+              const s = SPECIALS.find(x => x.key === k);
+              return s ? `${s.icon}${s.label}` : '';
+            }).filter(Boolean).join(' ')}</div>`
+          : '';
         // 場内指名は既存の行を崩さないよう、ある時だけ追加の1行として足す（正式な担当と重複していても両方見えて構わない）
         const baanaiHtml = baanaiName ? `<div style="font-size:8.5px;color:#7fd97f;">場内:${baanaiName}</div>` : '';
         // 初回は長押しで滞在時間（60/90分）を選べるようにし、来店時刻＋退店予定時刻を追加の1行で表示する。
@@ -3728,6 +3736,7 @@ function buildTsukeFloorBoxesHtml() {
           <div style="font-weight:700;font-size:11px;display:flex;justify-content:space-between;"><span>${t}${specialIconsHtml}</span><span style="font-size:8.5px;">${info.photoDisplay || `<span style="color:var(--text-dim);">${info.tanto}</span>`}</span></div>
           <div style="font-size:9px;color:var(--text-dim);">${info.name}</div>
           ${info.help ? `<div style="font-size:8.5px;color:#e8954a;">H: ${info.help}</div>` : ''}
+          ${specialsLabelHtml}
           ${timeHtml}
           ${baanaiHtml}
           ${memberHtml}
