@@ -2280,8 +2280,17 @@ function moveLeaveKeywordToNote(g, keyword) {
   g.note = existingNote ? `${existingNote} ${keyword}` : keyword;
 }
 
+// クイック／ワンタイ／ツータイの退店時間計算の起点を返す。来店フラグが立っていて実際の来店時刻
+// （g.actualArrive）が記録済みならその時刻を起点にし、まだ来店前（記録が無い）なら今まで通り
+// 現在時刻を起点にする。これにより、来店してからしばらく経ってからクイック等が入力された場合でも、
+// 「入力した時刻」ではなく「実際に来店した時刻」からの計算になる
+function calcAutoLeaveTime(g, minutesToAdd) {
+  if (g.actualArrive && g.actualArrive.trim()) return addMinutesToTimeString(g.actualArrive, minutesToAdd);
+  return calcLeaveTimeFromNow(minutesToAdd);
+}
+
 // 来店確認（入店フラグON）や関連欄の編集保存のタイミングで、ゲスト1件分の退店時間を自動計算して反映する
-// ・ワンタイ／ツータイ（退店欄にその文言がある間）：常に現在時刻からの再計算で上書きする
+// ・ワンタイ／ツータイ（退店欄にその文言がある間）：常に（実来店時刻、無ければ現在時刻）からの再計算で上書きする
 // ・ワンタイ／ツータイ（退店欄には無いが備考欄にある場合）：退店欄がまだ空の時だけ、最初の1回だけ計算する
 //   （備考欄の文言はクイックと違って自動では消さないため、退店欄に何か入った後は「常に上書き」にはしない）
 // ・クイック（予算・退店・備考のいずれかにその文言がある）：退店欄がまだ空の時だけ、+1時間で自動計算する
@@ -2295,14 +2304,14 @@ function applyAutoLeaveTime(g) {
   if (taimeMinutesFromLeave != null) {
     // 表記ゆれ（わんたい/1タイ/1時間 等）を問わず、備考欄には統一表記で記録する
     moveLeaveKeywordToNote(g, taimeMinutesFromLeave === 120 ? 'ツータイ' : 'ワンタイ');
-    g.leave = calcLeaveTimeFromNow(taimeMinutesFromLeave);
+    g.leave = calcAutoLeaveTime(g, taimeMinutesFromLeave);
     return;
   }
   // 退店欄には無いが、備考欄に「ワンタイ／ツータイ」と書かれているケース。
   // 退店欄が空の時だけ、最初の1回だけ計算する（既に具体的な時刻が入っていれば上書きしない）
   const taimeMinutesFromNote = detectTaimeMinutes(noteText);
   if (taimeMinutesFromNote != null && !leaveText.trim()) {
-    g.leave = calcLeaveTimeFromNow(taimeMinutesFromNote);
+    g.leave = calcAutoLeaveTime(g, taimeMinutesFromNote);
     return;
   }
   const isQuick = detectQuickKeyword(g.budget || '') || detectQuickKeyword(leaveText) || detectQuickKeyword(noteText);
@@ -2312,7 +2321,7 @@ function applyAutoLeaveTime(g) {
   const leaveIsEmptyOrQuickText = !leaveText.trim() || leaveHasQuickText;
   if (isQuick && leaveIsEmptyOrQuickText) {
     if (leaveHasQuickText) moveLeaveKeywordToNote(g, 'クイック');
-    g.leave = calcLeaveTimeFromNow(60);
+    g.leave = calcAutoLeaveTime(g, 60);
   }
 }
 
@@ -5859,8 +5868,9 @@ function markReEntry(id) {
   const g = guests.find(x => x.id === id);
   if (!g) return;
   g.left = false;
-  // 再来店したタイミングの時刻に更新する
-  g.actualArrive = calcLeaveTimeFromNow(0);
+  // 実際の来店時刻（actualArrive）は上書きしない。再来店フラグを立てた時刻ではなく、
+  // 最初に来店した時刻のままにしておくことで、退店時間の自動計算（クイック等）が
+  // 常に本来の来店時刻を起点にできるようにする
   saveToStorage();
   renderTables();
   renderFloorStatus();
