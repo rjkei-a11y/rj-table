@@ -8294,7 +8294,7 @@ function changeSummaryDay(dayKey) {
 
 // 列幅を固定し、ヘッダー用テーブルと本体用テーブルで完全に揃える（横スクロールを連動させるため）
 const SUMMARY_COL_WIDTHS = [68, 50, 58, 54, 54, 50, 54, 54, 62, 50, 50, 58, 50];
-const SUMMARY_COL_LABELS = ['キャスト','卓数','初回卓数','送り','飲直','新規','初回RP','写真指名','ヘルプ指名','本人','代理','休/有休','半休'];
+const SUMMARY_COL_LABELS = ['キャスト','指名数','初回卓数','送り','飲直','新規','初回RP','写真指名','ヘルプ指名','本人','代理','休/有休','半休'];
 // 表示列（名前を除く）と、集計データ側のフィールド名の対応。編集モードでの保存時に使う
 const SUMMARY_COL_FIELDS = ['tableCount','firstTableCount','okuriCount','nomiCount','shinkiCount','rpCount','photoCount','helpCount','selfCount','proxyCount','offCount','halfOffCount'];
 function summaryColgroup() {
