@@ -4977,7 +4977,7 @@ function renderFirstTab() {
         rows += `<td onclick="event.stopPropagation();toggleFirstGroupArrived(${g.id})" style="text-align:center;color:${g.arrived?'#2ecc71':'#c9a84c'};font-size:12px;font-weight:700;cursor:pointer;${allDone?'background:#d4edda;':''}"${rowspan}>${noCounter}${g.arrived?' ✅':''}</td>`;
         const countLabel = g.isEda ? `枝${g.count||''}名` : (g.count ? `${g.count}名` : '-');
         rows += `<td${rowspan} style="${allDone?'background:#d4edda;':''}">
-          <div onclick="event.stopPropagation();openCountPicker(${g.id}, this)" style="width:100%;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:12px;padding:5px 2px;cursor:pointer;">${countLabel}</div>
+          <div id="firstCountCell-${g.id}" onclick="event.stopPropagation();confirmCountChange(${g.id}, this)" style="width:100%;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-main);font-size:12px;padding:5px 2px;cursor:pointer;">${countLabel}</div>
         </td>`;
         rows += `<td${rowspan} style="${allDone?'background:#d4edda;':''}">
           <div class="editable" onclick="editFirstGroup(${g.id},'tableNum',this)" style="font-weight:700;color:var(--accent);padding:2px 0;">${g.tableNum||''}</div>
@@ -5028,6 +5028,27 @@ function renderFirstTab() {
 
 // ===== ミニピッカー（<select>のiOS崩れ回避のため、独自の軽量ドロップダウンを使う） =====
 let _inlinePickerCallback = null;
+
+// 人数欄をタップした時、既に人数が入っている場合だけワンクッション確認を挟む。
+// 人数を減らすとはみ出た行（写真指名・送り等の入力内容ごと）が削除され、後で人数を戻しても
+// 新しい空行が追加されるだけで元の内容は復活しないため、誤タップでの人数変更を防ぐ
+function confirmCountChange(gid, anchorEl) {
+  if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
+  const g = firstGroups.find(x => x.id === gid);
+  if (!g) return;
+  if (!g.count) { openCountPicker(gid, anchorEl); return; }
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">人数を変更しますか？</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">人数を減らすと、減った分の写真指名等の入力内容は消えます。</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';openCountPicker(${gid}, document.getElementById('firstCountCell-${gid}'))" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">変更する</button>
+    </div>
+  </div>`;
+  overlay.style.display = 'flex';
+}
 
 function openCountPicker(gid, anchorEl) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
