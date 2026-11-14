@@ -7112,6 +7112,12 @@ function doResetReports(dateKey) {
   window.tsukeActive = {};
   window.tsukeLog = {};
   if (window.fbClearTsukeAll) window.fbClearTsukeAll();
+  // 「次に着く予定」の◯マーク（端末内だけの一時メモ）も、ここでクリアしておく。
+  // 卓・初回ともにidが1から振り直されるため、消し忘れた◯が残ったままだと、
+  // 翌営業日に新しく作られた全く無関係な卓・初回組が偶然同じidになった時に
+  // 古い◯がそのまま蘇って表示されてしまう（退店・終了の都度クリアするだけでは、
+  // この「日付をまたいだid再利用」のケースまでは防げないため、リセット時にも必ず消す）
+  window._tsukeNextPicks = {};
   // ヘアメ時間も当日限りのデータなので、翌営業日に古い時刻が残らないようクリアする
   window.staffHairMakeStart = {};
   window._hairMakeUnmatched = [];
