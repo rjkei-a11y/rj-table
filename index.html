@@ -8695,9 +8695,12 @@ function openManageModal() {
     const aibanMark = aibanInfo.linked ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" style="margin-right:4px;"><span style="color:${aibanInfo.color};">●</span>🔗</span>` : '';
     // 卓状況BOX・全体タブは登録済みの卓番（floorData）にしか出ないため、BOXに出ない卓番（自由入力の文字列等）を
     // 書いた時はそちらから退店処理ができない。この一覧管理からは卓番に関係なく誰でも退店処理できるようにする
+    // （ただし、まだ来店確認（来店フラグ）が立っていない予約には「退店」の概念自体が無いため出さない）
     const leaveActionHtml = g.left
       ? `<span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">退店済み</span>`
-      : `<button class="btn btn-ghost btn-sm" onclick="confirmToggleLeft(${g.id},'openManageModal()')">退店</button>`;
+      : g.arrived
+      ? `<button class="btn btn-ghost btn-sm" onclick="confirmToggleLeft(${g.id},'openManageModal()')">退店</button>`
+      : '';
     return `
     <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
       <span style="color:var(--accent);font-weight:700;min-width:36px;font-size:13px;">${g.rowNum ? 'No.'+g.rowNum : '未'}</span>
