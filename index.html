@@ -5775,7 +5775,7 @@ function toggleSpecial(id, key) {
 let lastLeft = null; // 最後に退店したゲストのバックアップ
 
 // 退店操作は内勤のみ・必ず確認ダイアログを経由する
-function confirmToggleLeft(id) {
+function confirmToggleLeft(id, afterExpr) {
   if (localStorage.getItem('rj_role') !== 'admin') { showToast('この操作は内勤のみ可能です'); return; }
   const g = guests.find(x => x.id === id);
   if (!g) return;
@@ -5787,7 +5787,7 @@ function confirmToggleLeft(id) {
     <div style="font-size:16px;font-weight:700;color:#c9a84c;margin-bottom:20px;">「${label}」</div>
     <div style="display:flex;gap:10px;">
       <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">キャンセル</button>
-      <button onclick="document.getElementById('deleteOverlay').style.display='none';toggleLeft(${id})" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">退店にする</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';toggleLeft(${id});${afterExpr || ''}" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">退店にする</button>
     </div>
   </div>`;
   overlay.style.display = 'flex';
@@ -8672,6 +8672,11 @@ function openManageModal() {
   const rows = guests.filter(g => g.name || g.tanto || g.tableNum).map(g => {
     const aibanInfo = getAibanLinkInfo(g);
     const aibanMark = aibanInfo.linked ? `<span title="${aibanInfo.label.replace(/"/g,'&quot;')}" style="margin-right:4px;"><span style="color:${aibanInfo.color};">●</span>🔗</span>` : '';
+    // 卓状況BOX・全体タブは登録済みの卓番（floorData）にしか出ないため、BOXに出ない卓番（自由入力の文字列等）を
+    // 書いた時はそちらから退店処理ができない。この一覧管理からは卓番に関係なく誰でも退店処理できるようにする
+    const leaveActionHtml = g.left
+      ? `<span style="font-size:11px;color:var(--text-dim);white-space:nowrap;">退店済み</span>`
+      : `<button class="btn btn-ghost btn-sm" onclick="confirmToggleLeft(${g.id},'openManageModal()')">退店</button>`;
     return `
     <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);">
       <span style="color:var(--accent);font-weight:700;min-width:36px;font-size:13px;">${g.rowNum ? 'No.'+g.rowNum : '未'}</span>
@@ -8679,6 +8684,7 @@ function openManageModal() {
         <div style="font-size:13px;font-weight:700;">${aibanMark}${g.name || '−'}</div>
         <div style="font-size:11px;color:var(--text-dim);">担当: ${g.tanto || '−'} ／ 来店: ${g.arrive || '−'}</div>
       </div>
+      ${leaveActionHtml}
       <button class="btn btn-ghost btn-sm" onclick="closeManageModal();openEditModal(${g.id})">編集</button>
       <button class="btn btn-danger btn-sm" onclick="confirmDelete(${g.id},'openManageModal()')">削除</button>
     </div>
