@@ -2413,6 +2413,19 @@ function syncEventSpecialFromTanto(g) {
   if (isEventTantoToday(g.tanto)) g.specials.push('event');
 }
 
+// 休み・有休のキャストに新しく予定（担当＝そのキャストの卓）が入った時は、内勤・本人どちらが
+// 追加した場合でも自動で休み扱いを解除する。休みフラグを立てた後に急遽出勤になって予定を
+// 追加しても、休みフラグが残ったままだと付け回しの候補一覧等に出てこなくなってしまうため
+function clearDayOffIfScheduled(tantoText) {
+  if (!tantoText) return;
+  const name = matchStaffName(tantoText);
+  const entry = staffDayStatus[name];
+  if (entry && (entry.status === 'off' || entry.status === 'paid_off')) {
+    setStaffDayStatus(name, 'clear', true);
+    showToast(`${name}に予定が入ったため、休み扱いを解除しました`);
+  }
+}
+
 function importTextParsed(parsed) {
   if (!parsed || !parsed.length) {
     showToast('該当する報告が見つかりませんでした');
@@ -2435,6 +2448,7 @@ function importTextParsed(parsed) {
     const newGuest = { id: nextId++, ...g, rowNum: String(rc++), tableNum: g.tableNum||'', arrived: false, reportType: getCurrentReportType(), specials };
     syncNewSpecialFromText(newGuest);
     syncEventSpecialFromTanto(newGuest);
+    clearDayOffIfScheduled(newGuest.tanto);
     guests.push(newGuest);
     addedIds.push(newGuest.id);
   });
@@ -3150,7 +3164,7 @@ function editCell(id, field, td) {
     g[field] = input.value.trim();
     if (field === 'tableNum') g.tableNum = toHalfWidthAlnum(g.tableNum);
     if (field === 'name' || field === 'note') syncNewSpecialFromText(g);
-    if (field === 'tanto') syncEventSpecialFromTanto(g);
+    if (field === 'tanto') { syncEventSpecialFromTanto(g); clearDayOffIfScheduled(g.tanto); }
     // 卓番を編集した時、アイバンで紐づいている相手がいれば同じ卓番を自動で反映する
     if (field === 'tableNum') {
       const aibanInfo = getAibanLinkInfo(g);
@@ -3203,7 +3217,7 @@ function createAndEdit(rowNum, field, td) {
     g[field] = val;
     if (field === 'tableNum') g.tableNum = toHalfWidthAlnum(g.tableNum);
     syncNewSpecialFromText(g);
-    if (field === 'tanto') syncEventSpecialFromTanto(g);
+    if (field === 'tanto') { syncEventSpecialFromTanto(g); clearDayOffIfScheduled(g.tanto); }
     guests.push(g);
     repackRowNums();
     saveToStorage();
@@ -5190,6 +5204,7 @@ function syncNominaoshiToTable(g, r) {
     if (!existing.specials) existing.specials = [];
     if (!existing.specials.includes('new')) existing.specials.push('new'); // 飲直で出来た卓は自動で🔰マーク
     syncEventSpecialFromTanto(existing);
+    clearDayOffIfScheduled(existing.tanto);
   } else {
     const newGuest = {
       id: nextId++,
@@ -5208,6 +5223,7 @@ function syncNominaoshiToTable(g, r) {
     };
     if (shouldAutoSetLeave60) newGuest.leave = calcLeaveTimeFromNow(60);
     syncEventSpecialFromTanto(newGuest);
+    clearDayOffIfScheduled(newGuest.tanto);
     guests.push(newGuest);
   }
   repackRowNums();
@@ -8810,6 +8826,7 @@ function saveEdit(id) {
   syncBudgetRaiseSpecial(g);
   syncNewSpecialFromText(g);
   syncEventSpecialFromTanto(g);
+  clearDayOffIfScheduled(g.tanto);
   // 卓番を編集した時、アイバンで紐づいている相手がいれば同じ卓番を自動で反映する
   if (g.tableNum !== oldTableNum) {
     const aibanInfo = getAibanLinkInfo(g);
