@@ -5417,6 +5417,14 @@ function syncFirstGroupToView(g) {
 }
 
 // ===== 場内 =====
+// 同じ卓番に複数人が場内指名で入っている場合（例：「B4永愛,カルマB4」）、2人目以降で上書きして
+// 1人分しか表示されなくなるのを防ぐため、同じ卓番にはカンマ区切りで追記していく（重複する名前は足さない）
+function appendBaanaiName(result, table, name) {
+  if (!result[table]) { result[table] = name; return; }
+  const existing = result[table].split('、');
+  if (!existing.includes(name)) result[table] = existing.concat(name).join('、');
+}
+
 // 「ひろきA4」「B6縁」のような場内メモを解析し、卓番→キャスト名のマップを作る（名前→卓番・卓番→名前の
 // どちらの並び順でも拾えるようにする）。キャスト名（呼び名含む）・卓番はどちらも先頭から最長一致で判定する
 function parseBaanaiAssignments(text) {
@@ -5436,7 +5444,7 @@ function parseBaanaiAssignments(text) {
     if (nameFirst) {
       const remainder = normalizeTablePrefix(token.slice(nameFirst.text.length));
       if (allTables.includes(remainder)) {
-        result[remainder] = nameFirst.name;
+        appendBaanaiName(result, remainder, nameFirst.name);
         return;
       }
     }
@@ -5447,7 +5455,7 @@ function parseBaanaiAssignments(text) {
       const remainder = toHiragana(token.slice(tableFirst.length));
       const nameMatch = aliasIndex.find(entry => remainder.startsWith(entry.norm));
       if (nameMatch) {
-        result[tableFirst] = nameMatch.name;
+        appendBaanaiName(result, tableFirst, nameMatch.name);
       }
     }
   });
