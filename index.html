@@ -3451,8 +3451,16 @@ function getKanbuStaffList() {
   return staffList.filter(name => kanbu[name]);
 }
 
-// 本日「休み」「有休」ではない、出勤している従業員の一覧を返す（付け回しの卓状況で選ぶ対象は
-// 幹部に絞らず全員にするための一覧。半休・予定未定・未報告は出勤扱いに含める）
+// 解決済みの担当名(resolved)が、指定したスタッフ名(name)本人のものかどうかを判定する。
+// resolvedが既に実在する「別の」登録スタッフ名そのものである場合は完全一致でしか認めない
+// （例：「雅」という担当名が、部分一致につられて別人の「彪雅」さんの報告として拾われてしまう事故を防ぐ）。
+// 表記ゆれ等でどの登録名にも解決できなかったテキストに対してだけ、従来通り部分一致にフォールバックする
+function matchesResolvedStaffName(resolved, name) {
+  if (resolved === name) return true;
+  if (staffList.includes(resolved)) return false;
+  return resolved.includes(name) || name.includes(resolved);
+}
+
 // 本日「休み」「有休」ではない、出勤している従業員の一覧を返す（付け回しの卓状況で選ぶ対象は
 // 幹部に絞らず全員にするための一覧。半休・予定未定・未報告は出勤扱いに含める）。
 // 報告状況欄の色分けと同じ考え方で、「実際に来店予定を報告済みかどうか」を休みフラグより優先する。
@@ -3460,9 +3468,9 @@ function getKanbuStaffList() {
 // 古い休みフラグが残ったままになり、この一覧に出てこなくなってしまう
 function getWorkingStaffList() {
   const dayStatus = staffDayStatus || {};
-  const reportedTantos = guests.map(g => g.tanto).filter(Boolean);
+  const reportedTantos = guests.map(g => g.tanto).filter(Boolean).map(t => matchStaffName(t));
   return staffList.filter(name => {
-    const done = reportedTantos.some(tanto => tanto.includes(name) || name.includes(tanto));
+    const done = reportedTantos.some(resolved => matchesResolvedStaffName(resolved, name));
     if (done) return true;
     const status = dayStatus[name] && dayStatus[name].status;
     return status !== 'off' && status !== 'paid_off';
@@ -8633,7 +8641,7 @@ function renderStaffStatus() {
   const reportedEntries = guests
     .filter(g => g.tanto)
     .map(g => ({ resolved: matchStaffName(g.tanto), reportType: g.reportType }));
-  const matchesStaffName = (resolved, name) => resolved === name || resolved.includes(name) || name.includes(resolved);
+  const matchesStaffName = matchesResolvedStaffName;
   container.innerHTML = staffList.map(name => {
     const done = reportedEntries.some(e => matchesStaffName(e.resolved, name));
     // 予定ありの報告のうち、内勤が代理入力したものが1件でもあれば、本人報告と見分けられるよう色を変える。
