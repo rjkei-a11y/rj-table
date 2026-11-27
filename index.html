@@ -1501,6 +1501,12 @@ document.addEventListener('click', function(e) {
   const target = e.target;
   // 「あなたは誰ですか？」は選択必須のため、背景タップでは閉じさせない（未選択のまま中に入れてしまうため）
   if (target && target.id === 'identityModal') return;
+  // 予定報告の確認ポップアップは、入力した予定が残ったまま枠外タップで閉じてしまうと「報告したつもり」の
+  // まま気づかず終わってしまう事故につながるため、✕ボタンと同じ確認ダイアログを挟む
+  if (target && target.id === 'queuePopup' && target.classList.contains('show') && _multiReportQueue.length) {
+    confirmCloseQueuePopup();
+    return;
+  }
   if (target && target.classList && target.classList.contains('modal-overlay') && target.classList.contains('show')) {
     target.classList.remove('show');
   }
@@ -1932,7 +1938,7 @@ function openQueuePopup() {
     <div class="modal" style="max-width:360px;max-height:80vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <span>予定 ${_multiReportQueue.length}件</span>
-        <button onclick="closeQueuePopup()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+        <button onclick="confirmCloseQueuePopup()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;overscroll-behavior:contain;flex:1;">
         ${items || '<p style="color:var(--text-dim);text-align:center;">まだ予定がありません</p>'}
@@ -1948,6 +1954,24 @@ function openQueuePopup() {
 function closeQueuePopup() {
   const el = document.getElementById('queuePopup');
   if (el) el.classList.remove('show');
+}
+
+// 予定報告の確認ポップアップで、キューに1件以上入ったまま✕ボタンや枠外タップで閉じようとした時に、
+// 「報告したつもり」のまま実際には報告されていなかった、という事故を防ぐための確認ダイアログ。
+// 何も入っていない時はそのまま閉じて問題ないので確認は挟まない
+function confirmCloseQueuePopup() {
+  if (!_multiReportQueue.length) { closeQueuePopup(); return; }
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">まだ報告できていません</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">このまま閉じると、入力した${_multiReportQueue.length}件の予定は報告されません。</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">戻る</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';closeQueuePopup()" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">報告せず閉じる</button>
+    </div>
+  </div>`;
+  overlay.style.display = 'flex';
 }
 
 function confirmQueueSubmit() {
