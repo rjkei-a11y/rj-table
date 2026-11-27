@@ -1507,6 +1507,12 @@ document.addEventListener('click', function(e) {
     confirmCloseQueuePopup();
     return;
   }
+  // 「予約を編集」モーダル（卓状況BOXの長押し・自分の予約一覧の編集から開く）も同様に、
+  // 変更した内容が残ったまま枠外タップで閉じてしまう事故を防ぐ
+  if (target && target.id === 'leaveTimeEditModal' && target.classList.contains('show') && hasUnsavedLeaveTimeEdit()) {
+    confirmCloseLeaveTimeEditModal();
+    return;
+  }
   if (target && target.classList && target.classList.contains('modal-overlay') && target.classList.contains('show')) {
     target.classList.remove('show');
   }
@@ -1613,6 +1619,8 @@ let _editAibanParts = { tanto: '', name: '' };
 // 卓状況・全体タブの長押しクイック編集モーダル用
 let _qeAibanFormOpen = false;
 let _qeAibanParts = { tanto: '', name: '' };
+// モーダルを開いた時点の内容を覚えておき、保存せずに閉じようとした時に変更の有無を判定するためのスナップショット
+let _qeOriginalSnapshot = null;
 let _mrAiban = { tanto: '', name: '' };
 let _mrAibanFormOpen = false;
 
@@ -6006,6 +6014,20 @@ function openLeaveTimeQuickEdit(type, idOrKey, extraGuestId) {
 
   _qeAibanFormOpen = false;
   _qeAibanParts = getAibanParts(guest);
+  // 保存せずに閉じようとした時に変更の有無を判定できるよう、開いた時点の内容を覚えておく
+  // （各欄の読み方・trimはsaveQuickLeaveTimeと揃える）
+  _qeOriginalSnapshot = {
+    tanto: (guest.tanto || '').trim(),
+    name: (guest.name || '').trim(),
+    arrive: (guest.arrived ? (guest.actualArrive || '') : (guest.arrive || '')).trim(),
+    leave: (guest.leave || '').trim(),
+    budget: (guest.budget || '').trim(),
+    help: normalizeHelpNamesWithRolePlainText(guest.help || '').trim(),
+    note: (guest.note || '').trim(),
+    shareNote: (guest.shareNote || '').trim(),
+    aibanTanto: (_qeAibanParts.tanto || '').trim(),
+    aibanName: (_qeAibanParts.name || '').trim(),
+  };
   renderLeaveTimeEditModal(guest.id);
 }
 
@@ -6032,7 +6054,7 @@ function renderLeaveTimeEditModal(guestId) {
     <div class="modal" style="max-width:340px;max-height:85vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <span>予約を編集</span>
-        <button onclick="document.getElementById('leaveTimeEditModal').classList.remove('show')" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
+        <button onclick="confirmCloseLeaveTimeEditModal()" style="background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;">✕</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;overscroll-behavior:contain;flex:1;">
         <div class="mr-row"><label class="mr-label">担当</label><input class="mr-input" id="qe-tanto" value="${guest.tanto || ''}"></div>
@@ -6052,11 +6074,52 @@ function renderLeaveTimeEditModal(guestId) {
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="document.getElementById('leaveTimeEditModal').classList.remove('show')">キャンセル</button>
+        <button class="btn btn-ghost" onclick="confirmCloseLeaveTimeEditModal()">キャンセル</button>
         <button class="btn btn-primary" onclick="saveQuickLeaveTime(${guest.id})">保存</button>
       </div>
     </div>`;
   modal.classList.add('show');
+}
+
+function closeLeaveTimeEditModal() {
+  const el = document.getElementById('leaveTimeEditModal');
+  if (el) el.classList.remove('show');
+}
+
+// 開いた時点からいずれかの欄が変更されているかどうかを判定する
+function hasUnsavedLeaveTimeEdit() {
+  if (!_qeOriginalSnapshot) return false;
+  const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  return (
+    get('qe-tanto') !== _qeOriginalSnapshot.tanto ||
+    get('qe-name') !== _qeOriginalSnapshot.name ||
+    get('qe-arrive') !== _qeOriginalSnapshot.arrive ||
+    get('qe-leave') !== _qeOriginalSnapshot.leave ||
+    get('qe-budget') !== _qeOriginalSnapshot.budget ||
+    get('qe-help') !== _qeOriginalSnapshot.help ||
+    get('qe-note') !== _qeOriginalSnapshot.note ||
+    get('qe-sharenote') !== _qeOriginalSnapshot.shareNote ||
+    (_qeAibanParts.tanto || '').trim() !== _qeOriginalSnapshot.aibanTanto ||
+    (_qeAibanParts.name || '').trim() !== _qeOriginalSnapshot.aibanName
+  );
+}
+
+// 「予約を編集」モーダルで、何か変更した状態のまま✕・キャンセル・枠外タップで閉じようとした時に、
+// 「保存したつもり」のまま実際には未保存だった、という事故を防ぐための確認ダイアログ。
+// 何も変更していない時はそのまま閉じて問題ないので確認は挟まない
+function confirmCloseLeaveTimeEditModal() {
+  if (!hasUnsavedLeaveTimeEdit()) { closeLeaveTimeEditModal(); return; }
+  let overlay = document.getElementById('deleteOverlay');
+  if (!overlay) { overlay = document.createElement('div'); overlay.id='deleteOverlay'; overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;'; document.body.appendChild(overlay); }
+  overlay.innerHTML = `<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:24px;max-width:300px;width:100%;text-align:center;">
+    <div style="font-size:14px;color:#f0ece0;margin-bottom:8px;">まだ保存されていません</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6;">このまま閉じると、編集した内容は保存されません。</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('deleteOverlay').style.display='none'" style="flex:1;padding:10px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:13px;cursor:pointer;">戻る</button>
+      <button onclick="document.getElementById('deleteOverlay').style.display='none';closeLeaveTimeEditModal()" style="flex:1;padding:10px;background:#c0392b;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">保存せず閉じる</button>
+    </div>
+  </div>`;
+  overlay.style.display = 'flex';
 }
 
 function saveQuickLeaveTime(guestId) {
